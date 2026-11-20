@@ -17,21 +17,23 @@ const PAST_ONE: f64 = 1e-9;
 /// The content of the nodes of one load as columns (API-bridge-takes-serde-and-columns), the nodes'
 /// elements in slot order, each node's rows in their order and each row's elements in theirs: the
 /// boundaries of each node's rows, one more than there are nodes; of each row's elements, one more
-/// than there are rows; per element its kind's code, its weight as the host application handed it,
-/// NaN for one of another type, a text's role's code and a trend's direction's code, each 0 for
-/// another kind, and a badge's or a trend's colour as the host application handed it, NaN for one
-/// of another type and for another kind; per element the
+/// than there are rows; per row whether it is a separator; per element its kind's code, its weight
+/// as the host application handed it, NaN for one of another type, a text's role's code and a
+/// trend's direction's code, each 0 for another kind, and a badge's or a trend's colour as the host
+/// application handed it, NaN for one of another type and for another kind; per element the
 /// boundaries of a progress bar's segments, one more than there are elements, and per segment its
 /// fraction and its colour as the host application handed them, NaN for one of another type; the
-/// texts, every string an element shows, a metric's caption, value, and trend's text in that
-/// order, concatenated in pieces as every string column is, with
-/// their boundaries and per text whether it is a text; and the names, every string an element
-/// names and does not show, an action's identifier and an icon's registered name, as the texts
-/// are.
+/// texts, every string an element shows, a metric's caption, value, and trend's text in that order,
+/// concatenated in pieces as every string column is, with their boundaries and per text whether it
+/// is a text; and the names, every string an element names and does not show, an action's
+/// identifier and an icon's registered name, as the texts are.
 #[derive(Clone, Copy)]
 pub struct ContentColumns<'a> {
     pub row_bounds: &'a [u32],
     pub element_bounds: &'a [u32],
+    /// Per row, whether it is a separator, 1 or 0, which holds no element
+    /// (REN-node-content-and-hits, *Separator*).
+    pub separators: &'a [u8],
     pub kinds: &'a [u8],
     pub weights: &'a [f64],
     pub roles: &'a [u8],
@@ -111,6 +113,19 @@ fn budget() -> u64 {
     u64::from(MAX_CONTENT_UNITS)
 }
 
+/// Refuses `units`, the code units of the strings of content the graph would hold after a load
+/// or an edit of the node `node`, the names of its regions among them, where they pass the budget
+/// (ARCH-regions-are-container-slots), as the budget's own refusal.
+pub(crate) fn within_budget(node: &str, units: u64) -> Result<(), GraphDataProblem> {
+    if units > budget() {
+        return Err(GraphDataProblem::ContentBudgetExceeded {
+            node: node.to_owned(),
+            limit: MAX_CONTENT_UNITS,
+        });
+    }
+    Ok(())
+}
+
 /// The element at `column` of `row` of the node `node`, for a refusal that names it.
 struct At<'n> {
     node: &'n str,
@@ -129,8 +144,8 @@ impl ContentColumns<'_> {
     /// the elements' columns are as long as there are elements, each code names a kind, a role, or
     /// a direction, or none, each validity byte is 1 or 0, there are as many texts and names as the
     /// elements' kinds fill, a text for each `text` and `badge`, a text and a name for each
-    /// `action`, three texts for each `metric`, and a name for each `icon`, and
-    /// only a progress bar holds segments, each with a fraction and a colour.
+    /// `action`, three texts for each `metric`, and a name for each `icon`, only a progress bar
+    /// holds segments, each with a fraction and a colour, and a separator holds no element.
     pub(crate) fn fit(&self, nodes: usize) -> bool {
         let elements = self.kinds.len();
         let rows = self.element_bounds.len().saturating_sub(1);
@@ -142,6 +157,12 @@ impl ContentColumns<'_> {
             .fold((0, 0), |(t, n), (dt, dn)| (t + dt, n + dn));
         runs_fit(self.row_bounds, nodes, rows)
             && runs_fit(self.element_bounds, rows, elements)
+            && self.separators.len() == rows
+            && (0..rows).all(|row| match self.separators[row] {
+                0 => true,
+                1 => self.elements(row).is_empty(),
+                _ => false,
+            })
             && self.weights.len() == elements
             && self.roles.len() == elements
             && self.directions.len() == elements
@@ -190,6 +211,11 @@ impl ContentColumns<'_> {
     /// The range of the rows of the node at `node`.
     pub(crate) fn rows(&self, node: usize) -> std::ops::Range<usize> {
         self.row_bounds[node] as usize..self.row_bounds[node + 1] as usize
+    }
+
+    /// Whether the row at `row`, counted across all nodes, is a separator.
+    pub(crate) fn separator(&self, row: usize) -> bool {
+        self.separators.get(row) == Some(&1)
     }
 
     /// The range of the elements of the row at `row`, counted across all nodes.
@@ -262,12 +288,17 @@ impl ContentColumns<'_> {
         Ok(self.height(rows, fonts))
     }
 
-    /// The height the node whose rows are `rows` lays out to in `fonts`, as the engine computes
-    /// it from its elements' kinds and roles (REN-node-content-in-rows); of content the bridge
-    /// checked.
+    /// The height of the rows `rows` and their padding in `fonts`, before the least height of a
+    /// node, which its node shape applies (`NodeShape::needed`), as the engine computes it from its
+    /// elements' kinds and roles (REN-node-content-in-rows); of content the bridge checked.
     pub(super) fn height(&self, rows: std::ops::Range<usize>, fonts: &Fonts) -> f64 {
-        layout::height(
-            rows.map(|row| self.elements(row).map(|element| self.kind(element))),
+        layout::padded(
+            rows.map(|row| {
+                let separator = self.separator(row).then_some(Kind::Separator);
+                self.elements(row)
+                    .map(|element| self.kind(element))
+                    .chain(separator)
+            }),
             fonts,
         )
     }
@@ -1261,6 +1292,7 @@ mod tests {
             let columns = ContentColumns {
                 row_bounds: &nodes,
                 element_bounds: &nodes,
+                separators: &vec![0; count as usize],
                 kinds: &vec![KindCode::Text as u8; count as usize],
                 weights: &vec![1.0; count as usize],
                 roles: &vec![RoleCode::Title as u8; count as usize],

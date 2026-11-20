@@ -28,8 +28,10 @@ pub enum GraphDataProblem {
     #[serde(rename_all = "camelCase")]
     Malformed { message: String },
     /// A field of the item at `index` of `list`, the node or edge `id` where its identifier was
-    /// read, is missing or holds a value of another type; `field` names it, a label's as
-    /// `label.t`, and `expected` says in words what it holds.
+    /// read, is missing or holds a value of another type; `field` names it, a field of a label by
+    /// the label's place in the edge's list, as `labels[1].t`, and `expected` says in words what it
+    /// holds. An edge that still carries `label`, which `labels` replaced, is refused naming
+    /// `label`, its `expected` naming `labels` in its stead (API-edges-dock-nodes-or-edges).
     #[serde(rename_all = "camelCase")]
     InvalidField {
         list: GraphList,
@@ -46,7 +48,7 @@ pub enum GraphDataProblem {
     /// A node's coordinate or the far side of its extent, or an edge label's offset, lies more
     /// than `limit` world units from the origin, past which what the engine derives from it could
     /// turn infinite; `field` names it, the far side of a node by its `width` or `height`, a
-    /// label's offset as `label.offset`.
+    /// label's offset by its place in the edge's list, as `labels[1].offset`.
     #[serde(rename_all = "camelCase")]
     BeyondWorld {
         list: GraphList,
@@ -73,8 +75,8 @@ pub enum GraphDataProblem {
         column: Option<u32>,
         expected: String,
     },
-    /// A node of a filled node shape, a circle, a ringed circle, or a bar, holds content
-    /// (REN-closed-set-of-node-shapes).
+    /// A node of a filled node shape, a circle, a ringed circle, a bar, a crossed circle, or a
+    /// cross, holds content (REN-node-shapes-cover-uml).
     #[serde(rename_all = "camelCase")]
     ContentInFilledShape { node: String },
     /// A node's content holds more than `limit` rows.
@@ -157,25 +159,73 @@ pub enum GraphDataProblem {
     /// graph holds already.
     #[serde(rename_all = "camelCase")]
     DuplicateNode { node: String },
+    /// The node `node` lies, by its field `field`, in no node of the graph, in a node that is no
+    /// container, or in itself or a node it holds (ARCH-engine-edits-nested-graph,
+    /// API-edits-report-nested-changes); `expected` says in words what the field holds.
+    #[serde(rename_all = "camelCase")]
+    InvalidContainer {
+        node: String,
+        field: String,
+        expected: String,
+    },
     /// Two edges share an identifier.
     #[serde(rename_all = "camelCase")]
     DuplicateEdge { edge: String },
-    /// An edge names a node that is not in the batch, or, for `addEdge`, one the graph does not
-    /// hold.
+    /// An edge, `edge`, or a border node by its `attachedTo`, `borderNode`, names a node `node`
+    /// that is not in the batch, or, for `addEdge` and `addNode`, one the graph does not hold
+    /// (ARCH-border-nodes-ride-sides).
     #[serde(rename_all = "camelCase")]
-    MissingNode { edge: String, node: String },
-    /// An edge label's path parameter or label offset is NaN or infinite.
+    MissingNode {
+        #[tsify(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        edge: Option<String>,
+        #[tsify(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        border_node: Option<String>,
+        node: String,
+    },
+    /// The edge `edge` ends, by `sourceEdge` or `targetEdge`, on an edge `missing` that is not in
+    /// the batch, or, for `addEdge`, one the graph does not hold (API-edges-dock-nodes-or-edges,
+    /// *Ends*).
     #[serde(rename_all = "camelCase")]
-    NonFiniteLabel { edge: String },
-    /// An edge label's text is not a string.
+    MissingEdge { edge: String, missing: String },
+    /// The end `end`, `sourceEdge` or `targetEdge`, of the edge `edge` lies on the edge itself,
+    /// or on an edge that itself ends on an edge: an end on an edge lies one level deep
+    /// (API-edges-dock-nodes-or-edges, *Ends*).
     #[serde(rename_all = "camelCase")]
-    InvalidLabelText { edge: String },
-    /// An edge label's text is longer than `limit` UTF-16 code units.
+    InvalidEdgeEnd { edge: String, end: String },
+    /// The border node `node` cannot be one by its field `field`: `attachedTo` names itself or
+    /// another border node; `isContainer`, `regions`, or `resizable` makes it a container or
+    /// resizable; or `x`, `y`, or `container` stands beside `attachedTo`
+    /// (ARCH-border-nodes-ride-sides, *Attachment*).
     #[serde(rename_all = "camelCase")]
-    LabelTextTooLong { edge: String, limit: u32 },
-    /// An edge label's background is not an integer from `0` to `0xFFFFFF`.
+    InvalidAttachment { node: String, field: String },
+    /// The path parameter or label offset of the edge label `label` of the edge `edge` is NaN or
+    /// infinite.
     #[serde(rename_all = "camelCase")]
-    InvalidBackground { edge: String },
+    NonFiniteLabel { edge: String, label: String },
+    /// The text of the edge label `label` of the edge `edge` is not a string.
+    #[serde(rename_all = "camelCase")]
+    InvalidLabelText { edge: String, label: String },
+    /// The text of the edge label `label` of the edge `edge` is longer than `limit` UTF-16 code
+    /// units.
+    #[serde(rename_all = "camelCase")]
+    LabelTextTooLong {
+        edge: String,
+        label: String,
+        limit: u32,
+    },
+    /// The background of the edge label `label` of the edge `edge` is not an integer from `0` to
+    /// `0xFFFFFF`.
+    #[serde(rename_all = "camelCase")]
+    InvalidBackground { edge: String, label: String },
+    /// Two edge labels of the edge `edge` share the identifier `label`
+    /// (API-edges-dock-nodes-or-edges, *Edge labels*).
+    #[serde(rename_all = "camelCase")]
+    DuplicateLabel { edge: String, label: String },
+    /// The edge `edge` carries more than `limit` edge labels.
+    #[serde(rename_all = "camelCase")]
+    TooManyLabels { edge: String, limit: u32 },
     /// An edge's colour is not an integer from `0` to `0xFFFFFF`.
     #[serde(rename_all = "camelCase")]
     InvalidColor { edge: String },
@@ -208,8 +258,8 @@ pub enum GraphDataProblem {
     /// accepts one (API-edges-dock-side-or-outline).
     #[serde(rename_all = "camelCase")]
     SelfEdge { edge: String },
-    /// A patch of `updateEdge` holds a field other than `color`, `dash`, `arrow`, `label`,
-    /// `sourceSide`, and `targetSide`.
+    /// A patch of `updateEdge` holds a field other than `color`, `dash`, `arrow`, `labels`,
+    /// `lightning`, `sourceSide`, and `targetSide`, `label` among them.
     #[serde(rename_all = "camelCase")]
     UnknownEdgePatchField { edge: String, field: String },
 }
@@ -234,8 +284,16 @@ impl From<GraphError> for GraphDataProblem {
     fn from(error: GraphError) -> Self {
         malformed(match error {
             GraphError::SlotCountMismatch => "the positions and sizes do not match the nodes",
-            GraphError::EdgeEndOutOfRange { .. } => "an edge ends at a node beyond the graph",
+            GraphError::EdgeEndOutOfRange { .. } => {
+                "an edge ends at a node or an edge beyond the graph"
+            }
+            GraphError::EdgeEndOnEdgeEnd { .. } => {
+                "an edge ends on itself or on an edge that ends on an edge"
+            }
             GraphError::TooManySlots => "the graph holds more items than the engine can number",
+            GraphError::Nest(_) => {
+                "a node lies in a missing node, a non-container, or itself or its content"
+            }
         })
     }
 }
@@ -257,16 +315,56 @@ pub(crate) fn slot(index: usize) -> Result<u32, GraphDataProblem> {
 pub(super) const A_NUMBER: &str = "a finite number";
 pub(super) const A_SIZE: &str = "a finite number of 0 or more";
 pub(super) const A_COLOR: &str = "an integer from 0 to 0xFFFFFF";
-pub(super) const A_LABEL: &str = "an object, or none";
+pub(super) const A_LABELS: &str = "a list of edge labels, or none";
+pub(super) const A_LABEL: &str = "an object";
+/// What an edge that still carries `label` is told: its labels are a list now
+/// (API-edges-dock-nodes-or-edges).
+pub(super) const NO_LABEL: &str = "nothing: an edge carries labels, a list of edge labels, in its \
+                                    stead";
+/// What a label's path parameter and offset expect: they are optional.
+pub(super) const A_NUMBER_OR_NONE: &str = "a finite number, or none";
 pub(super) const A_DASH: &str = "a list of two finite numbers, or none";
-pub(super) const AN_ARROW: &str = "\"end\" or \"none\"";
+pub(super) const AN_ARROW: &str = "\"end\", \"open\", \"hollow\", or \"none\"";
 pub(super) const A_SHAPE: &str = "\"rectangle\", \"rounded-rectangle\", \"ellipse\", \"circle\", \
-                                   \"ringed-circle\", \"diamond\", or \"bar\"";
-pub(super) const A_SIDE: &str = "\"top\", \"right\", \"bottom\", \"left\", or \"outline\"";
+                                   \"ringed-circle\", \"diamond\", \"bar\", \"pentagon\", \
+                                   \"notched-rectangle\", \"note\", \"frame\", \
+                                   \"crossed-circle\", \"cross\", \"actor\", or \"hourglass\"";
+/// What a node's outline expects (REN-node-shapes-cover-uml, *Outline*).
+pub(super) const AN_OUTLINE: &str = "\"solid\", \"none\", or a dash pattern, or none";
+/// What a side expects: one of the five on an end on a node, and none on an end on an edge
+/// (API-edges-dock-nodes-or-edges, *Ends*).
+pub(super) const A_SIDE: &str = "\"top\", \"right\", \"bottom\", \"left\", or \"outline\" \
+                                  where the end lies on a node, none where it lies on an edge";
+/// What the identifier of an edge an end lies on expects: an identifier, beside no node.
+pub(super) const AN_EDGE_ID: &str = "a well-formed string of at most 256 code units, where the \
+                                      end names no node";
+/// What the path parameter of an end on an edge expects.
+pub(super) const A_PARAMETER: &str = "a number from 0 to 1";
+/// What a border node's side expects (ARCH-border-nodes-ride-sides).
+pub(super) const A_BORDER_SIDE: &str = "\"top\", \"right\", \"bottom\", or \"left\"";
+/// What a border node's `attachedTo` expects.
+pub(super) const A_NODE_ID_OR_NONE: &str = "the identifier of a node, or none";
 pub(super) const A_CONTENT: &str = "a list of rows";
 pub(super) const A_ROW: &str = "a list of elements";
 pub(super) const AN_ELEMENT: &str = "an object";
 pub(super) const A_SEGMENT_LIST: &str = "a list of segments";
+
+/// What a node's container and its mark as a container expect, as `invalidField` says it
+/// (API-bridge-columns-carry-nesting).
+pub(super) const AN_ID_OR_NONE: &str = "the identifier of a container, or none";
+pub(super) const A_FLAG: &str = "true or false, or none";
+pub(super) const A_DIVIDE: &str = "\"across\" or \"down\", or none where the node has no regions";
+pub(super) const A_REGION_LIST: &str = "a list of regions, each with a string id, a size, a line, \
+                                          and a name of at most 1,000 code units or none, or none";
+pub(super) const AN_UNDIVIDED: &str = "the identifier of a container or a region, not of a node \
+                                        divided into regions";
+/// What a node's height has to be: none, or a number, which its rule wants above 0.
+pub(super) const A_HEIGHT: &str = "a finite number above 0, or none";
+/// What a node's container is refused for, as `invalidContainer` says it
+/// (ARCH-engine-edits-nested-graph).
+pub(super) const A_NODE_OF_THE_GRAPH: &str = "the identifier of a node of the graph";
+pub(super) const A_MARKED_CONTAINER: &str = "the identifier of a node marked isContainer";
+pub(super) const NOT_IN_ITSELF: &str = "a container that is neither the node nor one it holds";
 
 /// What an identifier, a source, or a target expects, by `MAX_ID`.
 pub(super) const AN_ID: &str = "a well-formed string of at most 256 code units";

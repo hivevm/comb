@@ -14,6 +14,8 @@ use super::{ContentColumns, GraphDataProblem, numbered, string_at};
 pub struct ContentData {
     pub(crate) row_bounds: Vec<u32>,
     pub(crate) element_bounds: Vec<u32>,
+    /// Per row, whether it is a separator, 1 or 0 (REN-node-content-and-hits, *Separator*).
+    pub(crate) separators: Vec<u8>,
     pub(crate) kinds: Vec<u8>,
     pub(crate) weights: Vec<f64>,
     pub(crate) roles: Vec<u8>,
@@ -65,6 +67,7 @@ impl ContentData {
         ContentColumns {
             row_bounds: &self.row_bounds,
             element_bounds: &self.element_bounds,
+            separators: &self.separators,
             kinds: &self.kinds,
             weights: &self.weights,
             roles: &self.roles,

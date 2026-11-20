@@ -9,6 +9,7 @@ import init, {
   checkContentBudget,
   badgePaddingX,
   badgePaddingY,
+  bandThickness,
   checkIdBudget,
   columnLimit,
   contentBudget,
@@ -16,6 +17,7 @@ import init, {
   EdgeField,
   idBudget,
   idLimit,
+  labelLimit,
   rowLimit,
   segmentLimit,
   textLimit,
@@ -25,6 +27,8 @@ import init, {
   MeshDetail,
   MeshOf,
   NodeField,
+  KindCode,
+  type ContainerError,
   type ContentElement,
   type InitOutput,
   type EdgeInput,
@@ -38,12 +42,16 @@ import init, {
   type NodePatch,
   type NodeShape,
   type NumberError,
+  type Outline,
+  type ResizeHandle,
+  type Side,
   type SlotError,
   type TextRole,
 } from "../../wasm/engine.js";
 import { ROLES, type EdgeColumns, type NodeColumns } from "./columns";
 
 export type {
+  ContainerError,
   ContentElement,
   EdgeField,
   ElementHit,
@@ -56,21 +64,31 @@ export type {
   NodePatch,
   NodeShape,
   NumberError,
+  Outline,
+  ResizeHandle,
   SlotError,
   TextRole,
 };
 
+/** The code of a separator's line among the elements a query placed
+ *  (REN-node-content-and-hits, *Separator*). */
+export const SEPARATOR_KIND: number = KindCode.Separator;
+
 export {
   edgeColumns,
   KIND_NAMES,
+  NO_SLOT,
   nodeColumns,
   PIECE_BOUND,
   ROLE_NAMES,
   type ContentColumns,
   type EdgeColumns,
   type EdgeColumnWriter,
+  type EndValues,
   type NodeColumns,
   type NodeColumnWriter,
+  type RegionColumns,
+  type RegionRead,
 } from "./columns";
 
 /** The refusal of `translate`'s delta, under the name it had before `NumberError` held it. */
@@ -169,22 +187,31 @@ export interface Placed {
   partEnds: Uint32Array;
   arrowBounds: Uint32Array;
   arrows: Float32Array;
+  /** Per found node, in their order, the boundaries of its dash segments, one more than there are
+   *  found nodes, none for a node whose outline is not dashed; and each segment's two ends
+   *  `x0, y0, x1, y1` relative to its node, laid by the engine along its outline within the
+   *  query's rectangle (REN-node-shapes-cover-uml, *Outline*). */
+  dashBounds: Uint32Array;
+  dashes: Float32Array;
   /** The space between a badge's text and its pill's left side and its top, the engine's. */
   badgePadding: { x: number; y: number };
 }
 
-/** What a viewport query found: node slots in ascending order, the edge slots it found in
- *  ascending order and the first of each one's vertex indices in the mesh, the edge slot and point
- *  of each found edge label, the mesh of the found edges and its detail, where the found nodes'
- *  content lies, and the positions and sizes buffers, all read after the same call. The label
- *  points and the mesh's positions are relative to `origin`, a world point near the query's
- *  rectangle, so that `f32` rounds them by their distance from it
- *  (API-bridge-takes-serde-and-columns); the positions buffer
- *  is not. */
+/** What a viewport query found: the containers in the order they are drawn and the other node
+ *  slots by rank (ARCH-engine-edits-nested-graph), the edge slots it found in
+ *  ascending order and the first of each one's vertex indices in the mesh, each found edge label
+ *  as its edge's slot and its place in that edge's list of labels, a pair per label in `labels`,
+ *  and its point (API-bridge-columns-carry-nesting), the mesh of the found edges and its detail,
+ *  where the found nodes' content lies, and the positions and sizes buffers, all read after the
+ *  same call. The label points and the mesh's positions are relative to `origin`, a world point
+ *  near the query's rectangle, so that `f32` rounds them by their distance from it
+ *  (API-bridge-takes-serde-and-columns); the positions buffer is not. */
 export interface Visible {
   positions: Float32Array;
   sizes: Float32Array;
+  containers: Uint32Array;
   nodes: Uint32Array;
+  /** Where the content of each node found lies, the containers' first, then the other nodes'. */
   content: Placed;
   edges: Uint32Array;
   edgeStarts: Uint32Array;
@@ -234,15 +261,42 @@ export interface FontMetrics {
   lineHeight: number;
 }
 
+/** The sides of a box by the codes of `SideCode`, as `borderOf` and `slide` hand them back. */
+const BORDER_SIDES: readonly Side[] = ["top", "right", "bottom", "left"];
+
+/** Where a border node sits (ARCH-border-nodes-ride-sides): the slot of the node it rides, its
+ *  side, and its offset along that side. */
+export interface BorderPlace {
+  readonly on: number;
+  readonly side: Side;
+  readonly offset: number;
+}
+
+/** The node slots and the edge slots a removal takes along. */
+export interface Removal {
+  readonly nodes: Uint32Array;
+  readonly edges: Uint32Array;
+}
+
 export interface Bridge {
   /** Replaces the graph; node slot `i` is the batch's node `i`, edge slot `i` its edge `i`.
    *  Throws a `GraphDataProblem`. */
   loadGraph(batch: GraphSnapshot): number;
-  /** Checks `node` as a load checks a node and adds it, drawn and hit above every other node, and
-   *  returns the slot the engine chose for it (ARCH-engine-edits-graph-in-place). Throws a
-   *  `GraphDataProblem`, the graph
-   *  as it was. */
-  addNode(node: NodeSnapshot): number;
+  /** Checks `node` as a load checks a node and adds it into the container in the slot
+   *  `container`, which `api` resolved, at its position relative to it, or onto the canvas for
+   *  none, drawn and hit above every other node of its kind, and returns the slot the engine chose
+   *  for it (ARCH-engine-edits-nested-graph). Throws a `GraphDataProblem`, the graph as it was. */
+  addNode(node: NodeSnapshot, container?: number, attached?: number): number;
+  /** Where the border node in `slot` sits: the slot of the node it rides, its side, and its
+   *  offset as the engine keeps it; none for a slot that holds no border node
+   *  (ARCH-border-nodes-ride-sides). */
+  borderOf(slot: number): BorderPlace | undefined;
+  /** Slides the border node in `slot` to the point of its node's outline nearest the world point
+   *  `(x, y)`, onto the side of the box nearest it, and returns its side and offset
+   *  (ARCH-border-nodes-ride-sides, *Drag*). Throws a `SlotError` where `slot` holds no border
+   *  node, and a `NumberError` `nonFinitePoint` for a point that is not finite, before anything
+   *  moves. */
+  slide(slot: number, x: number, y: number): { side: Side; offset: number };
   /** The height, in world units, the content of `node` lays out to at its width, checked as
    *  `addNode` checks a node and added to nothing; `api` names it `""` and puts it at the origin
    *  (API-host-asks-content-height). Throws a `GraphDataProblem`. */
@@ -259,10 +313,26 @@ export interface Bridge {
    *  `slot` holds no edge, the graph as it was. */
   updateEdge(slot: number, id: string, patch: PlainEdgePatch): void;
   /** Checks the patch of the node `id` in `slot` as a load checks a node's content and gives the
-   *  node its new content and the height it lays out to (REN-node-content-in-rows). Throws a
-   *  `GraphDataProblem`,
-   *  and a `SlotError` where `slot` holds no node, the graph as it was. */
-  updateNode(slot: number, id: string, patch: PlainPatch): void;
+   *  node its new content and the height it lays out to (REN-node-content-in-rows); a patch of
+   *  regions divides it anew, `kept` naming per region of the patch, depth first, the slot of the
+   *  region of its identifier the node has, or `NO_SLOT`, and returns what went with the regions
+   *  it had, those regions among it (ARCH-regions-are-container-slots). Throws a
+   *  `GraphDataProblem`, and a `SlotError` where `slot` holds no node, the graph as it was. */
+  updateNode(slot: number, id: string, patch: PlainPatch, kept: Uint32Array): Removal;
+  /** The regions of the node or region in `slot`, at every depth, each followed by its own, in
+   *  the order of each division (ARCH-regions-are-container-slots). */
+  regionsOf(slot: number): Uint32Array;
+  /** Moves the line after the region in `slot` to the world coordinate `to` along its division,
+   *  as far as the regions beside it allow, and returns where it now stands
+   *  (ARCH-regions-are-container-slots, *Lines*): only toward `to`, never back past where it
+   *  stands. Throws a `LineRefusal` where `slot` holds no node or no region with a region after
+   *  it, the shell's mistakes. */
+  moveLine(slot: number, to: number): number;
+  /** `name` as the band of a region `length` world units long draws it: whole, or cut and
+   *  followed by an ellipsis (ARCH-regions-are-container-slots, *Name band*). */
+  bandName(name: string, length: number): string;
+  /** The thickness of the band of a named region, the engine's. */
+  bandThickness(): number;
   /** Hands over the metrics of the font the texts of `role` are drawn with, for every layout
    *  from then on (REN-node-content-in-rows). Throws a `NumberError` `invalidFont` for metrics the
    *  engine cannot
@@ -270,6 +340,8 @@ export interface Bridge {
   setFont(role: TextRole, font: FontMetrics): void;
   /** The most UTF-16 code units of a text of content or a label text the bridge accepts. */
   textLimit(): number;
+  /** The most edge labels of one edge the bridge accepts (API-edges-dock-nodes-or-edges). */
+  labelLimit(): number;
   /** The most rows of a node's content the bridge accepts. */
   rowLimit(): number;
   /** The most columns of a row the bridge accepts. */
@@ -291,40 +363,71 @@ export interface Bridge {
   /** Checks how many nodes and edges a graph holds, before any is copied. Throws a
    *  `GraphDataProblem`. */
   checkGraphSize(nodes: number, edges: number): void;
-  /** Removes the nodes in `slots` and every edge at them, and returns the slots of those edges in
-   *  ascending order (ARCH-engine-edits-graph-in-place). Throws a `SlotError`, a mistake of the
-   *  shell's, never one of
-   *  graph data, the graph as it was. */
-  removeNodes(slots: Uint32Array): Uint32Array;
-  /** Records the half width and half height of the pill of the label of the edge in `slot`, in
-   *  world units, as the labels layer draws it; a label not measured is not hit
-   *  (REN-node-content-in-rows).
-   *  Throws a `SlotError`. */
-  setLabelSize(slot: number, halfWidth: number, halfHeight: number): void;
-  /** The world point of the label of the edge in `slot`, or none where it holds no edge with a
-   *  label. */
-  labelPoint(slot: number): { x: number; y: number } | undefined;
-  /** Places the label of the edge in `slot` at the world point `(x, y)`: at the path parameter
-   *  nearest it and its distance along the normal there, which it returns (G-6). Throws a
-   *  `SlotError`, and a `NumberError` `nonFinitePoint` for a point that is not finite, before
-   *  anything moves (API-shell-mistake-refused-as-shells). */
-  moveLabel(slot: number, x: number, y: number): { t: number; offset: number };
+  /** Removes the nodes in `slots`, everything they hold at every depth, and every edge at any of
+   *  them, and returns the slots of what it removed as `removalOf` names them
+   *  (ARCH-engine-edits-nested-graph). Throws a `SlotError`, a mistake of the shell's, never one
+   *  of graph data, the graph as it was. */
+  removeNodes(slots: Uint32Array): Removal;
+  /** What a removal of the nodes in `slots` would take along, named before anything is removed:
+   *  the nodes, each followed by what it holds, depth first, each once, and the edges at any of
+   *  them and every edge that ends on one of those in ascending order
+   *  (ARCH-engine-edits-nested-graph, API-edges-dock-nodes-or-edges). Throws a `SlotError`. */
+  removalOf(slots: Uint32Array): Removal;
+  /** Records the half width and half height of the pill of the label at `label` of the list of
+   *  labels of the edge in `slot`, in world units, as the labels layer draws it; a label not
+   *  measured is not hit (REN-node-content-in-rows). Throws a `SlotError`. */
+  setLabelSize(slot: number, label: number, halfWidth: number, halfHeight: number): void;
+  /** The world point of the label at `label` of the edge in `slot`, or none where it holds no edge
+   *  with a label there. */
+  labelPoint(slot: number, label: number): { x: number; y: number } | undefined;
+  /** Places the label at `label` of the edge in `slot` at the world point `(x, y)`: at the path
+   *  parameter nearest it and its distance along the normal there, which it returns (G-6); the
+   *  edge's other labels stay. Throws a `SlotError`, and a `NumberError` `nonFinitePoint` for a
+   *  point that is not finite, before anything moves (API-shell-mistake-refused-as-shells). */
+  moveLabel(slot: number, label: number, x: number, y: number): { t: number; offset: number };
   /** The slots of the edges at the nodes in `slots`, in ascending order, as a removal of them
    *  would take along, named before anything is removed (ARCH-engine-edits-graph-in-place). Throws
    *  a `SlotError`. */
   edgesAt(slots: Uint32Array): Uint32Array;
-  /** Removes the edges in `slots`. Throws a `SlotError`, the graph as it was. */
-  removeEdges(slots: Uint32Array): void;
+  /** The slots of the edges in `slots`, in the order first named, and of every other edge that
+   *  ends on one of them, in ascending order, as a removal of them would take along, named
+   *  before anything is removed (API-edges-dock-nodes-or-edges, *Ends*). Throws a `SlotError`. */
+  edgeRemovalOf(slots: Uint32Array): Uint32Array;
+  /** Removes the edges in `slots` and every edge that ends on one of them, and returns the slots
+   *  of all of them as `edgeRemovalOf` names them. Throws a `SlotError`, the
+   *  graph as it was. */
+  removeEdges(slots: Uint32Array): Uint32Array;
   /** Moves the nodes in `slots`, their edges with them. Throws a `SlotError` for a slot that
    *  holds no node and a `NumberError` `nonFiniteDelta` for a delta that is not finite, mistakes
    *  of the shell's, never of graph data (API-shell-mistake-refused-as-shells). */
   translate(slots: Uint32Array, dx: number, dy: number): void;
+  /** Puts the node in `slot` at the world position `(x, y)`, everything it holds with it, as
+   *  `translate` moves them: a drag taken back puts the node exactly where it lay at the press
+   *  (API-edits-report-nested-changes). Throws a `SlotError`, and a `NumberError`
+   *  `nonFinitePoint` for a point that is not finite, before anything moves
+   *  (API-shell-mistake-refused-as-shells). */
+  place(slot: number, x: number, y: number): void;
+  /** The slot of the container a drop of the node in `dragged` at the world point `(x, y)` lands
+   *  in: of the containers whose outline holds the point, neither the node nor one it holds at
+   *  any depth, the topmost; none for the canvas (API-edits-report-nested-changes). Throws a
+   *  `SlotError`, and a `NumberError` `nonFinitePoint` for a point that is not finite. */
+  containerAt(x: number, y: number, dragged: number): number | undefined;
+  /** Puts the node in `slot` into the container in the slot `container`, or onto the canvas for
+   *  none, at the world position it has, and gives it the next rank, so that it is drawn and hit
+   *  above every other node of its kind (ARCH-engine-edits-nested-graph). Throws a `SlotError`,
+   *  and a `ContainerError` for a container that holds no container or that is the node or one it
+   *  holds, mistakes of the shell's, the graph as it was. */
+  moveInto(slot: number, container?: number): void;
   /** A fresh view on the positions buffer, `x, y` per slot. Do not keep it across calls. */
   positions(): Float32Array;
   /** The content of the node in `slot`, built when asked, since the shell keeps none
    *  (REN-node-content-in-rows).
    *  Throws a `SlotError` where `slot` holds no node. */
   content(slot: number): NodeContent;
+  /** The inner rectangle of the node in `slot` that its content is laid out in, relative to its
+   *  top-left corner, a frame's tab (REN-node-shapes-cover-uml): for a frame's drawing and for
+   *  inspection. Throws a `SlotError` where `slot` holds no node. */
+  innerOf(slot: number): { x: number; y: number; width: number; height: number };
   /** Fresh views on the positions buffer and on the sizes buffer, `width, height` per slot, the
    *  height each node's content lays out to (REN-node-content-in-rows), both read after the same
    *  call. Do not
@@ -351,15 +454,30 @@ export interface Bridge {
    *  inspection, not for drawing (REN-moving-layer-redraws-changes). Fresh views; do not keep them
    *  across calls. */
   drawnEdges(): DrawnEdges;
+  /** Resizes the node in `slot`, whose box was `from`, `x, y, width, height`, at the press, by a
+   *  drag of `handle` by `(dx, dy)` world units, never smaller than 8 a side, than its content, or
+   *  than the boxes of the nodes that lie directly in it; what it holds keeps its world position
+   *  (API-edits-report-nested-changes). Throws a `SlotError`, and a `NumberError`
+   *  `nonFinitePoint` for a box or a drag that is not finite, before anything changes. */
+  resizeNode(slot: number, handle: ResizeHandle, from: Float64Array, dx: number, dy: number): void;
   /** What a press at the world point `(x, y)` hits where a screen pixel is `pixel` world units,
-   *  at `level`: where `connectors` asks for them, at the near and middle level, a connector
+   *  at `level`: at the near and the middle level a resize handle of the node in `selected`, the
+   *  selected node, where it is resizable, within 6 screen pixels; else where `connectors` asks
+   *  for them, at the near and middle level, a connector
    *  within 8 screen pixels, of the node drawn on top; else the node drawn on top there, else the
    *  edge drawn on top within 4 screen pixels of its path as the stroke flattens it, else nothing
    *  (REN-node-content-in-rows). Throws a `NumberError`, `invalidPixel` for a pixel that is not a
    *  finite number
    *  above zero and `nonFinitePoint` for a point that is not finite
    *  (API-shell-mistake-refused-as-shells). */
-  hit(x: number, y: number, pixel: number, level: Level, connectors: boolean): Hit;
+  hit(
+    x: number,
+    y: number,
+    pixel: number,
+    level: Level,
+    connectors: boolean,
+    selected?: number,
+  ): Hit;
 }
 
 /** Whether the bridge runs in test mode: under `bun test`, and in Vite's `test` mode, which the
@@ -539,16 +657,46 @@ function wrap(exports: InitOutput): Bridge {
 
 /** The columns of a load's nodes, as `loadGraph` takes them before the first value refused. */
 function nodeValues(nodes: NodeColumns) {
-  const { ids, idBounds, x, y, width, shape, content: c } = nodes;
+  const { ids, idBounds, x, y, width, hasHeight, height, shape, outline } = nodes;
+  const { hasContainer, container, isContainer, resizable, divide, regions: r } = nodes;
+  const c = nodes.content;
   return [
     ids,
     idBounds,
     x,
     y,
     width,
+    hasHeight,
+    height,
     shape,
+    outline,
+    nodes.outlineDash,
+    nodes.outlineGap,
+    hasContainer,
+    container,
+    isContainer,
+    resizable,
+    divide,
+    r.ids,
+    r.idBounds,
+    r.of,
+    r.size,
+    r.divide,
+    r.hasDash,
+    r.dash,
+    r.gap,
+    r.named,
+    r.names,
+    r.nameBounds,
+    nodes.hasAttached,
+    nodes.attached,
+    nodes.side,
+    nodes.offset,
+    nodes.beside,
+    nodes.attachedMissing,
     c.rowBounds,
     c.elementBounds,
+    c.separators,
     c.kinds,
     c.weights,
     c.roles,
@@ -576,12 +724,18 @@ function load(engine: Engine, { nodes, edges }: GraphSnapshot): number {
     e.idBounds,
     e.sources,
     e.sourceBounds,
+    e.sourceOnEdge,
+    e.sourceT,
     e.targets,
     e.targetBounds,
-    e.hasLabel,
-    e.labels,
+    e.targetOnEdge,
+    e.targetT,
     e.labelBounds,
+    e.labelIds,
+    e.labelIdBounds,
     e.labelTexts,
+    e.labelTextBounds,
+    e.labelTextsValid,
     e.labelT,
     e.labelOffset,
     e.hasBackground,
@@ -591,6 +745,7 @@ function load(engine: Engine, { nodes, edges }: GraphSnapshot): number {
     e.dash,
     e.gap,
     e.arrow,
+    e.lightning,
     e.sourceSide,
     e.targetSide,
   ] as const;
@@ -603,6 +758,7 @@ function load(engine: Engine, { nodes, edges }: GraphSnapshot): number {
     ...edgeColumnValues,
     e.refused?.index,
     e.refused?.field,
+    e.refused?.label,
   );
 }
 
@@ -627,6 +783,7 @@ function queried(
   return {
     positions: f32(engine.positionsPtr(), engine.positionsLen()),
     sizes: f32(engine.sizesPtr(), engine.sizesLen()),
+    containers: u32(engine.visibleContainersPtr(), engine.visibleContainersLen()),
     nodes: u32(engine.visibleNodesPtr(), engine.visibleNodesLen()),
     content: {
       bounds: u32(engine.contentBoundsPtr(), engine.contentBoundsLen()),
@@ -644,6 +801,8 @@ function queried(
       partEnds: u32(engine.contentPartEndsPtr(), engine.contentPartEndsLen()),
       arrowBounds: u32(engine.contentArrowBoundsPtr(), engine.contentArrowBoundsLen()),
       arrows: f32(engine.contentArrowsPtr(), engine.contentArrowsLen()),
+      dashBounds: u32(engine.dashBoundsPtr(), engine.dashBoundsLen()),
+      dashes: f32(engine.dashesPtr(), engine.dashesLen()),
       badgePadding,
     },
     edges: u32(engine.visibleEdgesPtr(), engine.visibleEdgesLen()),
@@ -682,20 +841,90 @@ function meshOf(engine: Engine, views: ReturnType<typeof viewsOn>, of: MeshOf): 
   };
 }
 
+/** The node slots and the edge slots of a removal as the engine hands them over, the count of the
+ *  nodes first, split into the two lists. */
+function removedOf(crossed: Uint32Array): Removal {
+  const count = crossed[0]!;
+  return { nodes: crossed.subarray(1, 1 + count), edges: crossed.subarray(1 + count) };
+}
+
+/** Fresh views on the positions buffer and on the sizes buffer of `engine`, by `f32`. */
+function nodeBuffersOf(engine: Engine, f32: (ptr: number, len: number) => Float32Array) {
+  return {
+    positions: f32(engine.positionsPtr(), engine.positionsLen()),
+    sizes: f32(engine.sizesPtr(), engine.sizesLen()),
+  };
+}
+
+/** The calls of the bridge that divide nodes into regions and drag their lines
+ *  (ARCH-regions-are-container-slots). */
+function regionCalls(engine: Engine) {
+  return {
+    updateNode: (slot: number, id: string, patch: PlainPatch, regions: Uint32Array) =>
+      removedOf(engine.updateNode(slot, id, patch, regions)),
+    regionsOf: (slot: number) => engine.regionsOf(slot),
+    moveLine: (slot: number, to: number) => engine.moveLine(slot, to),
+    bandName: (name: string, length: number) => engine.bandName(name, length),
+    bandThickness,
+  };
+}
+
+/** The removals, and what each would take along, named before anything is removed
+ *  (ARCH-engine-edits-nested-graph, API-edges-dock-nodes-or-edges). */
+function removalCalls(
+  engine: Engine,
+): Pick<Bridge, "removeNodes" | "removalOf" | "edgeRemovalOf" | "removeEdges"> {
+  return {
+    removeNodes: (slots) => removedOf(engine.removeNodes(slots)),
+    removalOf: (slots) => removedOf(engine.removalOf(slots)),
+    edgeRemovalOf: (slots) => engine.edgeRemovalOf(slots),
+    removeEdges: (slots) => engine.removeEdges(slots),
+  };
+}
+
+/** The calls of border nodes (ARCH-border-nodes-ride-sides), each side by its name. */
+function borderCalls(engine: Engine): Pick<Bridge, "borderOf" | "slide"> {
+  return {
+    borderOf(slot) {
+      const [on, side, offset] = engine.borderOf(slot);
+      if (on === undefined) return undefined;
+      return { on, side: BORDER_SIDES[side!]!, offset: offset! };
+    },
+    slide(slot, x, y) {
+      const [side, offset] = engine.slide(slot, x, y);
+      return { side: BORDER_SIDES[side!]!, offset: offset! };
+    },
+  };
+}
+
+/** The calls that build a node's content and its inner rectangle when asked
+ *  (REN-node-content-in-rows, REN-node-shapes-cover-uml). */
+function contentCalls(engine: Engine): Pick<Bridge, "content" | "innerOf"> {
+  return {
+    content: (slot) => engine.content(slot),
+    innerOf(slot) {
+      const [x, y, width, height] = engine.innerOf(slot);
+      return { x: x!, y: y!, width: width!, height: height! };
+    },
+  };
+}
+
 function engineBridge(memory: WebAssembly.Memory): Bridge {
   const engine = newEngine();
   const { u32, f32 } = viewsOn(memory);
   return {
     loadGraph: (snapshot) => load(engine, snapshot),
-    addNode: (node) => engine.addNode(node),
+    addNode: (node, container, attached) => engine.addNode(node, container, attached),
+    ...borderCalls(engine),
     heightOf: (node) => engine.heightOf(node),
-    updateNode: (slot, id, patch) => engine.updateNode(slot, id, patch),
-    content: (slot) => engine.content(slot),
+    ...regionCalls(engine),
+    ...contentCalls(engine),
     setFont: (role, { codes, advances, fallback, lineHeight }) =>
       engine.setFont(ROLES[role], codes, advances, fallback, lineHeight),
     addEdge: (edge, source, target, loops) => engine.addEdge(edge, source, target, loops),
     updateEdge: (slot, id, patch) => engine.updateEdge(slot, id, patch),
     textLimit,
+    labelLimit,
     rowLimit,
     segmentLimit,
     columnLimit,
@@ -705,25 +934,26 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
     contentBudget,
     checkContentBudget,
     checkGraphSize,
-    removeNodes: (slots) => engine.removeNodes(slots),
-    removeEdges: (slots) => engine.removeEdges(slots),
+    ...removalCalls(engine),
     edgesAt: (slots) => engine.edgesAt(slots),
-    setLabelSize: (slot, halfWidth, halfHeight) => engine.setLabelSize(slot, halfWidth, halfHeight),
-    labelPoint(slot) {
-      const [x, y] = engine.labelPoint(slot);
+    setLabelSize: (slot, label, x, y) => engine.setLabelSize(slot, label, x, y),
+    labelPoint(slot, label) {
+      const [x, y] = engine.labelPoint(slot, label);
       return x === undefined || y === undefined ? undefined : { x, y };
     },
-    moveLabel(slot, x, y) {
-      const [t, offset] = engine.moveLabel(slot, x, y);
+    moveLabel(slot, label, x, y) {
+      const [t, offset] = engine.moveLabel(slot, label, x, y);
       return { t: t!, offset: offset! };
     },
     translate: (slots, dx, dy) => engine.translate(slots, dx, dy),
+    place: (slot, x, y) => engine.place(slot, x, y),
+    containerAt: (x, y, dragged) => engine.containerAt(x, y, dragged),
+    moveInto: (slot, container) => engine.moveInto(slot, container),
     positions: () => f32(engine.positionsPtr(), engine.positionsLen()),
-    nodeBuffers: () => ({
-      positions: f32(engine.positionsPtr(), engine.positionsLen()),
-      sizes: f32(engine.sizesPtr(), engine.sizesLen()),
-    }),
-    hit: (x, y, pixel, level, connectors) => engine.hit(x, y, pixel, LEVELS[level], connectors),
+    nodeBuffers: () => nodeBuffersOf(engine, f32),
+    resizeNode: (slot, handle, from, dx, dy) => engine.resizeNode(slot, handle, from, dx, dy),
+    hit: (x, y, pixel, level, connectors, selected) =>
+      engine.hit(x, y, pixel, LEVELS[level], connectors, selected),
     drawnEdges() {
       engine.drawnEdges();
       return {

@@ -32,7 +32,8 @@ skimmed. The design revision drops what prevented nothing
 - **A random test counts the cases each clause rests on.** A property test over random inputs
   counts, per clause it decides, the cases where that clause and no earlier one settles the result,
   and asserts a floor on each count. A seed, a size, or a spread that leaves no case then fails,
-  instead of leaving the clause unchecked silently.
+  instead of leaving the clause unchecked silently. It asserts the floors once, after the run, not
+  inside a case, where shrinking may never reach them.
 - **An oracle owes nothing to the code it judges.** A test computes its expected value from the
   inputs, by brute force or by hand, never from a cache, buffer, or helper of the module under
   test; an oracle that reads the engine's own state agrees with the engine's mistakes. Nor does
@@ -101,38 +102,196 @@ skimmed. The design revision drops what prevented nothing
   from an interface, files under a root, marks from the bridge) fails, naming the source, where it
   reads none or meets a shape it does not know, and its self-test plays that case; a check that
   reads nothing passes everything.
-- **The UML example tells a relationship by its kind's family of colour.** Comb draws an edge in
-  one colour, solid or dashed (`[6, 4]`), with an arrowhead at its target or none, and one label,
-  so the UML example draws each kind of relationship as `examples/uml/src/relationships.ts` lists
-  it: association grey `#6b7280` solid without arrowhead; directed association grey solid with
-  one; generalization blue `#1d4ed8` solid with one; realization blue dashed with one; dependency
-  grey dashed with one and the label «use»; aggregation and composition green `#15803d` solid
-  without one, labelled «aggregation» and «composition» at `t = 0.4`, nearer their source, which
-  is the whole. Each colour carries white label text at a contrast of at least 4.5. The label
-  names the kind wherever colour, dash, and arrowhead leave two kinds alike, since Comb has no
-  hollow triangle, no diamond, and no arrowhead at the source, and its font no glyph for one.
-  The package diagram draws each dependency as a dependency, its label «import» for a module's
+- **The UML example tells a relationship by its kind's family of colour.** The UML example draws
+  an edge in one colour, solid or dashed (`[6, 4]`), with a filled arrowhead (`"end"`) at its target
+  or none, and with a list of one label, `kind`, so it draws each kind of relationship as
+  `examples/uml/src/relationships.ts` lists it: association grey `#6b7280` solid without arrowhead;
+  directed association grey solid with one; generalization blue `#1d4ed8` solid with one;
+  realization blue dashed with one; dependency grey dashed with one and the label «use»; aggregation
+  and composition green `#15803d` solid without one, labelled «aggregation» and «composition» at
+  `t = 0.4`, nearer their source, which is the whole. Each colour carries white label text at a
+  contrast of at least 4.5. The label names the kind wherever colour, dash, and arrowhead leave two
+  kinds alike, since Comb has no diamond and no arrowhead at the source, and its font no glyph for
+  one. The package diagram draws each dependency as a dependency, its label «import» for a module's
   import of another and «use» for the bridge's load of the WebAssembly package and the bridge
   crate's use of the core; its legend names the dependency by both labels, since one naming «use»
-  alone leaves the diagram's most common edge, «import», unexplained.
+  alone leaves the diagram's most common edge, «import», unexplained. The state diagram draws a
+  transition grey, solid, with an open arrowhead (`"open"`), as UML 2.5.1 draws one, and a comment's
+  anchor grey, dashed, and without one; neither is listed in the legend. The activity diagram draws
+  a control flow and an object flow as a transition is drawn, an interrupting edge and the edge of
+  an exception handler the same with `lightning`, and a comment's anchor as the state diagram's;
+  none of them is listed in the legend. The use case diagram draws an association as the class
+  diagram does, with a multiplicity at each end, two labels at the path parameters 0.1 and 0.9 on
+  a pill of the edge's colour; an include and an extend grey and dashed with an open arrowhead,
+  labelled «include» and «extend»; and a generalization blue and solid with a hollow triangle
+  (`"hollow"`); none of the last three is listed in the legend.
 - **The UML example draws a state diagram in UML's node shapes.** Each kind of state takes the node
   shape UML gives it, so that a reader who knows UML reads the kind from the shape and no label
   names it. A pseudostate has no content and is as small as its node shape allows, so that it reads
-  as a mark on the path and never as a state. A transition the user connects docks on the outline at
-  both ends, as the seeded ones do, so that several transitions leave one state from different
+  as a mark on the path and never as a state. A state, a composite state, a submachine state, and a
+  state list are rounded rectangles; an initial pseudostate and a junction filled circles, a final
+  state a ringed circle, a terminate a cross, a choice a diamond, a fork and a join bars, an entry
+  point and an entry connection point reference hollow circles (an ellipse without content), and an
+  exit point and an exit connection point reference crossed circles. Shallow and deep history are
+  ellipses holding `H` and `H*`, as wide as their content makes them high, so that they are round.
+  A state's entry, do, and exit behaviours, internal transitions, and deferred triggers stand below
+  a separator, as UML 2.5.1 draws its compartment. A composite state is divided one above the other
+  into orthogonal regions, parted by dashed lines. A point rides the border of its composite state,
+  submachine state, or frame, and its name is a further border node beside it on the same side
+  without an outline, since no border node rides another. A transition that sends or receives a
+  signal runs as two edges through a pentagon or a notched rectangle naming the signal, its trigger
+  and guard on the first. A comment is a `note`, anchored by a dashed edge on a state, or by
+  `targetEdge` at `targetT` 0.5 on a transition. A transition the user connects docks on the outline
+  at both ends, as the seeded ones do, so that several transitions leave one state from different
   directions instead of meeting in the middle of one side (API-edges-dock-side-or-outline); a loop
   docks at both ends on the side the connection left by, since a loop on the outline is drawn above
   its node (API-edges-dock-side-or-outline) and not where the user dragged it.
-- **The UML example's rules of connection are a table of what they refuse.** `allows` in
-  `examples/uml/src/rules.ts` answers from the kinds of the two ends and of the relationship,
-  against a set of refused combinations, and its test writes that table out. Between a class, an
-  interface, an abstract class, and a package it refuses none, in either direction. Between a
-  state, an initial state, a final state, and a choice it refuses a transition into an initial
-  state and one out of a final state. A loop, an edge of a node with itself, is allowed only as a
-  transition of a state; the example's Comb allows loops for it, so its gesture offers them in
-  every diagram, and the table refuses every other. No case is needed of a class, a package, and
-  a state together, which never share a diagram. A diagram that adds kinds of node adds its
-  refusals here and to the table.
+- **The UML example draws an activity diagram in the building blocks settled for it.** Each kind
+  takes the building block `ACTIVITY_SHAPES` in `examples/uml/src/activity.ts` names, which the
+  activity diagram of a load and the notation diagram share, as tickets 12 and 14 of uml-diagrams
+  settled them with the human. An action and a call behavior action are rounded rectangles of their
+  name, the call behavior action's beside a rake icon the example registers. A send signal action is
+  a `pentagon`, an accept event action a `notched-rectangle`, an accept time event action an
+  `hourglass` above its time. An object node is a rectangle, and a data store and a central buffer
+  are rectangles with «datastore» and «centralBuffer». A decision is a `diamond`, and a fork and a
+  join are `bar`s given a height, upright. An interruptible region and an expansion region are
+  dashed rounded rectangles that hold nodes, the expansion region's mode its keyword. A pin is a
+  small rectangle riding its action, its name a further border node beside it without an outline, as
+  a state diagram's point. An expansion node is three small rectangles without content side by side
+  on its region's border, since one node with separators would be at least 64 high; the middle one
+  is the node, and the outer ones go with it. An activity parameter node is a rectangle of its name
+  riding the frame. A connector is an ellipse holding its letter, as wide as its content makes it
+  high, 90.51, so that it is round, as history is. The frame of the activity is divided across into
+  its partitions, regions named in their bands, and a partition may be divided across again into
+  nested ones. An initial node is a `circle`, an activity final a `ringed-circle`, a flow final a
+  `crossed-circle`, and a merge a `diamond`. A structured activity node is a dashed rounded
+  rectangle below «structured» that holds nodes; a conditional node and a loop node are the same
+  below «conditional» and «loop», divided down into regions named in their turned bands, the
+  clauses, or the setup, test, and body. A value pin's value and `{stream}` beside a streaming pin
+  are further border nodes without an outline, as a pin's name. A parameter set is a dashed border
+  node around its pins, added before them so that they are drawn above it; its white fill hides the
+  action's outline where it lies, and the names of its pins hide its own. A flow's label shows its
+  guard in brackets and its weight as `{weight=…}`. The example's `canMoveInto` allows a move into a
+  partition or a region and refuses one onto the canvas, out of the frame. A frame, a conditional
+  node, and a loop node the palette drops take the regions their building block names, an equal
+  share each: two partitions, two empty clauses, or the setup, test, and body. A parameter set the
+  palette drops lands on the nearest side of the action under the pointer, added before two new
+  input pins inside it; dropped on no action, it is refused, and the sidebar says "A parameter set
+  groups pins of an action; drop it on an action's side." The notation diagram's palette also
+  drops a partition. Onto the frame's heading, above the partitions, the frame takes one more,
+  named "Partition" and its number, 600 wide, and the last partition before it keeps its width.
+  Onto an empty partition, it divides that partition across into "Partition 1" and "Partition 2",
+  an equal share each. Onto a partition that holds elements, the sidebar says, for the user's,
+  "User holds elements; only an empty partition is divided."; off every frame, "A partition
+  divides an empty partition or adds one to the frame; drop it there." The sidebar edits a value
+  pin's value in a field and a pin's `{stream}` by a checkbox. It edits a conditional node's
+  clauses, and the frame's partitions beside its name, one name per line, depth first, a nested
+  partition indented, since Comb selects no region on its own (ARCH-regions-are-container-slots);
+  it refuses another count of lines, or an empty one, and says why. A drop on the band of a
+  partition divided again is refused, and the sidebar names the partitions to drop into.
+- **The UML example draws a use case diagram in the building blocks settled for it.** Each kind
+  takes the building block `USE_CASE_SHAPES` in `examples/uml/src/use-case-diagram.ts` names, as
+  ticket 13 of uml-diagrams settled them with the human. An actor is an `actor`, its name the
+  content below its drawing. A use case is an `ellipse` of its name, its extension points below a
+  separator under the caption "extension points". The subject is a rectangular container titled
+  with its name, and a comment a `note`. An extend's condition is a comment whose dashed anchor
+  ends on the extend by `targetEdge` at `targetT` 0.5. Actors stand outside the subject, as UML
+  2.5.1 draws them: a use case or a comment dropped over the subject lands in it, an actor on the
+  canvas, over the subject too, and the example's `canMoveInto` refuses an actor moved into the
+  subject. A connection adds an association between an actor and a use case, a generalization
+  between two actors, an include between two use cases, and from a comment its anchor; the
+  sidebar changes a relationship between two use cases among include, extend, and generalization,
+  offering only the kinds the table allows between its ends, and edits an association's
+  multiplicities. An extend changed to another kind loses its condition: the example asks Comb to
+  remove the comments anchored on it, and their anchors go with them.
+- **The UML example's rules of connection are a table of what they refuse.** `allows` and
+  `refusal` in `examples/uml/src/rules.ts` answer from the kinds of the two ends and of the
+  relationship, against a table of refused combinations, each with why, and its test writes that
+  table out. The sidebar says why where the table refuses a user's connection. Between a class, an
+  interface, an abstract class, and a package it refuses none, in either direction. Between the
+  state diagram's kinds it refuses, the first that holds saying why:
+  - a transition from or to a comment, which its anchor attaches;
+  - a transition from or to the frame of the state machine, which is no vertex;
+  - a transition into an initial pseudostate;
+  - a transition out of a final state or a terminate pseudostate;
+  - a transition from a fork to a pseudostate, since a fork's transitions enter states only
+    (UML 2.5.1 `fork_segment_state`);
+  - a transition from a pseudostate to a join, since only transitions from states enter one
+    (`join_segment_state`);
+  - a transition from a fork into a receive signal symbol, or from one into a join, since a receive
+    signal is its transition's trigger and a fork's or a join's segment has none
+    (`fork_segment_guards`, `join_segment_guards`);
+  - a transition from a pseudostate into a receive signal symbol, since a transition out of a
+    pseudostate has no trigger (`outgoing_pseudostates`), nor one out of an initial pseudostate
+    (`outgoing_from_initial`).
+
+  The sidebar offers no trigger on a transition out of a pseudostate, nor on one into a join, and no
+  guard on one out of an initial pseudostate or a fork, or into a join, by the same constraints.
+
+  A connection between the activity diagram's kinds adds an object flow where an end is an object
+  node, a control flow otherwise, from a comment its anchor, and from an action to an input pin an
+  exception handler, as the human decided on 2026-11-20. The table refuses, the first that
+  holds saying why, as the OCL of UML 2.5.1's metamodel states the constraints:
+  - a flow from or to a comment, which its anchor attaches;
+  - a flow from or to the frame of the activity, or an interruptible region, which groups nodes;
+  - a flow from or to a parameter set, which groups the parameters of its pins;
+  - a flow into an initial node (`no_incoming_edges`), or out of an activity final or a flow final
+    node (`no_outgoing_edges`);
+  - a flow into a value pin (`no_incoming_edges`);
+  - a flow into an output pin (`incoming_edges_structured_only`), or out of an input pin or a
+    value pin (`outgoing_edges_structured_only`), of an action;
+  - a flow into an input activity parameter node, or out of an output one (`no_edges`,
+    `no_outgoing_edges`, `no_incoming_edges`);
+  - a control flow from or to an object node, none of the example's being of a control type
+    (`object_nodes`);
+  - an object flow from or to an action, whose objects pass through its pins, or an expansion
+    region, whose objects pass through its expansion nodes (`no_executable_nodes`);
+  - an object flow out of an initial node (`control_edges`);
+  - an anchor that starts at no comment, or ends on a comment;
+  - an interrupting edge where the flow a connection adds between its ends is refused, for the same
+    reason, since it is that flow interrupting its region;
+  - an exception handler that starts at no action, the node it protects, or ends on no input pin,
+    the pin that takes the exception into its handler's body.
+
+  The sidebar's form of a flow changes its kind among the control flow, the object flow, the
+  interrupting edge, and the exception handler, offering those the table allows between the
+  flow's ends, as the human decided on 2026-11-20; the edge is then drawn as that kind, an
+  interrupting edge and an exception handler with `lightning`. An edge that becomes an exception
+  handler drops the label it had, since an exception handler carries none.
+
+  An object node, a pin, a value pin, a data store, a central buffer, an expansion node, and an
+  activity parameter node count as object nodes; the actions, the expansion region, and the
+  structured, conditional, and loop nodes as actions. The constraints that count edges, such as a
+  fork's one incoming edge or a merge's one outgoing edge, are no matter of two kinds, and the table
+  holds none of them.
+
+  A connection from a comment adds its anchor instead of a transition. The table refuses an anchor
+  that starts at no comment, and one that ends on anything but a state or a pseudostate: a signal
+  symbol, a comment, or the frame. The user anchors no comment on an edge; only the diagram's data
+  does.
+
+  Between the use case diagram's kinds the table refuses, the first that holds saying why:
+  - a relationship but an anchor from or to a comment, which its anchor attaches, or the subject,
+    which the example's relationships leave alone;
+  - an association between two actors, since UML 2.5.1 lets an actor have associations only to
+    use cases, components, and classes (`associations`), or between two use cases, since it lets
+    none join two use cases of the same subject (`no_association_to_use_case`), and the example's
+    use cases are all Comb's;
+  - an include or an extend but between two use cases, the ends UML 2.5.1 types both as;
+  - a generalization between an actor and a use case, since UML 2.5.1 lets a classifier specialize
+    only one of its own type or a more general one (`specialize_type`);
+  - an anchor that starts at no comment, or ends on a comment.
+
+  A loop is refused on every kind of the use case diagram: an include of a use case with itself by
+  `cannot_include_self`, a generalization of an actor or a use case with itself by
+  `no_cycles_in_generalization`, every other loop by the table above or the example's rule below.
+
+  A state, a composite state, a submachine state, a state list, and a final state count as states;
+  a signal symbol stands on a transition and counts as neither. A loop, an edge of a node with
+  itself, is allowed only as a transition of a state, a composite state, or a submachine state; the
+  example's Comb allows loops for it, so its gesture offers them in every diagram, and the table
+  refuses every other. No case is needed of a class, a package, and a state together, which never
+  share a diagram. A diagram that adds kinds of node adds its refusals here and to the table.
 - **What stays is pinned by assertions, not by unchanged files.** A spec's *Existing behaviour*
   or a ticket's criterion that existing tests run unchanged names the assertions that must hold,
   and expects a test that only follows a new field, argument, or signature to change with it;
@@ -155,7 +314,9 @@ skimmed. The design revision drops what prevented nothing
 - **A host application's copy follows what Comb took.** The UML example, like any host
   application that keeps its own copy of the graph, writes into that copy only after Comb took the
   change, from what `onChange` tells or after the call returned, never before the call: Comb may
-  refuse it, as a text past its limits, and the copy then holds what the canvas does not show.
+  refuse it, as a text past its limits, and the copy then holds what the canvas does not show. It
+  stores a node's kind and never works it out again from a text the user edits, such as a
+  stereotype, which once turned a class into a package.
 - **A stacked pull request is retargeted before its base branch goes.** A pull request based on
   another's branch, rather than on `main`, waits for that one to merge; the base merges without
   deleting its branch, the dependent one is moved to `main` and updated, and only then is the base's

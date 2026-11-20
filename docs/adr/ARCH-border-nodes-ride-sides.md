@@ -30,8 +30,8 @@ side, derive its world position in the engine from that node's box and node shap
 with that node.
 
 1. **Attachment.** A border node is a node of the graph data attached to one other node, which
-   is no border node. It is no container, lies in the same container as the node it is attached
-   to, and is never dropped into a container.
+   is no border node. It is no container and is not resizable. It lies in the same container as
+   the node it is attached to, and is never dropped into a container.
 2. **Place.** Its place is one of the four sides of the box of the node it is attached to and an
    offset along that side, in world units from the side's start, its left end or its top end. Its
    centre lies where the line through that point at right angles to the side meets the node's
@@ -39,7 +39,8 @@ with that node.
    or a diamond on the curve or the edge of the node shape. The engine keeps its world position from
    these, as it keeps the world positions of nodes in containers.
 3. **Moves and resizes.** A move of the node it is attached to moves it in the same call. A resize
-   keeps its side and its offset, the offset held within the side's length.
+   keeps its side and its offset, the offset held within the side's length. A load, an addition,
+   and an update hold an offset within the side's length the same way.
 4. **Drag.** A drag of a border node moves its place along the outline, to the point of the
    outline nearest the pointer, onto another side where that one is nearer. It never leaves the
    node it is attached to.
@@ -83,12 +84,13 @@ drag is reported, which the public interface decides; where on a border node an 
 
 Each test below cites this ADR with `Verifies: ARCH-border-nodes-ride-sides`.
 
-- A property test of `crates/engine/src/graph.rs` attaches border nodes at random sides and
+- A property test of `crates/engine/src/graph/borders.rs` attaches border nodes at random sides and
   offsets to nodes of every node shape, moves and resizes those nodes, drags the border nodes, and
   asserts after each step that each border node's centre lies on its node's outline within the
   accuracy of Q-4, on its side, and that removing a node removes its border nodes and their edges.
-- A browser test of the UML example drags a pin of an action around the action's corner and
-  asserts through inspection that it stays on the action's outline, then moves the action and
-  asserts that the pin and the edge docked on it follow. A test of the order is
-  [ARCH-engine-edits-nested-graph](ARCH-engine-edits-nested-graph.md)'s; this ADR's browser test
-  also asserts that a pin is drawn above an action added after its own action.
+- A browser test of `examples/metric-tree/` drags a pin of an action around the action's corner
+  and asserts through inspection that it stays on the action's outline. It then moves the action
+  and asserts that the pin and the edge docked on it follow. A test of the order is
+  [ARCH-engine-edits-nested-graph](ARCH-engine-edits-nested-graph.md)'s. This ADR's browser test
+  also asserts that a pin is drawn directly after its own action, and below a node added after
+  that action.

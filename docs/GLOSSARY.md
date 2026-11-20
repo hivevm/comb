@@ -12,7 +12,8 @@ to invent.
 List each synonym under _Avoid:_ as one to three words, without prose around them. A synonym
 inside a longer term of this glossary, such as "shape" in **Node shape**, is no synonym there.
 
-- **Arrowhead** — the triangle that marks where an edge ends, its tip at the target connector.
+- **Arrowhead** — the mark where an edge ends, its tip at the target's end: a filled triangle, two
+  open strokes, or a triangle's outline around a white fill.
 - **Border node** — a node attached to the outline of another node, which moves with it and
   stays on its outline, such as a pin or an entry point in UML.
 - **Bridge** — the boundary across which TypeScript and the engine exchange data.
@@ -50,14 +51,16 @@ inside a longer term of this glossary, such as "shape" in **Node shape**, is no 
   Interchange names them together (`DiagramElement`); an edge label belongs to its edge. Not a
   content element, which is a piece of a node's content; "element" alone names a content element.
   _Avoid:_ figure, shape.
-- **Dock** — what an end of an edge docks on: the connector of one of the node's four sides, or
-  its outline. An edge records one for its source and one for its target.
-- **Edge** — a line drawn from one node to another, each end docked at the connector of a side or
-  on the node's outline. A connection is the gesture that makes one, not the edge.
+- **Dock** — what an end of an edge on a node docks on: the connector of one of the node's four
+  sides, or its outline. An edge records one for each end on a node.
+- **Edge** — a line drawn between two ends, each a node, docked at the connector of a side or on
+  the node's outline, or a point of another edge at a path parameter. A connection is the gesture
+  that makes one, not the edge.
   _Avoid:_ link, wire.
 - **Edge mesh** — the triangles of all edges in the viewport and its culling margin, which the
   engine computes and the canvas draws in one call.
-- **Edge label** — text attached to an edge, placed by a path parameter and a label offset.
+- **Edge label** — text attached to an edge, placed by a path parameter and a label offset. An edge
+  carries a list of them, each named by an identifier unique within its edge.
 - **Engine** — the Rust code compiled to WebAssembly that computes geometry and runs graph
   algorithms.
   _Avoid:_ core, backend.
@@ -73,22 +76,28 @@ inside a longer term of this glossary, such as "shape" in **Node shape**, is no 
 - **Level of detail** — how much of the graph the canvas draws at the current zoom: near draws
   nodes with their whole content and edge labels, middle nodes with their titles, far nodes as
   plain boxes and edges as thin lines, without text.
+- **Lightning bolt** — the zigzag across an edge's path that an edge may draw in its path's
+  middle.
 - **Loop** — an edge from a node back to itself.
   _Avoid:_ self-edge in prose, self-loop, reflexive edge.
 - **Mesh budget** — the most vertices the edge mesh of one query may hold.
 - **Moving layer** — what a drag, or an edit at the far level, draws above the edges and the
-  particles while the scene keeps its query: the edges at the dragged nodes and the added edges,
-  and at the far level the dragged and the added nodes' particles.
+  particles while the scene keeps its query: the edges at the dragged nodes, the edges that end on
+  them, and the added edges, and at the far level the dragged and the added nodes' particles, a
+  container's above the particles of containers.
 - **Node** — an item on the canvas, drawn in its node shape, that stands for one element of the
   host application's graph. A vertex is a point of the edge mesh, never a node.
   _Avoid:_ graph vertex, block.
 - **Node shape** — the form, from a closed set the engine knows, in which a node is drawn and hit:
-  a rectangle, a rounded rectangle, an ellipse, a circle, a ringed circle, a diamond, or a bar.
+  a rectangle, a rounded rectangle, an ellipse, a circle, a ringed circle, a diamond, a bar, a
+  pentagon, a notched rectangle, a note, a frame, a crossed circle, a cross, an actor, or an
+  hourglass.
   It is a property of a node, not a diagram element of its own.
   _Avoid:_ shape alone, figure, symbol.
-- **Node kind** — what a node of the UML example is, a class, an interface, an abstract class, a
-  package, a state, an initial state, a final state, or a choice, set when the node is created and
-  kept with its classifier or its state; the rules of connection ask it. The example's record of a
+- **Node kind** — what a node of the UML example is: a classifier kind (a class, an interface, an
+  abstract class, or a package), a notation element of the state diagram, an activity node, or a
+  node of the use case diagram (an actor, a use case, a subject, or a comment), set when the node is
+  created and kept with its record; the rules of connection ask it. The example's record of a
   classifier also carries a package of the package diagram, its members none, though UML does not
   count a package as a classifier.
 - **Node content** — the host application's description of what a node shows, as a list of
@@ -99,25 +108,31 @@ inside a longer term of this glossary, such as "shape" in **Node shape**, is no 
   A progress bar is divided into *segments*, each a fraction of the bar in a colour, from its
   left; the rest of the bar is its *track*. A *metric* is a caption above a value and its
   *trend*, a text with a direction, up, down, or flat, drawn as an arrow, and a colour.
-- **Outline** — the border of a node's shape, inside which the node is hit; an edge's end that
-  *docks on the outline* lies where the line towards the edge's other end crosses it, instead of
-  at a connector.
+- **Outline** — the border of a node's shape, inside which the node is hit, drawn solid, dashed,
+  or not at all; an edge's end that *docks on the outline* lies where the line towards the edge's
+  other end crosses it, instead of at a connector.
 - **Palette** — the host application's HTML list of node types, from which the user drags new nodes
   onto the canvas.
 - **Path parameter** — a number `t` from 0.0 to 1.0 that marks a point along an edge's path, from
-  its source connector to its target connector.
+  its source end to its target end.
 - **Query origin** — the world point near a query's rectangle relative to which the query hands
   over its vertex positions and label points, and at whose screen point the shell draws the world.
 - **Region** — one of the parts a node is divided into, side by side or one above the other, each a
-  container of its own, such as an activity partition or an orthogonal region in UML.
+  container of its own, such as an activity partition or an orthogonal region in UML. A node so
+  divided is a *divided node*; it divides `"across"`, its regions side by side, or `"down"`, one
+  above the other. The *line between regions* is the line between two neighbouring regions, which
+  the user drags to share their size anew. A named region draws its name in its *name band*, a
+  strip along its start.
 - **Resize handle** — a mark on a side or corner of a selected node that the user drags to resize
   the node.
 - **Runner kind** — the CPU model a benchmark run records of the machine it ran on; runs are
   compared only with the baseline of their own kind and their graph.
-- **Relationship kind** — what a relationship of a UML diagram means, one of association,
-  directed association, generalization, realization, dependency, aggregation, and composition of
-  a class or a package diagram, and the transition of a state diagram; the UML example tells each
-  by the colour, dash pattern, arrowhead, and edge label of its edge.
+- **Relationship kind** — what a relationship of a UML diagram means, one of association, directed
+  association, generalization, realization, dependency, aggregation, and composition of a class or a
+  package diagram, the transition and a comment's anchor of a state diagram, and the control flow,
+  object flow, interrupting edge, exception handler, and anchor of an activity diagram, and the
+  association, include, extend, generalization, and anchor of a use case diagram; the UML example
+  tells each by the colour, dash pattern, arrowhead, and edge label of its edge.
 - **Rank** — the place of a node in the order nodes are drawn and hit, kept by the engine; a load
   ranks nodes by slot, and a node added takes the highest rank.
 - **Stereotype** — the guillemet-quoted word above the name of a UML element, such as «interface» or
@@ -125,6 +140,8 @@ inside a longer term of this glossary, such as "shape" in **Node shape**, is no 
   which never changes the node kind.
 - **Selection** — the one diagram element the user has picked on the canvas, which the sidebar
   edits and a delete removes.
+- **Separator** — a row of node content that holds no element and is drawn as a line across the
+  node, such as the line between a UML class's attributes and its operations.
 - **Shaped graph** — the graph the benchmark measures beside the metric tree, named `shaped`: the
   metric tree's nodes and edges in the same columns and order, the nodes in the node shapes in turn,
   each centred on its row and column, the rows spaced for the tallest node so that no two nodes
@@ -143,9 +160,10 @@ inside a longer term of this glossary, such as "shape" in **Node shape**, is no 
   which slots a rectangle meets.
 - **Trap** — WebAssembly aborting a call of the engine, as when its memory runs out; after a trap
   the engine is lost for the page, and Comb refuses every later call that needs it.
-- **Veto** — a callback of the host application that Comb asks before it makes a connection or a
-  deletion of the user's, and that allows a deletion only by returning `true`, a connection only by
-  returning the new edge's identifier.
+- **Veto** — a callback of the host application that Comb asks before it makes a connection, a
+  deletion, or a move into a container of the user's (`canConnect`, `canDelete`, `canMoveInto`); it
+  allows a deletion or a move only by returning `true`, a connection only by returning the new
+  edge's identifier.
 - **Viewport** — the part of the world that the canvas currently shows, given by pan and zoom.
 - **World limit** — how far from the world's origin the graph may lie, 2^120 world units on each
   axis: every node, its far side included, and every label offset; graph data beyond it is

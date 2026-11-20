@@ -59,7 +59,8 @@ side of the node.
 
 - **Ends:** an end names a node by `source` or `target`, any node at any depth, a container or a
   border node among them, or an edge by `sourceEdge` or `targetEdge` with a path parameter
-  `sourceT` or `targetT` from 0 to 1. Each end names one or the other; the bridge crate refuses an
+  `sourceT` or `targetT` from 0 to 1. The TypeScript type of each end is a union of the two. Each
+  end names one or the other; the bridge crate refuses an
   end that names both, neither, or a path parameter outside the range, and an edge that ends on
   an edge one of whose ends lies on an edge, on itself, or on an edge of its own ends. Removing an
   edge removes every edge that ends on it, in the same call, and a removal reports them all.
@@ -73,10 +74,19 @@ side of the node.
 - **An end on an edge** lies at the point of that edge's path at its path parameter, and its
   control point lies on that path's normal there, on the side of the edge's other end, at the
   distance rule of the path between two nodes. It moves as that edge's path moves.
-- **An end on a container toward a node it holds** that docks on the outline lies where the line
-  from the container's centre through the centre of the node at the other end, continued past
-  it, crosses the container's outline. An end on a side docks at that side's connector, as on any
-  node.
+- **An end on a container toward a node it holds:**
+  - This rule covers an edge between a container and a node it holds, at any depth.
+  - Both ends of that edge dock on the outline.
+  - The container's end lies where the line from the container's centre through the held node's
+    centre, continued past it, crosses the container's outline.
+  - The held node's end lies where that line crosses the held node's outline on the side of the
+    container's end.
+  - Each control point lies on that line between the two ends, half the distance between them
+    from its own end.
+  - The path therefore runs straight and stays inside the container.
+  - Where the two centres coincide, the line runs to the right, along +x.
+  - An end on a side docks at that side's connector, as on any node, and the path between two
+    nodes holds; where the two centres coincide, its end on the outline looks to the right.
 - **The path between two nodes:**
   - With both ends on a side, the path is API-one-connector-per-side's. It starts at the connector
     of the source's
@@ -92,14 +102,17 @@ side of the node.
 - **Edge labels:** `EdgeData.label` gives way to `labels`, a list of edge labels, each with an
   identifier unique within its edge, its text, its path parameter, its label offset, and its
   background colour, each placed and kept as G-6 says. `updateEdge` sets the whole list, or clears
-  it with `null`. A label drag moves the one label it pressed.
+  it with `null`. An edge carries at most 8 labels. A label without its own background is drawn
+  in its edge's colour as that colour stands, and Comb tells it without one. A label drag moves
+  the one label it pressed.
 - **Lightning bolt:** `EdgeData` gains an optional `lightning`, off by default. Where it is on, the
   engine draws the path's middle, the part between the path parameters 0.45 and 0.55, as a zigzag
   of two turns across the path, 12 world units wide, and the rest of the path as before.
 - **Arrowheads:** `EdgeData.arrow` takes `"end"`, the filled triangle at the target as before and
   the default, `"open"`, two strokes of the edge's width meeting at the target, `"hollow"`, a
   triangle at the target drawn as its outline in the edge's colour around a white fill, or
-  `"none"`. The engine meshes each as it meshes the filled one, its tip at the target's end, and
+  `"none"`. The engine meshes each as it meshes the filled one, its tip at the target's end, the
+  line of an edge with an open arrowhead running on to the tip, and
   the bridge crate refuses another value as `invalidField`, naming the field and the four values.
 - **Loops:**
   - `CombOptions` gains `allowLoops`, off by default. Where it is off, the user's connection and
@@ -255,14 +268,15 @@ Each test below cites this decision with `Verifies:` and its identifier.
   - without, they assert none.
 
   They also `Verifies: G-3`.
-- **Ends on edges, labels, lightning:** tests in `crates/engine/src/geometry.rs` assert that an end
-  on an edge lies on that edge's path at its path parameter within the precision of Q-4 and follows
-  it as its nodes move, that an end on a container toward a node it holds lies on the container's
-  outline beyond that node, that an open and a hollow arrowhead have their tips at the target's end
-  within the precision of Q-4, and that a lightning bolt's turns lie between the path parameters
-  0.45 and 0.55. The property test of the bridge crate generates ends on edges, chains and cycles
-  among them, and lists of labels. A browser test of the UML example asserts that an extend's
-  condition stays anchored on the extend as its use cases move, and that an association draws a
-  multiplicity at each end; that removing an edge removes the edges that end on it and reports them;
-  and that dragging one of an edge's two labels moves that label alone and delivers `labelMoved`
-  naming it.
+- **Ends on edges, labels, lightning:** a test in `crates/engine/src/graph/edges.rs` asserts that an
+  end on an edge lies on that edge's path at its path parameter within the precision of Q-4 and
+  follows it as its nodes move. Tests in `crates/engine/src/geometry.rs` assert that an end on a
+  container toward a node it holds lies on the container's outline beyond that node, and that a
+  lightning bolt's turns lie between the path parameters 0.45 and 0.55. Tests in
+  `crates/engine/src/stroke.rs` assert that an open and a hollow arrowhead have their tips at the
+  target's end within the precision of Q-4. The property test of the bridge crate generates ends on
+  edges, chains and cycles among them, and lists of labels. Browser tests of the UML example assert
+  that an extend's condition stays anchored on the extend as its use cases move, and that an
+  association draws a multiplicity at each end. Browser tests in `examples/metric-tree/e2e/` assert
+  that removing an edge removes the edges that end on it and reports them, and that dragging one of
+  an edge's labels moves that label alone and delivers `labelMoved` naming it.

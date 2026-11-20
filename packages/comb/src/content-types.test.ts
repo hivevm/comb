@@ -83,7 +83,7 @@ describe("the type of node content", () => {
           return READ.metric(element);
       }
     };
-    expect(node.content.flat().map(read)).toEqual([
+    expect((node.content as ContentElement[][]).flat().map(read)).toEqual([
       "title: A (1)",
       "details: Details (2)",
       "#22c55e: Done (1)",

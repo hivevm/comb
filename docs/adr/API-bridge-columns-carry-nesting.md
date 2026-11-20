@@ -248,6 +248,7 @@ reads and writes as typed-array views created anew after every engine call.
     node's rows in their order and each row's elements in theirs:
     - per node, the boundaries of its rows, a `Uint32Array` of one more than there are nodes;
     - per row, the boundaries of its elements, a `Uint32Array` of one more than there are rows;
+    - per row, whether it is a separator, a `Uint8Array`, a separator holding no element;
     - per element, its kind's code, a `Uint8Array`; its weight, a `Float64Array`; a text's role's
       code and a trend's direction's code, each a `Uint8Array`; and a badge's or a trend's colour,
       a `Float64Array`;
@@ -318,6 +319,10 @@ reads and writes as typed-array views created anew after every engine call.
     its role's code
     that of body, its colour 0, and its text in `contentTexts` its registered name, whole, which the
     shell draws as the image registered under it and never as text;
+  - at the near and the middle level, the dashes of the found nodes' dashed outlines: per found
+    node, in their order, the boundaries of its dash segments as `Uint32Array`, and each segment's
+    two ends relative to its node as `Float32Array`, laid by the engine along the outline; a
+    separator's line crosses as a placed piece of its row, its rectangle relative to its node;
   - the edge mesh of that query: vertex positions, distances along the path, and dash patterns as
     `Float32Array`, colours as RGBA bytes in `Uint32Array`, and triangle indices as `Uint32Array`;
   - for inspection, the slots of the edges the query found as `Uint32Array`, with the ends of each
@@ -329,6 +334,9 @@ reads and writes as typed-array views created anew after every engine call.
   that reach of the rectangle. Beside its buffers, a query hands back the detail of its mesh as an
   enumeration, complete or coarsened
   ([REN-virtualized-nested-scene](REN-virtualized-nested-scene.md)), and its origin.
+- **A node's inner rectangle:** `innerOf(slot)` hands back the rectangle a node lays its content
+  out in, a frame's tab for a frame, as structured data. The engine alone measures the fonts a
+  frame's tab depends on, so the shell draws the tab by it.
 - **Origin:** each query chooses a world point near its rectangle. The vertex positions and label
   points it writes are their `f64` values less that point, rounded to `f32` only then, so their
   rounding is that of their distance from the rectangle. The origin is the rectangle's centre
@@ -663,7 +671,7 @@ Each test below cites this ADR with `Verifies: API-bridge-columns-carry-nesting`
   Plane among them, and that two identifiers cut inside a surrogate pair side by side are refused
   for their length. A type test in `packages/comb/src/bridge/snapshot-only.test.ts` pins the
   generated parameter types of the engine's `loadGraph`, pieces of strings and typed arrays, no
-  `GraphBatch`, and no title or height column, so that a load cannot be handed over as a
+  `GraphBatch`, and no title column, so that a load cannot be handed over as a
   serde type. A test in `packages/comb/src/bridge/bridge.test.ts` cuts columns with a small bound
   on a piece and asserts that every piece ends where a value ends and that the values are read
   back exactly; tests in `crates/engine-wasm/src/graph_data.rs` assert that a piece ending inside
@@ -716,12 +724,13 @@ Each test below cites this ADR with `Verifies: API-bridge-columns-carry-nesting`
   the median first frame of the runner's kind exceeds its baseline under `bench/baselines/` by more
   than the margin, cites this ADR and [DEV-bun-vite-wasm-pack](DEV-bun-vite-wasm-pack.md);
   on the AMD EPYC 7763 its
-  baseline holds 378.6 ms. It cites no Q-2, which is defined on the reference machine. A number of
+  baseline holds 458 ms. It cites no Q-2, which is defined on the reference machine. A number of
   the workflow decides the goal, not a test of the suite: the workflow runs weekly and on demand, so
   a load that grows slow again is found at its next run, not in the pull request.
 - **The columns of nesting:** the property test of the bridge crate generates the fields G-14 to
   G-19 add, values of another type, a container that names no container, a cycle, a border node
-  attached to a border node, regions that do not add up, and an end on an edge with a path
-  parameter outside 0 to 1 among them, and asserts each refusal and that a valid load crosses
-  them unchanged; a test asserts that a height below the content's is raised to it, and a browser
+  attached to a border node, and an end on an edge with a path parameter outside 0 to 1 among
+  them, and asserts each refusal and that a valid load crosses them unchanged; it generates
+  regions that do not add up and asserts that the divided node grows or its last region takes the
+  rest; a test asserts that a height below the content's is raised to it, and a browser
   test that a query returns containers and the other nodes as two lists.

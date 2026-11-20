@@ -1,7 +1,8 @@
-// The drag of an edge's label along its edge (G-6): the engine places the label nearest the
-// pointer, and the release records, once, where the drag left it
-// (API-edits-reported-as-typed-changes).
+// The drag of an edge's label along its edge (G-6): the engine places the one label pressed, of the
+// edge's list, nearest the pointer, and the release records, once, where the drag left it
+// (API-edits-reported-as-typed-changes, API-edges-dock-nodes-or-edges).
 import type { Hit } from "../bridge";
+import type { GraphView } from "../store";
 import type { Context, Gesture } from "./gesture";
 import { toWorld } from "../store/viewport";
 
@@ -15,10 +16,14 @@ export function labelDrag(
   pressY: number,
 ): Gesture | undefined {
   const edge = hit.kind === "label" ? store.getState().edges[hit.slot] : undefined;
-  const point = hit.kind === "label" ? bridge.labelPoint(hit.slot) : undefined;
-  if (hit.kind !== "label" || !edge || !point) return undefined;
-  const { slot } = hit;
+  const point = hit.kind === "label" ? bridge.labelPoint(hit.slot, hit.label) : undefined;
+  if (hit.kind !== "label" || !edge?.labels?.[hit.label] || !point) return undefined;
+  const { slot, label: index } = hit;
   const { id } = edge;
+  const label = edge.labels[index]!.id;
+  /** Whether the edge in `slot` is still the one pressed, its label at `index` still the one. */
+  const held = (state: Pick<GraphView, "edges">) =>
+    state.edges[slot]?.id === id && state.edges[slot]?.labels?.[index]?.id === label;
   store.getState().select({ kind: "edge", id });
   const pressed = toWorld(store.getState().viewport, pressX, pressY);
   const grab = { x: pressed.x - point.x, y: pressed.y - point.y };
@@ -29,18 +34,16 @@ export function labelDrag(
       const at = toWorld(store.getState().viewport, x, y);
       // A point beyond any finite world point, which the engine would refuse, moves nothing.
       if (!Number.isFinite(at.x - grab.x) || !Number.isFinite(at.y - grab.y)) return;
-      placed = bridge.moveLabel(slot, at.x - grab.x, at.y - grab.y);
+      placed = bridge.moveLabel(slot, index, at.x - grab.x, at.y - grab.y);
       store.getState().positionsMoved();
     },
     end() {
-      const held = store.getState().edges[slot];
-      if (placed && held?.id === id && held.label)
-        store.getState().labelMoved(id, placed.t, placed.offset);
+      if (placed && held(store.getState()))
+        store.getState().labelMoved(id, index, placed.t, placed.offset);
     },
-    // A load, a removal of the edge, or a label the host cleared, which is taken as its edge
-    // would be.
-    taken: (state) =>
-      state.change?.kind === "loaded" || state.edges[slot]?.id !== id || !state.edges[slot]?.label,
+    // A load, a removal of the edge, or labels the host replaced without the one pressed at its
+    // place, which is taken as its edge would be.
+    taken: (state) => state.change?.kind === "loaded" || !held(state),
     drop() {},
   };
 }

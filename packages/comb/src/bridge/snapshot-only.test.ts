@@ -14,10 +14,15 @@ type Same<A, B> =
 // The engine's `loadGraph` takes a load's nodes and edges as columns, strings in pieces and typed
 // arrays its glue copies whole, or plain arrays of numbers, which the glue of wasm-bindgen 0.2.130
 // takes as well, and no `GraphBatch` and no `EdgeList` (API-bridge-takes-serde-and-columns): its
-// generated parameters, pinned, the column of node shapes and the content columns of `text`,
-// `action`, `badge`, `progress`, and `metric` among them and no title or height column. A refused
-// field crosses as the code of its `NodeField` or `EdgeField`, a plain number, and a shape of
-// content with its row and column.
+// generated parameters, pinned, the column of node shapes, the columns of nesting
+// (API-bridge-columns-carry-nesting), the height a node's data gives with its byte of presence,
+// whether it is resizable, the division of each node and the columns of the regions, the columns of
+// border nodes (ARCH-border-nodes-ride-sides), the outlines (REN-node-shapes-cover-uml), and the
+// content columns of `text`, `action`, `badge`, `progress`, and `metric` and the separators of rows
+// among them and no title
+// column. A refused field crosses as the code of its `NodeField` or `EdgeField`, a plain number,
+// a shape of content with its row and column, and a field of an edge label with the label's place
+// (API-edges-dock-nodes-or-edges).
 const columns: Same<
   Parameters<Engine["loadGraph"]>,
   [
@@ -26,9 +31,37 @@ const columns: Same<
     x: Float64Array | number[],
     y: Float64Array | number[],
     width: Float64Array | number[],
+    hasHeight: Uint8Array | number[],
+    height: Float64Array | number[],
     shape: Uint8Array | number[],
+    outline: Uint8Array | number[],
+    outlineDash: Float64Array | number[],
+    outlineGap: Float64Array | number[],
+    hasContainer: Uint8Array | number[],
+    container: Uint32Array | number[],
+    isContainer: Uint8Array | number[],
+    resizable: Uint8Array | number[],
+    divide: Uint8Array | number[],
+    regionIds: string[],
+    regionIdBounds: Uint32Array | number[],
+    regionOf: Uint32Array | number[],
+    regionSize: Float64Array | number[],
+    regionDivide: Uint8Array | number[],
+    regionHasDash: Uint8Array | number[],
+    regionDash: Float64Array | number[],
+    regionGap: Float64Array | number[],
+    regionNamed: Uint8Array | number[],
+    regionNames: string[],
+    regionNameBounds: Uint32Array | number[],
+    hasAttached: Uint8Array | number[],
+    attached: Uint32Array | number[],
+    side: Uint8Array | number[],
+    offset: Float64Array | number[],
+    beside: Uint8Array | number[],
+    attachedMissing: string | null | undefined,
     rowBounds: Uint32Array | number[],
     elementBounds: Uint32Array | number[],
+    separators: Uint8Array | number[],
     kinds: Uint8Array | number[],
     weights: Float64Array | number[],
     roles: Uint8Array | number[],
@@ -51,12 +84,18 @@ const columns: Same<
     edgeIdBounds: Uint32Array | number[],
     sources: string[],
     sourceBounds: Uint32Array | number[],
+    sourceOnEdge: Uint8Array | number[],
+    sourceT: Float64Array | number[],
     targets: string[],
     targetBounds: Uint32Array | number[],
-    hasLabel: Uint8Array | number[],
-    labels: string[],
+    targetOnEdge: Uint8Array | number[],
+    targetT: Float64Array | number[],
     labelBounds: Uint32Array | number[],
-    labelTexts: Uint8Array | number[],
+    labelIds: string[],
+    labelIdBounds: Uint32Array | number[],
+    labelTexts: string[],
+    labelTextBounds: Uint32Array | number[],
+    labelTextsValid: Uint8Array | number[],
     labelT: Float64Array | number[],
     labelOffset: Float64Array | number[],
     hasBackground: Uint8Array | number[],
@@ -66,10 +105,12 @@ const columns: Same<
     dash: Float64Array | number[],
     gap: Float64Array | number[],
     arrow: Uint8Array | number[],
+    lightning: Uint8Array | number[],
     sourceSide: Uint8Array | number[],
     targetSide: Uint8Array | number[],
     edgeRefusedAt?: number | null,
     edgeRefusedField?: number | null,
+    edgeRefusedLabel?: number | null,
   ]
 > = true;
 
@@ -107,7 +148,7 @@ test("the bridge refuses graph data and patches that are no snapshot at compile 
 
 test("the engine takes a load's nodes and edges as columns, pinned at compile time", () => {
   // Verifies: API-bridge-takes-serde-and-columns
-  // The type of a title or height column among them would make `columns` false, which no `true`
-  // is assignable to.
+  // The type of a title column among them would make `columns` false, which no `true` is
+  // assignable to.
   expect(columns).toBe(true);
 });

@@ -193,7 +193,13 @@ export function work(comb: Comb): Work {
     for (const buffer of mesh) buffer.on("change", () => (fresh.bufferResizes += 1));
     counted.set(comb, (counts = fresh));
   }
-  const viewsCreated = scene.nodes.created + scene.labels.created + scene.particles.created;
+  const { nodes, labels, particles, containerNodes, containerParticles } = scene;
+  const viewsCreated =
+    nodes.created +
+    labels.created +
+    particles.created +
+    containerNodes.created +
+    containerParticles.created;
   return { ...counts, viewsCreated };
 }
 
@@ -264,7 +270,8 @@ export function gpuEdgeIndices(comb: Comb): Uint32Array {
  *  alone, without the text of the others, whose fonts differ between machines. */
 export function showLayers(comb: Comb, layers: { nodes?: boolean; edgeLabels?: boolean }): void {
   const scene = sceneOf(comb);
-  if (layers.nodes !== undefined) scene.nodes.visible = scene.particles.visible = layers.nodes;
+  if (layers.nodes !== undefined)
+    scene.nodes.visible = scene.particles.visible = scene.containers.visible = layers.nodes;
   if (layers.edgeLabels !== undefined) scene.labels.visible = layers.edgeLabels;
 }
 

@@ -2,6 +2,7 @@
 import {
   createComb,
   type Comb,
+  type ContainerMove,
   type Deletion,
   type Proposal,
   type EdgeData,
@@ -9,6 +10,7 @@ import {
   type EngineSource,
   type GraphChange,
   type GraphData,
+  type RegionData,
   type Selection,
 } from "comb";
 import engineUrl from "comb/engine.wasm?url";
@@ -83,6 +85,9 @@ declare global {
     /** The veto of the user's connections a browser test sets; without one, the example names
      *  each new edge after its ends. Its result is handed to Comb as it is. */
     canConnect?: (proposal: Proposal) => unknown;
+    /** The veto of the user's moves into a container a browser test sets; without one, every
+     *  move is allowed. Its result is handed to Comb as it is. */
+    canMoveInto?: (move: ContainerMove) => unknown;
     /** Loads `graph` as the example's own, which its sidebar edits, for a browser test. */
     useGraph: (graph: GraphData) => void;
     /** The example's copy of the graph, kept from what `onChange` tells. */
@@ -146,6 +151,7 @@ const comb = await createComb(element("canvas"), {
   // as the shaped graph does, whose nodes have loops (PERF-benchmark-measures-named-graph).
   allowLoops: query.get("loops") === "allow" || graphName === "shaped",
   canDelete: (deletion) => (window.canDelete ? window.canDelete(deletion) : true) as boolean,
+  canMoveInto: (move) => (window.canMoveInto ? window.canMoveInto(move) : true) as boolean,
   // `?connect=none` gives Comb no veto of connections, so that the user connects nothing.
   ...(query.get("connect") === "none"
     ? {}
@@ -372,7 +378,7 @@ function showEdge(edge: EdgeData): void {
   edgeColor.value = `#${color.toString(16).padStart(6, "0")}`;
   edgeDash.value = edge.dash ? "dashed" : "solid";
   edgeArrow.checked = edge.arrow !== "none";
-  edgeLabel.value = edge.label?.text ?? "";
+  edgeLabel.value = edge.labels?.[0]?.text ?? "";
 }
 
 /** Changes the selected edge by `patch` through `updateEdge`; the example's graph follows from
@@ -384,12 +390,13 @@ function changeEdge(patch: EdgePatch): void {
 const nodeOf = (id: string) => graph.nodes.find((candidate) => candidate.id === id);
 const edgeOf = (id: string) => graph.edges.find((candidate) => candidate.id === id);
 
-/** `edge` with `patch` merged, as Comb merges it: `null` clears a dash or a label. */
+/** `edge` with `patch` merged, as Comb merges it: `null` clears a dash or the labels, which a
+ *  patch replaces whole. */
 function patched(edge: EdgeData, patch: EdgePatch): void {
-  const { dash, label, ...rest } = patch;
+  const { dash, labels, ...rest } = patch;
   Object.assign(edge, rest);
   if (dash !== undefined) edge.dash = dash ?? undefined;
-  if (label !== undefined) edge.label = label ?? undefined;
+  if (labels !== undefined) edge.labels = labels ?? undefined;
 }
 
 /** Drops from the copy the nodes and edges a removal names. */
@@ -398,6 +405,19 @@ function removed(nodes: readonly string[], edges: readonly string[]): void {
   graph.nodes = graph.nodes.filter(({ id }) => !goneNodes.has(id));
   for (const id of nodes) fields.delete(id);
   graph.edges = graph.edges.filter(({ id }) => !goneEdges.has(id));
+}
+
+/** Gives `regions`, at every depth, the sizes `sizes` names by identifier, as Comb told them. */
+function sized(
+  regions: RegionData[] | undefined,
+  sizes: readonly { readonly id: string; readonly size: number }[],
+): void {
+  // A walk that does not recurse, so that a tree of any depth takes its sizes.
+  const pending = [...(regions ?? [])];
+  for (let region = pending.pop(); region; region = pending.pop()) {
+    region.size = sizes.find(({ id }) => id === region!.id)?.size ?? region.size;
+    for (const inner of region.regions ?? []) pending.push(inner);
+  }
 }
 
 /** How the example's copy of the graph takes each kind of change, as a host application that
@@ -419,9 +439,26 @@ const MIRROR: { [K in GraphChange["kind"]]: (change: Extract<GraphChange, { kind
       fields.delete(id);
       if (node && id === selected) showNode(node.content, undefined);
     },
-    nodeMoved: ({ id, x, y }) => {
+    nodeMoved: (change) => {
+      const node = nodeOf(change.id);
+      if (!node) return;
+      // A border node keeps its side and offset (ARCH-border-nodes-ride-sides).
+      if ("side" in change)
+        return void Object.assign(node, { side: change.side, offset: change.offset });
+      const { x, y, container } = change;
+      Object.assign(node, { x, y });
+      if (container === null) delete node.container;
+      else node.container = container;
+    },
+    nodeResized: ({ id, x, y, width, height, moved, regions }) => {
       const node = nodeOf(id);
-      if (node) Object.assign(node, { x, y });
+      if (node) Object.assign(node, { x, y, width, height });
+      for (const at of moved) Object.assign(nodeOf(at.id) ?? {}, { x: at.x, y: at.y });
+      sized(node?.regions, regions);
+    },
+    regionsMoved: ({ node, regions, moved }) => {
+      sized(nodeOf(node)?.regions, regions);
+      for (const at of moved) Object.assign(nodeOf(at.id) ?? {}, { x: at.x, y: at.y });
     },
     nodesRemoved: ({ nodes, edges }) => removed(nodes, edges),
     edgeAdded: ({ edge }) => void graph.edges.push({ ...edge }),
@@ -430,9 +467,12 @@ const MIRROR: { [K in GraphChange["kind"]]: (change: Extract<GraphChange, { kind
       if (edge) patched(edge, patch);
     },
     edgesRemoved: ({ edges }) => removed([], edges),
-    labelMoved: ({ edge: id, t, offset }) => {
+    labelMoved: ({ edge: id, label: moved, t, offset }) => {
       const edge = edgeOf(id);
-      if (edge?.label) edge.label = { ...edge.label, t, offset };
+      if (edge?.labels)
+        edge.labels = edge.labels.map((label) =>
+          label.id === moved ? { ...label, t, offset } : label,
+        );
     },
   };
 
@@ -442,12 +482,13 @@ function mirror(change: GraphChange): void {
   counted();
 }
 
-/** The label the sidebar's text gives the selected edge: its own moved to the new text, a new one
- *  in the middle of the edge, or none for no text. */
-function labelFor(text: string): EdgeData["label"] | null {
+/** The labels the sidebar's text gives the selected edge: a list of one, its own label moved to
+ *  the new text, or a new one in the middle of the edge; or none for no text. */
+function labelsFor(text: string): EdgeData["labels"] | null {
   if (text === "") return null;
   const color = selectedEdge?.color ?? EDGE_GREY;
-  return { t: 0.5, offset: 0, background: color, ...selectedEdge?.label, text };
+  const own = selectedEdge?.labels?.[0];
+  return [{ id: "correlation", t: 0.5, offset: 0, background: color, ...own, text }];
 }
 
 /** The types the palette offers. */
@@ -531,7 +572,7 @@ edgeDash.addEventListener("change", () =>
 edgeArrow.addEventListener("change", () =>
   changeEdge({ arrow: edgeArrow.checked ? "end" : "none" }),
 );
-edgeLabel.addEventListener("input", () => changeEdge({ label: labelFor(edgeLabel.value) }));
+edgeLabel.addEventListener("input", () => changeEdge({ labels: labelsFor(edgeLabel.value) }));
 copiesFromQuery();
 window.comb = comb;
 window.exampleGraph = () => structuredClone(graph);

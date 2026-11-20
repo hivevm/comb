@@ -3,8 +3,10 @@ import {
   createBridgeSync,
   edgeColumns,
   nodeColumns,
+  NO_SLOT,
   PIECE_BOUND,
   type Bridge,
+  type ContentElement,
   type NodeColumnWriter,
   type GraphSnapshot,
   type NodePatch,
@@ -12,6 +14,7 @@ import {
   type NodeSnapshot,
   type PlainEdgePatch,
   type PlainPatch,
+  type Removal,
 } from ".";
 import { listsOf, nodeSnapshotOf, patchOf, snapshotOf } from "../api/snapshot";
 import {
@@ -22,6 +25,11 @@ import {
   RoleCode,
   SideCode,
 } from "../../wasm/engine.js";
+
+/** The regions a patch of no regions keeps: none, and what it removes: nothing
+ *  (ARCH-regions-are-container-slots). */
+const NONE_KEPT = new Uint32Array();
+const NONE_REMOVED = { nodes: new Uint32Array(), edges: new Uint32Array() };
 
 let bridge: Bridge;
 
@@ -109,8 +117,11 @@ const graph = (nodes: readonly PlainNode[], edges: readonly object[] = [], bound
   for (const n of nodes as readonly unknown[]) {
     if (typeof n !== "object" || n === null) columns.noObject();
     else {
-      const { id, x, y, width, shape, content } = n as Record<string, unknown>;
-      columns.node(id, x, y, width, shape ?? "rectangle");
+      const { id, x, y, width, shape, container, isContainer, content } = n as Record<
+        string,
+        unknown
+      >;
+      columns.node(id, x, y, width, shape ?? "rectangle", container, isContainer);
       writeContent(columns, content);
     }
   }
@@ -118,11 +129,17 @@ const graph = (nodes: readonly PlainNode[], edges: readonly object[] = [], bound
   for (const e of edges as readonly unknown[]) {
     if (typeof e !== "object" || e === null) written.noObject();
     else {
-      const { id, source, target, label, color, dash, arrow, sourceSide, targetSide } = e as Record<
-        string,
-        unknown
-      >;
-      written.edge(id, source, target, label, color, dash, arrow, sourceSide, targetSide);
+      const fields = e as Record<string, unknown>;
+      const { id, label, labels, color, dash, arrow, lightning } = fields;
+      const end = (onNode: unknown, onEdge: unknown, t: unknown, side: unknown) => ({
+        node: onNode,
+        edge: onEdge,
+        t,
+        side,
+      });
+      const source = end(fields.source, fields.sourceEdge, fields.sourceT, fields.sourceSide);
+      const target = end(fields.target, fields.targetEdge, fields.targetT, fields.targetSide);
+      written.edge(id, source, target, label, labels, color, dash, arrow, lightning);
     }
   }
   return { nodes: columns.columns(), edges: written.columns() } as GraphSnapshot;
@@ -164,7 +181,7 @@ describe("bridge views", () => {
     bridge.loadGraph(graph([node("a", 1, 2), node("b", 3, 4)]));
     const calls: [string, () => unknown][] = [
       ["loadGraph", () => bridge.loadGraph(row(3))],
-      ["updateNode", () => bridge.updateNode(0, "n0", plain({ content: titled("A") }))],
+      ["updateNode", () => bridge.updateNode(0, "n0", plain({ content: titled("A") }), NONE_KEPT)],
       ["addNode", () => bridge.addNode(added(node("c", 5, 6)))],
       ["nodeBuffers", () => bridge.nodeBuffers()],
       ["content", () => bridge.content(0)],
@@ -266,11 +283,18 @@ const CORRUPTIONS: { field: string; value?: unknown; problem: object }[] = [
     ["source", 5, ID],
     ["target", null, ID],
     ["color", "red", "an integer from 0 to 0xFFFFFF"],
-    ["arrow", "start", '"end" or "none"'],
-    ["label.t", "1", NUMBER],
-    ["label.offset", false, NUMBER],
+    ["arrow", "start", '"end", "open", "hollow", or "none"'],
+    ["labels.0.id", 5, ID],
   ].flatMap(([field, value, expected]) => {
-    const problem = { kind: "invalidField", list: "edges", index: 0, id: "e", field, expected };
+    const named = (field as string).replace(/^labels\.(\d)/, "labels[$1]");
+    const problem = {
+      kind: "invalidField",
+      list: "edges",
+      index: 0,
+      id: "e",
+      field: named,
+      expected,
+    };
     if (field === "id") delete (problem as { id?: string }).id;
     return [
       { field: `edge.${field}`, value, problem },
@@ -278,23 +302,28 @@ const CORRUPTIONS: { field: string; value?: unknown; problem: object }[] = [
     ];
   }),
   ...[
-    ["label", 5, "an object, or none"],
-    ["dash", [6, 4, 2], "a list of two finite numbers, or none"],
-    ["dash", ["6", 4], "a list of two finite numbers, or none"],
-  ].map(([field, value, expected]) => ({
+    ["labels.0.t", "1", "labels[0].t", "a finite number, or none"],
+    ["labels.0.offset", false, "labels[0].offset", "a finite number, or none"],
+    ["labels.0", 5, "labels[0]", "an object"],
+    ["labels", 5, "labels", "a list of edge labels, or none"],
+    ["label", 5, "label", "nothing: an edge carries labels, a list of edge labels, in its stead"],
+    ["lightning", 1, "lightning", "true or false, or none"],
+    ["dash", [6, 4, 2], "dash", "a list of two finite numbers, or none"],
+    ["dash", ["6", 4], "dash", "a list of two finite numbers, or none"],
+  ].map(([field, value, named, expected]) => ({
     field: `edge.${field}`,
     value,
-    problem: { kind: "invalidField", list: "edges", index: 0, id: "e", field, expected },
+    problem: { kind: "invalidField", list: "edges", index: 0, id: "e", field: named, expected },
   })),
   ...[{ value: 5 }, {}].map((corruption) => ({
-    field: "edge.label.text",
+    field: "edge.labels.0.text",
     ...corruption,
-    problem: { kind: "invalidLabelText", edge: "e" },
+    problem: { kind: "invalidLabelText", edge: "e", label: "m" },
   })),
   {
-    field: "edge.label.background",
+    field: "edge.labels.0.background",
     value: "red",
-    problem: { kind: "invalidBackground", edge: "e" },
+    problem: { kind: "invalidBackground", edge: "e", label: "m" },
   },
 ];
 
@@ -306,15 +335,27 @@ function unfit(): GraphSnapshot {
 }
 
 /** Nodes `a` and `b` and an edge `e` between them with every field of its own, with `path`
- *  (`node.…` for `b`, `edge.…` for `e`) set to `value`, or left out where `value` is absent. */
+ *  (`node.…` for `b`, `edge.…` for `e`, `edge.labels.0.…` for its label `m`) set to `value`, or
+ *  left out where `value` is absent. */
 function corrupted(path: string, corruption: { value?: unknown }): GraphSnapshot {
   const title: Record<string, unknown> = { kind: "text", role: "title", text: "b", weight: 1 };
   const b: Record<string, unknown> = { ...node("b", 300, 0), content: [[title]] };
-  const label: Record<string, unknown> = { text: "x", t: 0.5, offset: 0, background: 0x123456 };
-  const e: Record<string, unknown> = { ...edge("e", "a", "b"), label, dash: [6, 4] };
-  const [item, ...field] = path.split(".");
-  const inner = item === "node" ? title : label;
-  const target = field.length > 1 ? inner : item === "node" ? b : e;
+  const label: Record<string, unknown> = {
+    id: "m",
+    text: "x",
+    t: 0.5,
+    offset: 0,
+    background: 0x123456,
+  };
+  const labels: unknown[] = [label];
+  const e: Record<string, unknown> = { ...edge("e", "a", "b"), labels, dash: [6, 4] };
+  const [item, ...steps] = path.split(".");
+  const field = steps[0] === "labels" && steps.length > 1 ? steps.slice(1) : steps;
+  const inner = item === "node" ? title : field.length > 1 ? label : steps.length > 1 ? labels : e;
+  const target = (field.length > 1 || steps.length > 1 ? inner : item === "node" ? b : e) as Record<
+    string,
+    unknown
+  >;
   const name = field[field.length - 1]!;
   if ("value" in corruption) target[name] = corruption.value;
   else delete target[name];
@@ -370,7 +411,7 @@ describe("bridge refusals of a single field", () => {
       () => bridge.loadGraph(unfit()),
       () => bridge.loadGraph(graph([5 as never])),
       () => bridge.loadGraph(graph([], "e" as never)),
-      () => bridge.updateNode(0, "a", 5 as never),
+      () => bridge.updateNode(0, "a", 5 as never, NONE_KEPT),
       () => bridge.checkGraphSize(Number.NaN, 0),
       () => bridge.checkIdBudget(-1),
     ];
@@ -407,11 +448,71 @@ const limits = () => ({
   rows: bridge.rowLimit(),
   columns: bridge.columnLimit(),
   segments: bridge.segmentLimit(),
+  labels: bridge.labelLimit(),
 });
 
 /** The snapshot `api/snapshot.ts` builds of `nodes` and `edges`, and the graph the store keeps. */
 const snapshotted = (nodes: unknown[], edges: unknown[] = []) =>
   snapshotOf(listsOf({ nodes, edges } as never), limits());
+
+describe("bridge columns of nesting", () => {
+  test("a container crosses as the slot its identifier names, before or after its node", () => {
+    // Verifies: API-bridge-columns-carry-nesting
+    // `a` in `c`, which comes after it, `b` in `a`, a container too, and `d` on the canvas.
+    const nodes = [
+      { ...node("a", 10, 20), container: "c", isContainer: true },
+      { ...node("b", 1, 2), container: "a" },
+      { ...node("c", 100, 200), isContainer: true },
+      { ...node("d", 0, 0), container: null, isContainer: false },
+    ];
+    const { snapshot } = snapshotted(nodes);
+    expect([...snapshot.nodes.hasContainer]).toEqual([1, 1, 0, 0]);
+    expect([...snapshot.nodes.container]).toEqual([2, 0, 0, 0]);
+    expect([...snapshot.nodes.isContainer]).toEqual([1, 0, 1, 0]);
+    expect(bridge.loadGraph(snapshot)).toBe(4);
+    expect([...bridge.positions()]).toEqual([110, 220, 111, 222, 100, 200, 0, 0]);
+    // An identifier no node has crosses past every slot, and is refused naming the node.
+    const nowhere = snapshotted([{ ...node("a", 0, 0), container: "x" }]).snapshot;
+    expect([...nowhere.nodes.container]).toEqual([NO_SLOT]);
+    expect(outcome(() => bridge.loadGraph(nowhere))).toStrictEqual({
+      kind: "invalidContainer",
+      node: "a",
+      field: "container",
+      expected: "the identifier of a node of the graph",
+    });
+    // The graph stays as it was.
+    expect([...bridge.positions()]).toEqual([110, 220, 111, 222, 100, 200, 0, 0]);
+  });
+
+  test("a container's identifier counts against no budget of identifiers", () => {
+    // Verifies: ARCH-one-workspace-per-example, API-bridge-columns-carry-nesting
+    // The identifiers of `c` and `a`, 1 and 4 code units; `a` names `c` as its container.
+    const nodes = [
+      { ...node("c", 0, 0), isContainer: true },
+      { ...node("aaaa", 0, 0), container: "c" },
+    ];
+    expect(snapshotted(nodes).idUnits).toBe(5);
+  });
+
+  test("a container that is no string or a mark that is no boolean is refused by its field", () => {
+    // Verifies: API-bridge-columns-carry-nesting
+    for (const [fields, field, expected] of [
+      [{ container: 5 }, "container", "the identifier of a container, or none"],
+      [{ isContainer: "yes" }, "isContainer", "true or false, or none"],
+      [{ isContainer: 1 }, "isContainer", "true or false, or none"],
+    ] as const) {
+      const { snapshot } = snapshotted([node("a", 0, 0), { ...node("b", 0, 0), ...fields }]);
+      expect(outcome(() => bridge.loadGraph(snapshot))).toStrictEqual({
+        kind: "invalidField",
+        list: "nodes",
+        index: 1,
+        id: "b",
+        field,
+        expected,
+      });
+    }
+  });
+});
 
 describe("bridge columns of a load", () => {
   test("identifiers cut inside a surrogate pair side by side are refused for their length", () => {
@@ -455,7 +556,7 @@ describe("bridge columns of a load", () => {
     expect(bridge.loadGraph(snapshot)).toBe(4);
     // The engine keeps the titles, and hands each back as it was given.
     const title = (slot: number) => {
-      const element = bridge.content(slot)[0]![0]!;
+      const element = (bridge.content(slot)[0] as ContentElement[])[0]!;
       return element.kind === "text" ? element.text : undefined;
     };
     expect([0, 1, 2, 3].map(title)).toEqual(titles);
@@ -601,7 +702,7 @@ describe("bridge badges refused", () => {
       const single = nodeSnapshotOf(withBadge(text, shade), limits()).snapshot;
       expect(outcome(() => bridge.addNode(single))).toEqual(problem);
       const content = patchOf({ content: withBadge(text, shade).content }, limits());
-      expect(outcome(() => bridge.updateNode(0, "b", content))).toEqual(problem);
+      expect(outcome(() => bridge.updateNode(0, "b", content, NONE_KEPT))).toEqual(problem);
     }
     // Both ends of the colours are taken.
     for (const shade of [0, 0xffffff]) {
@@ -710,7 +811,7 @@ describe("bridge progress bars refused", () => {
       const alone = nodeSnapshotOf(withProgress(segments), limits()).snapshot;
       expect(outcome(() => bridge.addNode(alone))).toEqual(single);
       const content = patchOf({ content: withProgress(segments).content }, limits());
-      expect(outcome(() => bridge.updateNode(0, "b", content))).toEqual(single);
+      expect(outcome(() => bridge.updateNode(0, "b", content, NONE_KEPT))).toEqual(single);
     }
     // At the limit, summing a little past 1 within what the bridge admits, and of no segments,
     // the bar is taken.
@@ -855,7 +956,7 @@ describe("bridge metrics refused", () => {
       const alone = nodeSnapshotOf(withMetric(shown, caption, value), limits()).snapshot;
       expect(outcome(() => bridge.addNode(alone))).toEqual(problem);
       const content = patchOf({ content: withMetric(shown, caption, value).content }, limits());
-      expect(outcome(() => bridge.updateNode(0, "b", content))).toEqual(problem);
+      expect(outcome(() => bridge.updateNode(0, "b", content, NONE_KEPT))).toEqual(problem);
     }
     // Each direction, and both ends of the colours, are taken.
     for (const [shown, shade] of [
@@ -923,10 +1024,10 @@ describe("bridge pieces of a string column", () => {
       [e.ids, e.idBounds, ids.slice(1)],
       [e.sources, e.sourceBounds, ids.slice(0, -1)],
       [e.targets, e.targetBounds, ids.slice(1)],
-      [e.labels, e.labelBounds, ids.slice(1).map(() => "")],
+      [e.labelTexts, e.labelTextBounds, []],
     ];
     for (const [pieces, bounds, values] of columns) expectPieces(pieces, bounds, values, bound);
-    expect([n.ids.length, e.sources.length, n.content.texts.length, e.labels.length]).toEqual([
+    expect([n.ids.length, e.sources.length, n.content.texts.length, e.labelTexts.length]).toEqual([
       7, 6, 0, 0,
     ]);
     // The engine maps every identifier exactly: each edge's ends resolve to the slots of the
@@ -992,10 +1093,10 @@ describe("bridge columns of a load's content", () => {
     expect(c.texts.length).toBeGreaterThan(1);
     expect(n.refused).toBeUndefined();
     // The engine reads them as they crossed: each node as high as its rows and padding, here below
-    // the least height of a node.
+    // the least height of a node, and the node of no rows as wide as it is, 100.
     expect(bridge.loadGraph(graph(nodes as never, [], 8))).toBe(3);
     const heights = (sizes: Float32Array) => [sizes[1], sizes[3], sizes[5]];
-    expect(heights(bridge.nodeBuffers().sizes)).toEqual([64, 64, 64]);
+    expect(heights(bridge.nodeBuffers().sizes)).toEqual([64, 100, 64]);
   });
 
   test("a kind, a role, a weight, or a text of another type crosses as its code or as none", () => {
@@ -1129,7 +1230,7 @@ describe("bridge layout of content", () => {
     expect([...bridge.query(everywhere, "far", 1, 0).content.bounds]).toEqual([]);
     // Five rows: 10 + 18 + 4 * 16 + 10 = 102.
     const rows = [titled("t")[0]!, ...Array(4).fill([textOf("body", "b")])];
-    bridge.updateNode(1, "b", plain({ content: rows as never }));
+    bridge.updateNode(1, "b", plain({ content: rows as never }), NONE_KEPT);
     expect(bridge.nodeBuffers().sizes[3]).toBe(102);
     expect(nodeAt(350, 100)).toBe(1);
     expect(nodeAt(50, 100)).toBeUndefined();
@@ -1137,7 +1238,9 @@ describe("bridge layout of content", () => {
     expect([...patched.content.bounds]).toEqual([0, 1, 6]);
     expect([...patched.content.rects.subarray(8, 12)]).toEqual([12, 28, 76, 16]);
     expect(patched.content.texts).toBe("atbbbb");
-    expect(outcome(() => bridge.updateNode(7, "c", plain({ content: titled("x") })))).toEqual({
+    expect(
+      outcome(() => bridge.updateNode(7, "c", plain({ content: titled("x") }), NONE_KEPT)),
+    ).toEqual({
       kind: "noNode",
       slot: 7,
     });
@@ -1181,10 +1284,10 @@ describe("bridge columns of a load's edges", () => {
     const text = "\u{1D49C}".repeat(500);
     const labelled = edgeIds.map((id) => ({
       ...edge(id, ids[0]!, ids[1]!),
-      label: { text, t: 0.5, offset: 0 },
+      labels: [{ id: "m", text }],
     }));
     const withEdges = snapshotted(nodes, labelled);
-    expect(withEdges.kept.edges.map((e) => [e.id, e.label?.text])).toEqual(
+    expect(withEdges.kept.edges.map((e) => [e.id, e.labels?.[0]?.text])).toEqual(
       edgeIds.map((id) => [id, text]),
     );
     expect(bridge.loadGraph(withEdges.snapshot)).toBe(2);
@@ -1194,12 +1297,34 @@ describe("bridge columns of a load's edges", () => {
       kind: "duplicateEdge",
       edge: edgeIds[0],
     });
-    const long = { ...labelled[1]!, label: { ...labelled[1]!.label, text: text + "x" } };
+    const long = { ...labelled[1]!, labels: [{ id: "m", text: text + "x" }] };
     expect(outcome(() => bridge.loadGraph(snapshotted(nodes, [long]).snapshot))).toEqual({
       kind: "labelTextTooLong",
       edge: edgeIds[1],
+      label: "m",
       limit: 1000,
     });
+  });
+});
+
+/** What a side expects (API-edges-dock-nodes-or-edges, *Ends*). */
+const SIDE_EXPECTED =
+  '"top", "right", "bottom", "left", or "outline" where the end lies on a node, none where it lies on an edge';
+
+describe("bridge columns of ends on edges that do not fit", () => {
+  test("an end's flag of lying on an edge past 1, or path parameters of another count, are refused as malformed", () => {
+    // Verifies: API-bridge-columns-carry-nesting, API-edges-dock-nodes-or-edges
+    const { nodes, edges } = graph(two(), [edge("e", "a", "b")]);
+    const misfits = [
+      { ...edges, sourceOnEdge: new Uint8Array([2]) },
+      { ...edges, targetT: new Float64Array(0) },
+    ];
+    for (const columns of misfits) {
+      expect(outcome(() => bridge.loadGraph({ nodes, edges: columns } as never))).toStrictEqual({
+        kind: "malformed",
+        message: "the columns of the edges do not fit together",
+      });
+    }
   });
 });
 
@@ -1207,7 +1332,8 @@ describe("bridge columns that do not fit", () => {
   test("a refused field of a code no field has is refused as malformed, and the engine keeps working", () => {
     // Verifies: API-bridge-takes-serde-and-columns
     const { nodes, edges } = graph(two());
-    for (const field of [8, 255, 2 ** 32 - 1]) {
+    // Past the last field, `segment`, and far past it.
+    for (const field of [NodeField.Segment + 1, 255, 2 ** 32 - 1]) {
       const refused = { index: 0, field: field as NodeField };
       expect(
         outcome(() => bridge.loadGraph({ nodes: { ...nodes, refused }, edges } as never)),
@@ -1224,10 +1350,10 @@ describe("bridge columns that do not fit", () => {
     // Verifies: API-bridge-takes-serde-and-columns
     const { nodes, edges } = graph(two(), [edge("e", "a", "b")]);
     const misfits = [
-      { ...edges, refused: { index: 0, field: 12 } },
+      { ...edges, refused: { index: 0, field: 20 } },
       { ...edges, refused: { index: 1, field: 1 } },
-      { ...edges, arrow: new Uint8Array([3]) },
-      { ...edges, targetSide: new Uint8Array([SideCode.Unnamed + 1]) },
+      { ...edges, arrow: new Uint8Array([5]) },
+      { ...edges, targetSide: new Uint8Array([SideCode.Absent + 1]) },
       { ...edges, gap: new Float64Array(0) },
     ];
     for (const columns of misfits) {
@@ -1254,7 +1380,7 @@ describe("bridge columns that do not fit", () => {
       index: 1,
       id: "e",
       field: "arrow",
-      expected: '"end" or "none"',
+      expected: '"end", "open", "hollow", or "none"',
     });
     const unnamed = graph(two(), [{ ...edge("e", "b", "a"), targetSide: "middle" as never }]);
     expect(unnamed.edges.refused).toBeUndefined();
@@ -1264,7 +1390,7 @@ describe("bridge columns that do not fit", () => {
       index: 0,
       id: "e",
       field: "targetSide",
-      expected: '"top", "right", "bottom", "left", or "outline"',
+      expected: SIDE_EXPECTED,
     });
   });
 });
@@ -1274,14 +1400,33 @@ describe("bridge columns that do not fit", () => {
 const RUST =
   /::|`|\b(?:f32|f64|u8|u32|u64|i32|i64|usize|isize|str|String|Vec|Option|JsValue|serde\w*|comb_\w+|GraphBatch|NodeInput|EdgeInput|LabelInput|Arrow|[A-Z][a-z]+[A-Z]\w*)\b/;
 
+describe("bridge columns of labels that do not fit", () => {
+  test("a label's place given against its field, a lightning byte past 1, or label boundaries that miss the labels are malformed", () => {
+    // Verifies: API-bridge-columns-carry-nesting, API-edges-dock-nodes-or-edges
+    const { nodes, edges } = graph(two(), [edge("e", "a", "b")]);
+    const misfits = [
+      { ...edges, refused: { index: 0, field: EdgeField.LabelT } },
+      { ...edges, refused: { index: 0, field: EdgeField.Color, label: 0 } },
+      { ...edges, lightning: new Uint8Array([2]) },
+      { ...edges, labelBounds: new Uint32Array([0, 1]) },
+    ];
+    for (const columns of misfits) {
+      expect(outcome(() => bridge.loadGraph({ nodes, edges: columns } as never))).toStrictEqual({
+        kind: "malformed",
+        message: "the columns of the edges do not fit together",
+      });
+    }
+  });
+});
+
 describe("bridge fields the engine does not keep", () => {
   test("a title, label text, or label background of the wrong kind comes back as a typed error", () => {
     // Verifies: ARCH-one-workspace-per-example, API-bridge-takes-serde-and-columns
-    const label = (fields: object) => ({ text: "x", t: 0.5, offset: 0, ...fields });
+    const labels = (fields: object) => [{ id: "m", text: "x", t: 0.5, offset: 0, ...fields }];
     const errors = [
       graph([{ ...node("a", 0, 0), content: titled(5 as unknown as string) }]),
-      graph(two(), [{ ...edge("e", "a", "b"), label: label({ text: null }) as never }]),
-      graph(two(), [{ ...edge("e", "a", "b"), label: label({ background: -5 }) }]),
+      graph(two(), [{ ...edge("e", "a", "b"), labels: labels({ text: null }) as never }]),
+      graph(two(), [{ ...edge("e", "a", "b"), labels: labels({ background: -5 }) }]),
     ].map((batch) => {
       try {
         bridge.loadGraph(batch);
@@ -1291,19 +1436,21 @@ describe("bridge fields the engine does not keep", () => {
     });
     expect(errors).toEqual([
       { kind: "invalidContentText", node: "a", row: 0, column: 0, field: "text" },
-      { kind: "invalidLabelText", edge: "e" },
-      { kind: "invalidBackground", edge: "e" },
+      { kind: "invalidLabelText", edge: "e", label: "m" },
+      { kind: "invalidBackground", edge: "e", label: "m" },
     ]);
   });
 
   test("a patch of a node comes back as a typed error unless it holds only content", () => {
     // Verifies: ARCH-one-workspace-per-example, API-bridge-takes-serde-and-columns
     bridge.loadGraph(graph([node("a", 0, 0)]));
-    expect(bridge.updateNode(0, "a", plain({ content: titled("A") }))).toBeUndefined();
-    expect(bridge.updateNode(0, "a", plain({}))).toBeUndefined();
+    expect(bridge.updateNode(0, "a", plain({ content: titled("A") }), NONE_KEPT)).toEqual(
+      NONE_REMOVED,
+    );
+    expect(bridge.updateNode(0, "a", plain({}), NONE_KEPT)).toEqual(NONE_REMOVED);
     const errors = [{ id: "b" }, { content: titled(5 as never) }, { content: 5 }].map((patch) => {
       try {
-        bridge.updateNode(0, "a", patch as never);
+        bridge.updateNode(0, "a", patch as never, NONE_KEPT);
       } catch (error) {
         return error;
       }
@@ -1359,12 +1506,13 @@ describe("bridge query", () => {
     bridge.loadGraph(
       graph(
         [node("a", 0, 0), node("b", 200, 0)],
-        [{ ...edge("e", "a", "b"), label: { text: "x", t: 0.5, offset: 12 } }],
+        [{ ...edge("e", "a", "b"), labels: [{ id: "m", text: "x", t: 0.5, offset: 12 }] }],
       ),
     );
-    // The edge runs level from (100, 32) to (200, 32); its label sits at (150, 20).
+    // The edge runs level from (100, 32) to (200, 32); its label sits at (150, 20), found as the
+    // edge's slot and its place in its list (API-bridge-columns-carry-nesting).
     const near = bridge.query({ minX: 140, minY: -100, maxX: 160, maxY: 0 }, "near", 4, 20);
-    expect([...near.labels]).toEqual([0]);
+    expect([...near.labels]).toEqual([0, 0]);
     // The point crosses relative to the query's origin (API-bridge-takes-serde-and-columns).
     expect(near.labelPoints[0]! + near.origin.x).toBeCloseTo(150, 4);
     expect(near.labelPoints[1]! + near.origin.y).toBeCloseTo(20, 4);
@@ -1493,11 +1641,14 @@ describe("bridge additions", () => {
   });
 });
 
+/** The node slots and the edge slots of `removal`, as plain lists. */
+const slotsOf = ({ nodes, edges }: Removal) => [[...nodes], [...edges]];
+
 describe("bridge removals", () => {
   test("a removed node takes its edges along, and its slot is the next addition's", () => {
     // Verifies: ARCH-engine-edits-graph-in-place
     bridge.loadGraph(row(4));
-    expect([...bridge.removeNodes(new Uint32Array([1]))]).toEqual([0, 1]);
+    expect(slotsOf(bridge.removeNodes(Uint32Array.of(1)))).toEqual([[1], [0, 1]]);
     expect([...bridge.query(everywhere, "near", 1, 0).nodes]).toEqual([0, 2, 3]);
     expect([...bridge.drawnEdges().slots]).toEqual([2]);
     bridge.removeEdges(new Uint32Array([2]));
@@ -1513,7 +1664,7 @@ describe("bridge removals", () => {
     bridge.removeEdges(new Uint32Array([1]));
     let refused: unknown = "accepted";
     try {
-      bridge.moveLabel(1, 300, 0);
+      bridge.moveLabel(1, 0, 300, 0);
     } catch (error) {
       refused = error;
     }
@@ -1577,7 +1728,7 @@ describe("the numbers the shell computes", () => {
     for (const bad of [Number.NaN, Infinity, -Infinity]) {
       expect(refused(() => bridge.hit(bad, 0, 1, "near", true))).toEqual(point);
       expect(refused(() => bridge.hit(0, bad, 1, "near", true))).toEqual(point);
-      expect(refused(() => bridge.moveLabel(0, bad, 0))).toEqual(point);
+      expect(refused(() => bridge.moveLabel(0, 0, bad, 0))).toEqual(point);
       expect(refused(() => bridge.hit(0, 0, bad, "near", true))).toEqual(pixel);
       expect(refused(() => bridge.query(everywhere, "near", bad, 0))).toEqual(pixel);
       expect(refused(() => bridge.translate(new Uint32Array([0]), bad, 0))).toEqual({

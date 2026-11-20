@@ -88,11 +88,13 @@ impl Graph {
         }
     }
 
-    /// Puts the edge in `slot` into the edge grid under the bounds of its path and its label point
+    /// Puts the edge in `slot` into the edge grid under the bounds of its path and its label points
     /// together.
     pub(super) fn reindex_edge(&mut self, slot: u32) {
-        let path = self.bounds[slot as usize];
-        let bounds = self.labels[slot as usize].map_or(path, |p| path.union(&Rect::at(p)));
+        let mut bounds = self.bounds[slot as usize];
+        for point in &self.labels[slot as usize] {
+            bounds = bounds.union(&Rect::at(*point));
+        }
         self.edge_grid.set(slot, &bounds);
     }
 }
@@ -103,6 +105,7 @@ mod tests {
     use super::super::{EdgeSpec, Level, Visible};
     use super::*;
     use crate::geometry::{Point, Sides};
+    use crate::graph::End;
     use crate::stroke::EdgeStyle;
 
     #[test]
@@ -116,7 +119,7 @@ mod tests {
                 .filter(|&e| graph.holds_edge(e))
                 .map(|e| {
                     let i = e as usize;
-                    (graph.paths[i], graph.bounds[i], graph.labels[i])
+                    (graph.paths[i], graph.bounds[i], graph.labels[i].clone())
                 })
                 .collect::<Vec<_>>()
         };
@@ -190,9 +193,9 @@ mod tests {
         let edges = (0..1_000)
             .map(|i| EdgeSpec {
                 sides: Sides::default(),
-                source: i,
-                target: i + 1,
-                label: None,
+                source: End::Node(i),
+                target: End::Node(i + 1),
+                labels: Vec::new(),
                 style: EdgeStyle::unstyled(),
             })
             .collect();
@@ -202,15 +205,15 @@ mod tests {
         assert_eq!(graph.builds, 1);
         // Node 500 lies at (0, 200), between edges 499 and 500. A removal asks the rule nothing.
         let asked = graph.rule_asked;
-        assert_eq!(graph.remove_nodes(&[500]), Ok(vec![499, 500]));
+        assert_eq!(graph.remove_nodes(&[500]), Ok((vec![500], vec![499, 500])));
         graph.remove_edges(&[5]).unwrap();
         assert_eq!(graph.rule_asked, asked);
         assert_eq!(graph.add_node(20.0, 220.0, 50.0, 50.0), Ok(500));
         let edge = EdgeSpec {
             sides: Sides::default(),
-            source: 499,
-            target: 500,
-            label: None,
+            source: End::Node(499),
+            target: End::Node(500),
+            labels: Vec::new(),
             style: EdgeStyle::unstyled(),
         };
         assert_eq!(graph.add_edge(edge), Ok(5));
@@ -228,9 +231,9 @@ mod tests {
             graph
                 .add_edge(EdgeSpec {
                     sides: Sides::default(),
-                    source: 2 * i + 1,
-                    target: 2 * i + 2,
-                    label: None,
+                    source: End::Node(2 * i + 1),
+                    target: End::Node(2 * i + 2),
+                    labels: Vec::new(),
                     style: EdgeStyle::unstyled(),
                 })
                 .unwrap();
@@ -239,9 +242,9 @@ mod tests {
         graph
             .add_edge(EdgeSpec {
                 sides: Sides::default(),
-                source: 0,
-                target: 3,
-                label: None,
+                source: End::Node(0),
+                target: End::Node(3),
+                labels: Vec::new(),
                 style: EdgeStyle::unstyled(),
             })
             .unwrap();

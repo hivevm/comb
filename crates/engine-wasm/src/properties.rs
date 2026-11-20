@@ -302,14 +302,71 @@ fn node(loose: bool, i: usize) -> impl Strategy<Value = Value> {
         field("x", num(), loose),
         field("y", num(), loose),
         field("width", size(), loose),
+        sometimes("height", given_height(loose)),
         field("shape", node_shape(loose), loose),
+        sometimes("outline", outline(loose)),
+        sometimes("resizable", flag(loose)),
         field("content", content(loose), loose),
     ])
 }
 
+/// A field now and then left out, else holding what `good` makes.
+fn sometimes(
+    name: &'static str,
+    good: impl Strategy<Value = Value> + 'static,
+) -> BoxedStrategy<Field> {
+    prop_oneof![
+        3 => Just(None),
+        1 => good.prop_map(move |value| Some((name.to_owned(), value))),
+    ]
+    .boxed()
+}
+
+/// Mostly a height above 0, now and then null, which is none, or one the bridge refuses; loose,
+/// also a value of another type (API-bridge-columns-carry-nesting).
+fn given_height(loose: bool) -> BoxedStrategy<Value> {
+    let good = prop_oneof![10 => (1.0..500.0f64).prop_map(Value::Number), 1 => Just(Value::Null), 1 => num()];
+    if !loose {
+        return good.boxed();
+    }
+    prop_oneof![20 => good, 1 => Just(Value::Bool(false)), 1 => anything()].boxed()
+}
+
+/// Whether the node is resizable, or null; loose, now and then a value of another type.
+fn flag(loose: bool) -> BoxedStrategy<Value> {
+    let good = prop_oneof![any::<bool>().prop_map(Value::Bool), Just(Value::Null)];
+    if !loose {
+        return good.boxed();
+    }
+    prop_oneof![20 => good, 1 => Just(Value::Number(1.0))].boxed()
+}
+
+/// An outline: `"solid"`, `"none"`, null, which is none, or a dash pattern, now and then one an
+/// edge's rule refuses; loose, also a name of none, a list of three numbers, or a value of another
+/// type (REN-node-shapes-cover-uml, *Outline*).
+fn outline(loose: bool) -> BoxedStrategy<Value> {
+    let text = |name: &str| Value::Text(name.to_owned());
+    let pattern =
+        |[dash, gap]: [f64; 2]| Value::List(vec![Value::Number(dash), Value::Number(gap)]);
+    let good = prop_oneof![
+        4 => prop::sample::select(vec![text("solid"), text("none"), Value::Null]),
+        4 => (0.5..20.0f64, 0.0..20.0f64).prop_map(move |(dash, gap)| pattern([dash, gap])),
+        1 => prop::sample::select(vec![pattern([0.0, 4.0]), pattern([6.0, -1.0]), pattern([1e300, 4.0])]),
+    ];
+    if !loose {
+        return good.boxed();
+    }
+    let three = Value::List(vec![Value::Number(1.0); 3]);
+    prop_oneof![
+        20 => good,
+        1 => prop::sample::select(vec![text("dotted"), three, Value::Number(1.0)]),
+    ]
+    .boxed()
+}
+
 /// Mostly a rectangle, now and then another node shape, a filled one among them, which refuses
 /// content; loose, now and then a name of none or a value of another type
-/// (REN-closed-set-of-node-shapes).
+/// (REN-node-shapes-cover-uml).
 fn node_shape(loose: bool) -> BoxedStrategy<Value> {
     let text = |name: &str| Value::Text(name.to_owned());
     let mut good = vec![text("rectangle"); 6];
@@ -321,6 +378,14 @@ fn node_shape(loose: bool) -> BoxedStrategy<Value> {
             "ringed-circle",
             "diamond",
             "bar",
+            "pentagon",
+            "notched-rectangle",
+            "note",
+            "frame",
+            "crossed-circle",
+            "cross",
+            "actor",
+            "hourglass",
         ]
         .map(text),
     );
@@ -488,8 +553,11 @@ fn content(loose: bool) -> BoxedStrategy<Value> {
             Value::Bool(false),
             Value::Null,
             Value::Object(Vec::new()),
+            Value::Text("line".to_owned()),
         ]);
-        prop_oneof![30 => elements, 1 => odd]
+        // A separator, a row of its own (REN-node-content-and-hits, *Separator*).
+        let separator = Just(Value::Text("separator".to_owned()));
+        prop_oneof![30 => elements, 3 => separator, 1 => odd]
     };
     let rows = prop_oneof![20 => 1..=2_usize, 1 => 0..=9_usize];
     let any = rows
@@ -520,17 +588,150 @@ fn one_of(good: Vec<Value>, bad: Vec<Value>, loose: bool) -> BoxedStrategy<Value
     }
 }
 
-fn edge(loose: bool, j: usize, nodes: usize) -> impl Strategy<Value = Value> {
-    let placed = object(vec![
+/// The identifier of a label: one of forty, so that a list now and then holds one twice, now and
+/// then one of 256 or 257 UTF-16 code units.
+fn label_id() -> BoxedStrategy<Value> {
+    let id = (0..40_usize).prop_map(|k| Value::Text(format!("l{k}")));
+    let long =
+        prop::sample::select(vec![256_usize, 257]).prop_map(|n| Value::Text(long_id("l", n)));
+    prop_oneof![40 => id, 1 => long].boxed()
+}
+
+/// A list of edge labels (API-edges-dock-nodes-or-edges): mostly none to three, now and then up
+/// to ten, past the limit of eight; identifiers now and then shared within the list, and the
+/// place left out; loose, a label that is no object, or labels that are no list.
+fn labels(loose: bool) -> BoxedStrategy<Value> {
+    let optional = |name: &'static str| {
+        let given = field(name, num(), loose);
+        prop_oneof![4 => given, 1 => Just(None).boxed()].boxed()
+    };
+    let label = object(vec![
+        field("id", label_id(), loose),
         field("text", text(loose), loose),
-        field("t", num(), loose),
-        field("offset", num(), loose),
+        optional("t"),
+        optional("offset"),
         field("background", background(loose), loose),
     ]);
-    let label = prop_oneof![
-        one_of(vec![Value::Null], vec![Value::Object(Vec::new())], loose),
-        placed,
-    ];
+    let item = if loose {
+        prop_oneof![20 => label, 1 => num()].boxed()
+    } else {
+        label.boxed()
+    };
+    let list = prop_oneof![
+        10 => prop::collection::vec(item.clone(), 0..4),
+        1 => prop::collection::vec(item, 0..11),
+    ]
+    .prop_map(Value::List);
+    one_of(vec![Value::Null], vec![Value::Number(1.0)], loose)
+        .prop_union(list.boxed())
+        .boxed()
+}
+
+/// One end of an edge among `nodes` nodes and `edges` edges, its fields named by `names`, the node,
+/// the edge, the path parameter, and the side (API-edges-dock-nodes-or-edges, *Ends*): mostly a
+/// node and the side it docks on; where there are edges, now and then an edge, mostly one of the
+/// batch, chains and cycles among them, at a path parameter mostly from 0 to 1, and no side;
+/// loose, now and then a node and an edge both, a path parameter outside 0 to 1 or left out, and a
+/// side beside an end on an edge.
+fn end_fields(
+    names: [&'static str; 4],
+    nodes: usize,
+    edges: usize,
+    (loose, focus): (bool, Focus),
+) -> BoxedStrategy<Vec<Field>> {
+    let shapes = loose || focus == Focus::Shapes;
+    let text = |name: &str| Value::Text(name.to_owned());
+    let sides = ["top", "right", "bottom", "left", "outline"]
+        .map(text)
+        .to_vec();
+    let side = one_of(sides, vec![text("middle"), Value::Number(1.0)], loose);
+    // Focused, an end names a node of the batch, so that no other refusal settles the case.
+    let node_named = if focus == Focus::None {
+        end(nodes).boxed()
+    } else {
+        (0..nodes.max(1))
+            .prop_map(|k| Value::Text(format!("n{k}")))
+            .boxed()
+    };
+    let node = (
+        field(names[0], node_named.clone(), loose),
+        field(names[3], side.clone(), loose),
+    )
+        .prop_map(|(node, side)| vec![node, side]);
+    if edges == 0 && !loose {
+        return node.boxed();
+    }
+    let beyond = if focus == Focus::Rules { 4 } else { 1 };
+    let named = prop_oneof![20 => 0..edges.max(1), beyond => Just(edges)]
+        .prop_map(|k| Value::Text(format!("e{k}")));
+    let t = if shapes {
+        prop_oneof![
+            10 => (0.0..=1.0f64).prop_map(Value::Number),
+            1 => prop::sample::select(vec![-0.5, 1.5, f64::NAN]).prop_map(Value::Number),
+            1 => Just(Value::Null),
+        ]
+        .boxed()
+    } else {
+        (0.0..=1.0f64).prop_map(Value::Number).boxed()
+    };
+    let beside = if focus == Focus::Shapes { 4 } else { 1 };
+    let lone_side = if shapes {
+        prop_oneof![
+            10 => Just(None),
+            beside => side.prop_map(move |s| Some((names[3].to_owned(), s))),
+        ]
+        .boxed()
+    } else {
+        Just(None).boxed()
+    };
+    let on_edge = (
+        field(names[1], named.clone(), loose),
+        field(names[2], t, loose),
+        lone_side,
+    )
+        .prop_map(|(edge, t, side)| vec![edge, t, side]);
+    let both = (node_named, named).prop_map(move |(node, edge)| {
+        vec![
+            Some((names[0].to_owned(), node)),
+            Some((names[1].to_owned(), edge)),
+        ]
+    });
+    if edges == 0 {
+        return prop_oneof![20 => node, 1 => both].boxed();
+    }
+    if focus == Focus::Shapes {
+        prop_oneof![3 => node, 8 => on_edge, 1 => both].boxed()
+    } else if focus == Focus::Rules {
+        prop_oneof![5 => node, 3 => on_edge].boxed()
+    } else if loose {
+        prop_oneof![12 => node, 8 => on_edge, 1 => both].boxed()
+    } else {
+        prop_oneof![12 => node, 8 => on_edge].boxed()
+    }
+}
+
+/// The fields that name the source of an edge, and its target.
+const SOURCE: [&str; 4] = ["source", "sourceEdge", "sourceT", "sourceSide"];
+const TARGET: [&str; 4] = ["target", "targetEdge", "targetT", "targetSide"];
+
+/// What a batch's ends on edges are made to settle (`EndClauses`): nothing in particular; the rules
+/// of where an end may lie, its fields all of their type and shape; or the shapes an end is
+/// refused for, a node and an edge both, a parameter off the path, and a side beside, its fields of
+/// no other type.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Focus {
+    None,
+    Rules,
+    Shapes,
+}
+
+/// The edge at `j` of a batch of `nodes` nodes and `edges` edges; `focus` as `end_fields` takes it.
+fn edge(
+    (loose, focus): (bool, Focus),
+    j: usize,
+    nodes: usize,
+    edges: usize,
+) -> impl Strategy<Value = Value> {
     let length = || prop_oneof![10 => 0.5..20.0f64, 1 => number()];
     let pair = (length(), length())
         .prop_map(|(d, g)| Value::List(vec![d, g].into_iter().map(Value::Number).collect()));
@@ -541,28 +742,52 @@ fn edge(loose: bool, j: usize, nodes: usize) -> impl Strategy<Value = Value> {
         1 => if loose { other.boxed() } else { Just(Value::Null).boxed() },
     ];
     let text = |arrow: &str| Value::Text(arrow.to_owned());
-    let arrow = one_of(vec![text("end"), text("none")], vec![text("start")], loose);
-    let sides = ["top", "right", "bottom", "left", "outline"]
-        .map(text)
-        .to_vec();
-    let side = || {
-        one_of(
-            sides.clone(),
-            vec![text("middle"), Value::Number(1.0)],
-            loose,
-        )
+    let arrows = ["end", "none", "open", "hollow"].map(text).to_vec();
+    let arrow = one_of(arrows, vec![text("start")], loose);
+    let lightning = one_of(
+        vec![Value::Null, Value::Bool(false), Value::Bool(true)],
+        vec![Value::Number(1.0)],
+        loose,
+    );
+    // `label`, which `labels` replaced, now and then still carried (API-edges-dock-nodes-or-edges).
+    let stale = if loose {
+        prop_oneof![20 => Just(None), 1 => Just(Some(("label".to_owned(), Value::Number(0.0))))]
+            .boxed()
+    } else {
+        Just(None).boxed()
     };
-    object(vec![
-        field("id", nth("e", j), loose),
-        field("source", end(nodes), loose),
-        field("target", end(nodes), loose),
-        field("label", label, loose),
-        field("color", color(loose), loose),
-        field("dash", dash, loose),
-        field("arrow", arrow, loose),
-        field("sourceSide", side(), loose),
-        field("targetSide", side(), loose),
-    ])
+    // Focused, an edge holds nothing but its identifier, its colour, its arrowhead, and its ends,
+    // so that no other refusal settles the case.
+    let fields = if focus == Focus::None {
+        object(vec![
+            field("id", nth("e", j), loose),
+            stale,
+            field("labels", labels(loose), loose),
+            field("color", color(loose), loose),
+            field("dash", dash, loose),
+            field("arrow", arrow, loose),
+            field("lightning", lightning, loose),
+        ])
+        .boxed()
+    } else {
+        Just(Value::Object(vec![
+            ("id".to_owned(), Value::Text(format!("e{j}"))),
+            ("color".to_owned(), Value::Number(0.0)),
+            ("arrow".to_owned(), text("end")),
+        ]))
+        .boxed()
+    };
+    let ends = (
+        end_fields(SOURCE, nodes, edges, (loose, focus)),
+        end_fields(TARGET, nodes, edges, (loose, focus)),
+    );
+    (fields, ends).prop_map(|(fields, (source, target))| {
+        let Value::Object(mut fields) = fields else {
+            unreachable!("an object")
+        };
+        fields.extend(source.into_iter().chain(target).flatten());
+        Value::Object(fields)
+    })
 }
 
 /// A node or an edge that `good` makes; loose, now and then the snapshot's `false` in its place,
@@ -585,7 +810,7 @@ fn graph_data() -> impl Strategy<Value = Value> {
                 .map(|i| item(node(loose, i), loose))
                 .collect::<Vec<_>>();
             let edges_of = (0..edges)
-                .map(|j| item(edge(loose, j, nodes), loose))
+                .map(|j| item(edge((loose, Focus::None), j, nodes, edges), loose))
                 .collect::<Vec<_>>();
             object(vec![
                 field("nodes", nodes_of.prop_map(Value::List), loose),
@@ -593,10 +818,41 @@ fn graph_data() -> impl Strategy<Value = Value> {
             ])
         })
     };
+    // Ends on edges, among a few nodes and edges of no other value refused, so that each clause
+    // of an end of an edge settles hundreds of cases a run (`EndClauses`).
+    let ends = |focus| {
+        (1..4_usize, 2..6_usize).prop_flat_map(move |(nodes, edges)| {
+            // Rectangles side by side, each of one title, which no rule refuses.
+            let nodes_of: Vec<Value> = (0..nodes)
+                .map(|i| {
+                    let id = format!("n{i}");
+                    Value::Object(vec![
+                        ("id".to_owned(), Value::Text(id.clone())),
+                        ("x".to_owned(), Value::Number(300.0 * i as f64)),
+                        ("y".to_owned(), Value::Number(0.0)),
+                        ("width".to_owned(), Value::Number(100.0)),
+                        ("shape".to_owned(), Value::Text("rectangle".to_owned())),
+                        ("content".to_owned(), titled(&id)),
+                    ])
+                })
+                .collect();
+            let edges_of = (0..edges)
+                .map(|j| edge((false, focus), j, nodes, edges))
+                .collect::<Vec<_>>();
+            edges_of.prop_map(move |edges_of| {
+                Value::Object(vec![
+                    ("nodes".to_owned(), Value::List(nodes_of.clone())),
+                    ("edges".to_owned(), Value::List(edges_of)),
+                ])
+            })
+        })
+    };
     prop_oneof![
         6 => batch(false),
         3 => batch(true),
         1 => anything(),
+        3 => ends(Focus::Rules),
+        1 => ends(Focus::Shapes),
     ]
 }
 
@@ -643,7 +899,8 @@ fn shape_name(node: &Value) -> &str {
 /// Whether `node` holds no content in a filled node shape, which holds none
 /// (REN-closed-set-of-node-shapes).
 fn shape_ok(node: &Value) -> bool {
-    let filled = ["circle", "ringed-circle", "bar"].contains(&shape_name(node));
+    let filled =
+        ["circle", "ringed-circle", "bar", "crossed-circle", "cross"].contains(&shape_name(node));
     let rows = fields_of(node).and_then(|fields| get(fields, "content"));
     !(filled && matches!(rows, Some(Value::List(rows)) if !rows.is_empty()))
 }
@@ -651,7 +908,11 @@ fn shape_ok(node: &Value) -> bool {
 /// Whether the far side of `node`, its content well formed, lies within the world's limit: its
 /// `y`, as `f32` holds it, and its height by its node shape: of a content node shape, the height
 /// of its rows, each as high as its tallest text, and its padding of 10 above and below, at least
-/// 64, grown to its inner rectangle; of a circle its width; and of a bar 8.
+/// 64, grown to its inner rectangle, or the height its data gives where that is more, and without
+/// rows the height given or as wide; of a circle, a crossed circle, and a cross its width; of a bar
+/// 8 or the height given; and of an actor and an hourglass their drawing, 2 and 1.5 times their
+/// width and at most 48, above their rows and padding, at least 64 together, or the height given
+/// where that is more.
 fn far_side_ok(node: &Value, lines: [f64; 3]) -> bool {
     let Some(fields) = fields_of(node) else {
         return true;
@@ -683,19 +944,37 @@ fn far_side_ok(node: &Value, lines: [f64; 3]) -> bool {
             let reach = |e: &Value| line(e) + if badge(e) { 0.0 } else { shift };
             elements.iter().map(reach).fold(0.0, f64::max)
         }
+        // A separator's line of 1 and the padding of 10 above and below it.
+        Value::Text(name) if name == "separator" => 21.0,
         _ => 0.0,
     };
-    let height = (20.0 + rows.iter().map(row).sum::<f64>()).max(64.0);
+    let padded = 20.0 + rows.iter().map(row).sum::<f64>();
+    let height = padded.max(64.0);
     let width = match get(fields, "width") {
         Some(Value::Number(width)) => f64::from(*width as f32),
         _ => 0.0,
     };
+    // The height its data gives, as f32 holds it, a value of another type named elsewhere.
+    let given = match get(fields, "height") {
+        Some(Value::Number(given)) => Some(f64::from(*given as f32)),
+        _ => None,
+    };
+    let drawing = |proportion: f64| (width.max(0.0) * proportion).min(48.0);
     let height = match shape_name(node) {
+        "circle" | "ringed-circle" | "crossed-circle" | "cross" => width,
+        "bar" => given.unwrap_or(8.0),
+        "actor" if rows.is_empty() => drawing(2.0),
+        "hourglass" if rows.is_empty() => drawing(1.5),
+        "actor" => (drawing(2.0) + padded).max(64.0),
+        "hourglass" => (drawing(1.5) + padded).max(64.0),
+        _ if rows.is_empty() => given.unwrap_or(width),
         "ellipse" => height / core::f64::consts::FRAC_1_SQRT_2,
         "diamond" => height / 0.5,
-        "circle" | "ringed-circle" => width,
-        "bar" => 8.0,
         _ => height,
+    };
+    let height = match shape_name(node) {
+        "circle" | "ringed-circle" | "bar" | "crossed-circle" | "cross" => height,
+        _ => given.map_or(height, |given| given.max(height)),
     };
     let height = f64::from(height as f32);
     // NaN beside a coordinate the oracle names elsewhere: within, as `<=` reads it here.
@@ -720,7 +999,8 @@ fn nodes_of_data(data: &Value) -> &[Value] {
 /// 0 or more and a colour as a badge's, their fractions summing to at most 1 and 1e-9, or of the
 /// kind `metric`, a positive finite weight, a caption and a value as texts are, and a trend, an
 /// object of a text as theirs, a direction of the three, and a colour as a badge's, or of the kind
-/// `icon`, a positive finite weight and a name as a text is.
+/// `icon`, a positive finite weight and a name as a text is; or a row that is the string
+/// `"separator"`.
 fn content_ok(node: &Value) -> bool {
     let Some(Value::List(rows)) = fields_of(node).and_then(|fields| get(fields, "content")) else {
         return false;
@@ -782,6 +1062,7 @@ fn content_ok(node: &Value) -> bool {
     rows.len() <= 8
         && rows.iter().all(|row| match row {
             Value::List(elements) => elements.len() <= 6 && elements.iter().all(element_ok),
+            Value::Text(name) => name == "separator",
             _ => false,
         })
 }
@@ -794,6 +1075,9 @@ fn first_shape(fields: &Fields) -> Option<(u32, Option<u32>)> {
         return None;
     };
     for (r, row) in rows.iter().enumerate() {
+        if matches!(row, Value::Text(name) if name == "separator") {
+            continue;
+        }
         let Value::List(elements) = row else {
             return Some((r as u32, None));
         };
@@ -812,6 +1096,65 @@ fn first_shape(fields: &Fields) -> Option<(u32, Option<u32>)> {
         }
     }
     None
+}
+
+/// Where an end of an edge lies by the oracle (API-edges-dock-nodes-or-edges, *Ends*): on the node
+/// or the edge it names, at the path parameter it gives.
+enum End {
+    Node(String),
+    Edge(String, f64),
+}
+
+impl End {
+    /// The identifier it names, of a node or of an edge.
+    fn id(&self) -> &str {
+        match self {
+            Self::Node(id) | Self::Edge(id, _) => id,
+        }
+    }
+}
+
+/// The source of `e`, or its target, or none where a field of it is missing or of another type:
+/// a node by a string beside no edge with a side, or an edge by a string beside no node, with a
+/// path parameter that is a number, and no side.
+fn end_of(e: &EdgeInput, source: bool) -> Option<End> {
+    let (node, edge, t, side) = if source {
+        (&e.source, &e.source_edge, e.source_t, e.source_side)
+    } else {
+        (&e.target, &e.target_edge, e.target_t, e.target_side)
+    };
+    let given = |field: &super::Field<Option<String>>| !matches!(field.0, Some(None));
+    if !given(edge) {
+        side.0.flatten()?;
+        return node.0.clone().flatten().map(End::Node);
+    }
+    if given(node) || side.0?.is_some() {
+        return None;
+    }
+    Some(End::Edge(edge.0.clone().flatten()?, t.0.flatten()?))
+}
+
+/// Whether the ends of `e` lie where they may, or none where a field of one is missing or of
+/// another type: on a node of `nodes`, or on an edge of `edges`, not `e`, whose own ends lie on
+/// nodes, at a path parameter from 0 to 1 (API-edges-dock-nodes-or-edges, *Ends*).
+fn ends_ok(e: &EdgeInput, batch: &GraphBatch, nodes: &[String], edges: &[String]) -> Option<bool> {
+    let mut ok = true;
+    for end in [end_of(e, true)?, end_of(e, false)?] {
+        ok &= match end {
+            End::Node(node) => nodes.contains(&node),
+            End::Edge(on, t) => {
+                let at = edges.iter().position(|id| *id == on);
+                let on_nodes = at.is_some_and(|at| {
+                    let other = &batch.edges[at];
+                    [true, false]
+                        .into_iter()
+                        .all(|source| matches!(end_of(other, source), Some(End::Node(_))))
+                });
+                on_nodes && e.id.0.as_deref() != Some(on.as_str()) && (0.0..=1.0).contains(&t)
+            }
+        };
+    }
+    Some(ok)
 }
 
 /// Whether nothing in `batch` is to be refused, or none where a field is missing or of another
@@ -834,39 +1177,54 @@ fn accepts(batch: &GraphBatch) -> Option<bool> {
         .collect::<Option<_>>()?;
     let mut ends = Vec::new();
     for e in &batch.edges {
-        ends.extend([id(&e.source)?, id(&e.target)?]);
+        for end in [end_of(e, true)?, end_of(e, false)?] {
+            ends.push(end.id().to_owned());
+        }
     }
     // The world's limit, 2^120: a node within it, its far side included, as f32 holds them, and
     // a label offset within it.
     let world = 2f64.powi(120);
     let as_f32 = |v: f64| f64::from(v as f32);
     let node_ok = |n: &NodeInput| {
-        let [x, y, width] = [n.x.0?, n.y.0?, n.width.0?];
+        let [x, y, width] = [n.x.0.flatten()?, n.y.0.flatten()?, n.width.0?];
         n.content.0.as_ref()?;
+        n.resizable.0?;
+        n.outline.0?;
+        // A height its data gives is a finite number above 0 as f32 holds it.
+        let height_ok = n.height.0?.is_none_or(|h| finite32(h) && h as f32 > 0.0);
         let within = [x, y, x]
             .into_iter()
             .zip([0.0, 0.0, width])
             .all(|(at, size)| (as_f32(at) + as_f32(size)).abs() <= world);
-        Some([x, y, width].into_iter().all(finite32) && width as f32 >= 0.0 && within)
+        Some([x, y, width].into_iter().all(finite32) && width as f32 >= 0.0 && within && height_ok)
     };
     let edge_ok = |e: &EdgeInput| {
-        let label_ok = match e.label.0? {
-            None => true,
-            Some(l) => {
-                let (t, offset) = (l.t.0?, l.offset.0?);
-                t.is_finite()
-                    && offset.is_finite()
-                    && offset.abs() <= world
-                    && l.text_length.is_some_and(|l| l <= 1_000)
-                    && l.background.is_none_or(rgb)
-            }
-        };
+        if e.label {
+            return None;
+        }
+        let labels = e.labels.0.as_ref()?.as_deref().unwrap_or(&[]);
+        let mut label_ids = Vec::new();
+        let mut label_ok = labels.len() <= 8;
+        for label in labels {
+            let l = label.0.as_ref()?;
+            let id = l.id.0.clone()?;
+            let (t, offset) = (l.t.0?.unwrap_or(0.5), l.offset.0?.unwrap_or(0.0));
+            label_ok &= short(&id)
+                && t.is_finite()
+                && offset.is_finite()
+                && offset.abs() <= world
+                && l.text_length.is_some_and(|l| l <= 1_000)
+                && l.background.is_none_or(rgb);
+            label_ids.push(id);
+        }
+        label_ok &= unique(&label_ids);
+        e.lightning.0?;
         let dash_ok = e.dash.0?.is_none_or(|super::Pair([d, g])| {
             finite32(d) && finite32(g) && d as f32 > 0.0 && g as f32 >= 0.0
         });
         e.arrow.0?;
-        let named = |end: &Option<String>| end.as_ref().is_some_and(|end| nodes.contains(end));
-        Some(named(&e.source.0) && named(&e.target.0) && label_ok && rgb(e.color.0?) && dash_ok)
+        let ends_ok = ends_ok(e, batch, &nodes, &edges)?;
+        Some(ends_ok && label_ok && rgb(e.color.0?) && dash_ok)
     };
     let mut all_nodes = true;
     for n in &batch.nodes {
@@ -927,6 +1285,60 @@ fn shaped(value: &Value) -> bool {
     true
 }
 
+/// Whether the outline of the node `item` is none, `"solid"`, `"none"`, or a dash pattern of a
+/// dash above 0 and a gap not below 0 as `f32` holds them, which the bridge reads with the field.
+fn outline_typed(item: &Fields) -> bool {
+    let finite = |n: f64| (n as f32).is_finite();
+    match get(item, "outline") {
+        None | Some(Value::Null) => true,
+        Some(Value::Text(name)) => name == "solid" || name == "none",
+        Some(Value::List(pair)) => match pair.as_slice() {
+            [Value::Number(dash), Value::Number(gap)] => {
+                finite(*dash) && finite(*gap) && *dash as f32 > 0.0 && *gap as f32 >= 0.0
+            }
+            _ => false,
+        },
+        Some(_) => false,
+    }
+}
+
+/// Whether the node shape of the node `item` names one, and whether its height and whether it is
+/// resizable are of their types, or none.
+fn shape_and_sizing_typed(item: &Fields) -> [(&'static str, bool); 3] {
+    let shapes = [
+        "rectangle",
+        "rounded-rectangle",
+        "ellipse",
+        "circle",
+        "ringed-circle",
+        "diamond",
+        "bar",
+        "pentagon",
+        "notched-rectangle",
+        "note",
+        "frame",
+        "crossed-circle",
+        "cross",
+        "actor",
+        "hourglass",
+    ];
+    let shape = matches!(get(item, "shape"), Some(Value::Text(s)) if shapes.contains(&s.as_str()));
+    let absent = |value: Option<&Value>| matches!(value, None | Some(Value::Null));
+    let height = get(item, "height");
+    let resizable = get(item, "resizable");
+    [
+        ("shape", shape),
+        (
+            "height",
+            absent(height) || matches!(height, Some(Value::Number(_))),
+        ),
+        (
+            "resizable",
+            absent(resizable) || matches!(resizable, Some(Value::Bool(_))),
+        ),
+    ]
+}
+
 /// A field the bridge names: the list, the index, the identifier where the item has a string
 /// one, and the field.
 type Named = (GraphList, u32, Option<String>, String);
@@ -935,14 +1347,14 @@ type Named = (GraphList, u32, Option<String>, String);
 /// its identifier and its numbers; of an edge, its identifiers, colour, and arrow, and its label
 /// and dash where they are given, and a given label's placement. A title, a label text, and a
 /// background are refused by kinds of their own.
-fn mistyped(list: GraphList, item: &Fields) -> Vec<&'static str> {
+fn mistyped(list: GraphList, item: &Fields) -> Vec<String> {
     let text = |name| matches!(get(item, name), Some(Value::Text(_)));
     let number = |fields, name| matches!(get(fields, name), Some(Value::Number(_)));
     let absent = |value: Option<&Value>| matches!(value, None | Some(Value::Null));
     let mut wrong = Vec::new();
-    let mut check = |name, ok: bool| {
+    let mut check = |name: &str, ok: bool| {
         if !ok {
-            wrong.push(name);
+            wrong.push(name.to_owned());
         }
     };
     match list {
@@ -951,18 +1363,10 @@ fn mistyped(list: GraphList, item: &Fields) -> Vec<&'static str> {
             for name in ["x", "y", "width"] {
                 check(name, number(item, name));
             }
-            let shapes = [
-                "rectangle",
-                "rounded-rectangle",
-                "ellipse",
-                "circle",
-                "ringed-circle",
-                "diamond",
-                "bar",
-            ];
-            let shape =
-                matches!(get(item, "shape"), Some(Value::Text(s)) if shapes.contains(&s.as_str()));
-            check("shape", shape);
+            for (name, typed) in shape_and_sizing_typed(item) {
+                check(name, typed);
+            }
+            check("outline", outline_typed(item));
             check(
                 "content",
                 matches!(get(item, "content"), Some(Value::List(_))),
@@ -970,30 +1374,85 @@ fn mistyped(list: GraphList, item: &Fields) -> Vec<&'static str> {
             check("content.shape", first_shape(item).is_none());
         }
         GraphList::Edges => {
-            for name in ["id", "source", "target"] {
-                check(name, text(name));
+            check("id", text("id"));
+            for name in mistyped_ends(item) {
+                check(name, false);
             }
-            let label = get(item, "label");
-            match label.and_then(fields_of) {
-                Some(placed) => {
-                    check("label.t", number(placed, "t"));
-                    check("label.offset", number(placed, "offset"));
-                }
-                None => check("label", absent(label)),
+            check("label", absent(get(item, "label")));
+            for name in mistyped_labels(item) {
+                check(&name, false);
             }
             check("color", number(item, "color"));
             let dash = get(item, "dash");
             let number = |n: &Value| matches!(n, Value::Number(_));
             let pair = matches!(dash, Some(Value::List(v)) if v.len() == 2 && v.iter().all(number));
             check("dash", absent(dash) || pair);
+            let arrows = ["end", "none", "open", "hollow"];
             let arrow =
-                matches!(get(item, "arrow"), Some(Value::Text(a)) if a == "end" || a == "none");
+                matches!(get(item, "arrow"), Some(Value::Text(a)) if arrows.contains(&a.as_str()));
             check("arrow", arrow);
-            for name in ["sourceSide", "targetSide"] {
-                let sides = ["top", "right", "bottom", "left", "outline"];
-                let side =
-                    matches!(get(item, name), Some(Value::Text(s)) if sides.contains(&s.as_str()));
-                check(name, side);
+            let lightning = get(item, "lightning");
+            check(
+                "lightning",
+                absent(lightning) || matches!(lightning, Some(Value::Bool(_))),
+            );
+        }
+    }
+    wrong
+}
+
+/// The fields of the ends of the edge `item` that are missing or hold a value of another type, by
+/// name (API-edges-dock-nodes-or-edges, *Ends*): of an end that names an edge, the edge given
+/// beside a node or no string, a path parameter that is no number from 0 to 1, and a side given;
+/// of any other end, a node that is no string and a side that names none of the five.
+fn mistyped_ends(item: &Fields) -> Vec<&'static str> {
+    let absent = |value: Option<&Value>| matches!(value, None | Some(Value::Null));
+    let text = |name| matches!(get(item, name), Some(Value::Text(_)));
+    let sides = ["top", "right", "bottom", "left", "outline"];
+    let mut wrong = Vec::new();
+    for names in [SOURCE, TARGET] {
+        let side = get(item, names[3]);
+        if absent(get(item, names[1])) {
+            let named = matches!(side, Some(Value::Text(s)) if sides.contains(&s.as_str()));
+            wrong.extend([(names[0], text(names[0])), (names[3], named)]);
+        } else {
+            let t = get(item, names[2]);
+            let on_path = matches!(t, Some(Value::Number(t)) if (0.0..=1.0).contains(t));
+            let alone = absent(get(item, names[0])) && text(names[1]);
+            wrong.extend([
+                (names[1], alone),
+                (names[2], on_path),
+                (names[3], absent(side)),
+            ]);
+        }
+    }
+    wrong.retain(|&(_, ok)| !ok);
+    wrong.into_iter().map(|(name, _)| name).collect()
+}
+
+/// The fields of the labels of the edge `item` that are missing or hold a value of another type,
+/// by name: the list, then of each of the first nine labels, which the bridge reads, the label as
+/// an object, its identifier, and its place where it gives one (API-edges-dock-nodes-or-edges).
+fn mistyped_labels(item: &Fields) -> Vec<String> {
+    let absent = |value: Option<&Value>| matches!(value, None | Some(Value::Null));
+    let labels = match get(item, "labels") {
+        Some(Value::List(labels)) => labels,
+        labels if absent(labels) => return Vec::new(),
+        _ => return vec!["labels".to_owned()],
+    };
+    let mut wrong = Vec::new();
+    for (i, label) in labels.iter().take(9).enumerate() {
+        let Some(placed) = fields_of(label) else {
+            wrong.push(format!("labels[{i}]"));
+            continue;
+        };
+        if !matches!(get(placed, "id"), Some(Value::Text(_))) {
+            wrong.push(format!("labels[{i}].id"));
+        }
+        for name in ["t", "offset"] {
+            let value = get(placed, name);
+            if !(absent(value) || matches!(value, Some(Value::Number(_)))) {
+                wrong.push(format!("labels[{i}].{name}"));
             }
         }
     }
@@ -1018,7 +1477,7 @@ fn named_fields(value: &Value) -> Vec<Named> {
             };
             for field in mistyped(list, fields) {
                 let id = if field == "id" { None } else { id.clone() };
-                named.push((list, index as u32, id, field.to_owned()));
+                named.push((list, index as u32, id, field));
             }
         }
     }
@@ -1443,18 +1902,7 @@ fn loaded_in(
         content.lay_out(node, frame, fonts, &mut cells, &mut rows, &mut placed);
         let laid = &placed[start..];
         drawn.draw(&content, node, &cells, laid, Level::Near, fonts);
-        for (_, _, element, at) in content.elements_of(node) {
-            let kind = content.kinds[element];
-            texts.push(if kind == KindCode::Progress as u8 {
-                vec![""]
-            } else if kind == KindCode::Icon as u8 {
-                vec![content.name(at.name)]
-            } else if kind == KindCode::Metric as u8 {
-                (0..3).map(|i| content.text(at.text + i)).collect()
-            } else {
-                vec![content.text(at.text)]
-            });
-        }
+        push_shown(&content, node, &cells, &mut texts);
         for at in &placed[start..] {
             let [x, y, w, h] = [at.x, at.y, at.width, at.height].map(f64::from);
             assert!(
@@ -1480,6 +1928,37 @@ fn loaded_in(
         assert_eq!(content.text(index), text);
     }
     Ok(loaded.graph)
+}
+
+/// Pushes onto `texts` what each of `cells`, the content of the node at `node` of `content` as the
+/// layout read it, shows: none of a progress bar and of a separator, which holds no element of the
+/// columns, three of a metric, and the name of an icon, which the shell draws as its image.
+fn push_shown<'c>(
+    content: &'c super::ContentData,
+    node: usize,
+    cells: &[comb_engine::content::Cell],
+    texts: &mut Vec<Vec<&'c str>>,
+) {
+    let mut elements = content.elements_of(node);
+    for cell in cells {
+        if matches!(cell.element, comb_engine::content::Element::Separator) {
+            texts.push(vec![""]);
+            continue;
+        }
+        let Some((_, _, element, at)) = elements.next() else {
+            break;
+        };
+        let kind = content.kinds[element];
+        texts.push(if kind == KindCode::Progress as u8 {
+            vec![""]
+        } else if kind == KindCode::Icon as u8 {
+            vec![content.name(at.name)]
+        } else if kind == KindCode::Metric as u8 {
+            (0..3).map(|i| content.text(at.text + i)).collect()
+        } else {
+            vec![content.text(at.text)]
+        });
+    }
 }
 
 /// Asserts that the pieces of each bar `drawn` holds lie within the element `placed` holds of it,
@@ -1624,28 +2103,32 @@ fn base_edge() -> Vec<(String, Value)> {
         ("arrow".to_owned(), Value::Text("end".to_owned())),
         ("sourceSide".to_owned(), Value::Text("bottom".to_owned())),
         ("targetSide".to_owned(), Value::Text("top".to_owned())),
-        // A dash and a label too, so that a patch that names neither is seen to keep them.
+        // A dash, labels, and a lightning bolt too, so that a patch that names none of them is
+        // seen to keep them.
         (
             "dash".to_owned(),
             Value::List(vec![Value::Number(8.0), Value::Number(4.0)]),
         ),
         (
-            "label".to_owned(),
-            Value::Object(vec![
+            "labels".to_owned(),
+            Value::List(vec![Value::Object(vec![
+                ("id".to_owned(), Value::Text("m".to_owned())),
                 ("text".to_owned(), Value::Text("x".to_owned())),
                 ("t".to_owned(), Value::Number(0.3)),
                 ("offset".to_owned(), Value::Number(5.0)),
-            ]),
+            ])]),
         ),
+        ("lightning".to_owned(), Value::Bool(true)),
     ]
 }
 
 /// The fields a patch of `updateEdge` may set.
-const PATCHED: [&str; 6] = [
+const PATCHED: [&str; 7] = [
     "color",
     "dash",
     "arrow",
-    "label",
+    "labels",
+    "lightning",
     "sourceSide",
     "targetSide",
 ];
@@ -1653,10 +2136,11 @@ const PATCHED: [&str; 6] = [
 /// A patch of `updateEdge`: some of the fields of an edge, of any value, and now and then a field
 /// of another name among them.
 fn edge_patch() -> impl Strategy<Value = Vec<(String, Value)>> {
-    let other = prop::sample::select(vec!["id", "source", "width", "", "colour"]);
+    // `label`, which `labels` replaced, among the other names (API-edges-dock-nodes-or-edges).
+    let other = prop::sample::select(vec!["id", "source", "width", "", "colour", "label"]);
     (
-        edge(true, 0, 2),
-        0..16_u32,
+        edge((true, Focus::None), 0, 2, 0),
+        0..128_u32,
         prop::option::of((0..5_usize, other)),
     )
         .prop_map(|(edge, keep, other)| {
@@ -1677,6 +2161,226 @@ fn edge_patch() -> impl Strategy<Value = Vec<(String, Value)>> {
         })
 }
 
+/// The clauses of an end of an edge a load of random graph data rests on
+/// (API-edges-dock-nodes-or-edges, *Ends*), each counted where it settles the case: a graph with
+/// an end on an edge; an end on itself, on an edge that ends on another, and in a cycle, refused as
+/// `invalidEdgeEnd`; an end on an edge the batch does not hold, as `missingEdge`; and, as
+/// `invalidField`, an end that names a node and an edge both, a path parameter off 0 to 1, and a
+/// side beside an end on an edge.
+#[derive(Default)]
+struct EndClauses {
+    on_edge: Cell<u32>,
+    itself: Cell<u32>,
+    chain: Cell<u32>,
+    cycle: Cell<u32>,
+    missing: Cell<u32>,
+    both: Cell<u32>,
+    off_path: Cell<u32>,
+    side_beside: Cell<u32>,
+}
+
+/// The edge of `value` whose identifier is `id`, and its fields.
+fn edge_named<'v>(value: &'v Value, id: &str) -> Option<&'v Fields> {
+    let edges = match fields_of(value).and_then(|fields| get(fields, "edges")) {
+        Some(Value::List(edges)) => edges,
+        _ => return None,
+    };
+    edges
+        .iter()
+        .filter_map(fields_of)
+        .find(|fields| matches!(get(fields, "id"), Some(Value::Text(named)) if named == id))
+}
+
+/// The edge an end of `fields` names by `name`, `sourceEdge` or `targetEdge`, where it is a string.
+fn named_edge<'v>(fields: &'v Fields, name: &str) -> Option<&'v str> {
+    match get(fields, name) {
+        Some(Value::Text(on)) => Some(on),
+        _ => None,
+    }
+}
+
+/// Counts in `clauses` the clause of an end of an edge that settled the load of `value`, by its
+/// outcome `loaded`, where one did.
+fn count_end_clause(
+    value: &Value,
+    loaded: &Result<comb_engine::graph::Graph, GraphDataProblem>,
+    clauses: &EndClauses,
+) {
+    let bump = |count: &Cell<u32>| count.set(count.get() + 1);
+    let absent = |value: Option<&Value>| matches!(value, None | Some(Value::Null));
+    let index = |list: &GraphList, index: u32| match (list, value) {
+        (GraphList::Edges, Value::Object(_)) => match get(fields_of(value).unwrap(), "edges") {
+            Some(Value::List(edges)) => edges.get(index as usize).and_then(fields_of),
+            _ => None,
+        },
+        _ => None,
+    };
+    match loaded {
+        Ok(graph) => {
+            let ends_on_edge = (0..graph.edges_in_use()).any(|e| {
+                graph.edge(e).is_some_and(|spec| {
+                    spec.source.edge().is_some() || spec.target.edge().is_some()
+                })
+            });
+            if ends_on_edge {
+                bump(&clauses.on_edge);
+            }
+        }
+        Err(GraphDataProblem::InvalidEdgeEnd { edge, end }) => {
+            let Some(fields) = edge_named(value, edge) else {
+                return;
+            };
+            let Some(on) = named_edge(fields, end) else {
+                return;
+            };
+            if on == edge {
+                bump(&clauses.itself);
+                return;
+            }
+            let back = edge_named(value, on).is_some_and(|other| {
+                [SOURCE[1], TARGET[1]]
+                    .into_iter()
+                    .any(|name| named_edge(other, name) == Some(edge.as_str()))
+            });
+            bump(if back { &clauses.cycle } else { &clauses.chain });
+        }
+        Err(GraphDataProblem::MissingEdge { .. }) => bump(&clauses.missing),
+        Err(GraphDataProblem::InvalidField {
+            list,
+            index: at,
+            field,
+            ..
+        }) => {
+            let Some(item) = index(list, *at) else { return };
+            for names in [SOURCE, TARGET] {
+                let on_edge = !absent(get(item, names[1]));
+                if field == names[1] && on_edge && !absent(get(item, names[0])) {
+                    bump(&clauses.both);
+                } else if field == names[2] && on_edge {
+                    bump(&clauses.off_path);
+                } else if field == names[3] && on_edge {
+                    bump(&clauses.side_beside);
+                }
+            }
+        }
+        Err(_) => {}
+    }
+}
+
+/// One case of the test below: `value` loaded as columns, its strings in pieces of `bound`, in
+/// `fonts` of the line heights `lines`, held to the oracles of the value it was built of, the
+/// clause of an end of an edge that settled it counted in `clauses`.
+fn graph_data_case(
+    value: Value,
+    bound: usize,
+    (fonts, lines): (Fonts, [f64; 3]),
+    clauses: &EndClauses,
+) -> Result<(), TestCaseError> {
+    let loaded = loaded_in(bound, value.clone(), &fonts);
+    count_end_clause(&value, &loaded, clauses);
+    let named = named_fields(&value);
+    let batch = || GraphBatch::deserialize(value.clone()).ok();
+    match loaded {
+        // A value without the shape of graph data is refused before any check of the
+        // bridge's own, as malformed.
+        Err(error @ GraphDataProblem::Malformed { .. }) => {
+            prop_assert!(!shaped(&value), "refused {:?}", error);
+            prop_assert!(!messages(&error).into_iter().any(names_rust), "{:?}", error);
+        }
+        Ok(graph) => {
+            prop_assert!(shaped(&value));
+            let batch = batch().expect("graph data of its shape reads as a batch");
+            prop_assert!(named.is_empty() && acceptable_in(&batch, &value, lines));
+            prop_assert_eq!(graph.positions().len(), 2 * batch.nodes.len());
+        }
+        Err(error) => {
+            prop_assert!(shaped(&value), "refused {:?}", error);
+            prop_assert!(!messages(&error).into_iter().any(names_rust), "{:?}", error);
+            match &error {
+                // A field missing or of another type is named before any other check.
+                GraphDataProblem::InvalidField {
+                    list,
+                    index,
+                    id,
+                    field,
+                    ..
+                } => {
+                    let at = (*list, *index, id.clone(), field.clone());
+                    prop_assert!(named.contains(&at), "refused {:?}", error);
+                }
+                // So is a shape of content the snapshot cannot flatten, at its position.
+                GraphDataProblem::InvalidContentShape {
+                    index,
+                    id,
+                    row,
+                    column,
+                    ..
+                } => {
+                    let at = (
+                        GraphList::Nodes,
+                        *index,
+                        id.clone(),
+                        "content.shape".to_owned(),
+                    );
+                    prop_assert!(named.contains(&at), "refused {:?}", error);
+                    let node = &nodes_of_data(&value)[*index as usize];
+                    let shape = fields_of(node).and_then(first_shape);
+                    prop_assert_eq!(shape, Some((*row, *column)));
+                }
+                _ => {
+                    let batch = batch().expect("graph data of its shape reads as a batch");
+                    prop_assert!(named.is_empty(), "refused {:?}, not {:?}", error, named);
+                    prop_assert!(!acceptable_in(&batch, &value, lines), "refused {:?}", error);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Runs the cases of any graph data through a runner of its own, so that the floors of the clauses
+/// of an end of an edge are asserted once, after its last case, from counts this test alone holds.
+#[test]
+fn any_graph_data_ends_in_a_typed_error_or_a_graph() {
+    // Verifies: API-bridge-takes-serde-and-columns, API-edges-dock-nodes-or-edges
+    // A panic anywhere below fails the case; the runner catches it and shrinks the input. The load
+    // crosses as columns, its strings in pieces of the bound generated with it, and is held to the
+    // oracles of the value it was built of.
+    let clauses = EndClauses::default();
+    let mut config = ProptestConfig::with_cases(CASES);
+    config.source_file = Some(file!());
+    // As `proptest!` does: the environment's `PROPTEST_*` variables override the cases.
+    let mut runner = TestRunner::new(proptest::test_runner::contextualize_config(config));
+    let cases = (graph_data(), piece_bound(), fonts());
+    let result = runner.run(&cases, |(value, bound, fonts)| {
+        graph_data_case(value, bound, fonts, &clauses)
+    });
+    if let Err(error) = result {
+        panic!("{error}\n{runner}");
+    }
+    let counts = [
+        ("an end on an edge", clauses.on_edge.get()),
+        ("on itself", clauses.itself.get()),
+        ("on an edge on an edge", clauses.chain.get()),
+        ("in a cycle", clauses.cycle.get()),
+        ("on a missing edge", clauses.missing.get()),
+        ("a node and an edge both", clauses.both.get()),
+        ("a parameter off the path", clauses.off_path.get()),
+        ("a side beside an end on an edge", clauses.side_beside.get()),
+    ];
+    for (clause, count) in counts {
+        assert!(count >= END_FLOOR, "{clause}: {count} cases");
+    }
+}
+
+/// The floor of cases each clause of an end of an edge rests on, in a run of `CASES`, well below
+/// the fewest six runs met: from 179 to 199 cases in a cycle, the rarest clause, and 198 to 229 of
+/// a node and an edge both, 273 to 337 of a parameter off the path, 250 to 289 of a side beside an
+/// end on an edge, 282 to 330 loaded with an end on an edge, 375 to 444 on a missing edge, 488 to
+/// 563 on an edge on an edge, and 669 to 723 on itself; so that a generator that stops making a
+/// clause fails, and no run of the seeds proptest draws at random does.
+const END_FLOOR: u32 = 100;
+
 /// Runs the cases of an added edge through a runner of its own, so that the floor of loops is
 /// asserted once, after its last case, from counts this test alone holds: a case proptest replays
 /// before the new ones, from a persisted regression, cannot move when the floor is checked.
@@ -1690,7 +2394,7 @@ fn an_added_edge_is_refused_exactly_as_a_load_of_it_alone_and_a_loop_besides_unl
     // override the cases, as they do for every other test of this file.
     let mut runner = TestRunner::new(proptest::test_runner::contextualize_config(config));
     let cases = (
-        prop_oneof![9 => edge(true, 0, 2), 1 => anything()],
+        prop_oneof![9 => edge((true, Focus::None), 0, 2, 0), 1 => anything()],
         piece_bound(),
         any::<bool>(),
     );
@@ -1795,7 +2499,7 @@ proptest! {
     ) {
         // Verifies: ARCH-one-workspace-per-example, API-edits-reported-as-typed-changes, Q-7
         let mut graph = loaded(bound, two_nodes(vec![Value::Object(base_edge())])).unwrap();
-        let before = graph.edge(0);
+        let before = graph.edge(0).cloned();
         let other = patch
             .iter()
             .find(|(name, _)| !PATCHED.contains(&name.as_str()))
@@ -1813,7 +2517,7 @@ proptest! {
                 edge: "e0".to_owned(),
                 field,
             })));
-            prop_assert_eq!(graph.edge(0), before);
+            prop_assert_eq!(graph.edge(0).cloned(), before);
             return Ok(());
         }
         // Held to the oracle on its own too, as an added edge is.
@@ -1822,7 +2526,7 @@ proptest! {
             (Ok(()), Ok(expected)) => prop_assert_eq!(graph.edge(0), expected.edge(0)),
             (Err(error), Err(expected)) => {
                 prop_assert_eq!(error, EdgeRefusal::Data(expected));
-                prop_assert_eq!(graph.edge(0), before);
+                prop_assert_eq!(graph.edge(0).cloned(), before);
             }
             (updated, as_load) => prop_assert!(false, "updated {:?}, loaded {:?}", updated, as_load.map(|_| ())),
         }
@@ -1858,7 +2562,7 @@ proptest! {
         let mut graph = with_a();
         let added = NodeInput::deserialize(value)
             .map_err(unshaped)
-            .and_then(|node| add_node_to(&mut graph, &node, &Fonts::default(), 0));
+            .and_then(|node| add_node_to(&mut graph, &node, (None, None), &Fonts::default(), 0));
         match (added, as_load) {
             (Ok((slot, _)), Ok((positions, sizes))) => {
                 prop_assert_eq!(slot, 1);
@@ -1871,58 +2575,6 @@ proptest! {
                 prop_assert_eq!(graph.nodes_in_use(), 1);
             }
             (added, as_load) => prop_assert!(false, "added {:?}, loaded {:?}", added, as_load),
-        }
-    }
-
-    #[test]
-    fn any_graph_data_ends_in_a_typed_error_or_a_graph(
-        value in graph_data(),
-        bound in piece_bound(),
-        (fonts, lines) in fonts(),
-    ) {
-        // Verifies: API-bridge-takes-serde-and-columns
-        // A panic anywhere below fails the case; the runner catches it and shrinks the input.
-        // The load crosses as columns, its strings in pieces of the bound generated with it, and
-        // is held to the oracles of the value it was built of.
-        let named = named_fields(&value);
-        let batch = || GraphBatch::deserialize(value.clone()).ok();
-        match loaded_in(bound, value.clone(), &fonts) {
-            // A value without the shape of graph data is refused before any check of the
-            // bridge's own, as malformed.
-            Err(error @ GraphDataProblem::Malformed { .. }) => {
-                prop_assert!(!shaped(&value), "refused {:?}", error);
-                prop_assert!(!messages(&error).into_iter().any(names_rust), "{:?}", error);
-            }
-            Ok(graph) => {
-                prop_assert!(shaped(&value));
-                let batch = batch().expect("graph data of its shape reads as a batch");
-                prop_assert!(named.is_empty() && acceptable_in(&batch, &value, lines));
-                prop_assert_eq!(graph.positions().len(), 2 * batch.nodes.len());
-            }
-            Err(error) => {
-                prop_assert!(shaped(&value), "refused {:?}", error);
-                prop_assert!(!messages(&error).into_iter().any(names_rust), "{:?}", error);
-                match &error {
-                    // A field missing or of another type is named before any other check.
-                    GraphDataProblem::InvalidField { list, index, id, field, .. } => {
-                        let at = (*list, *index, id.clone(), field.clone());
-                        prop_assert!(named.contains(&at), "refused {:?}", error);
-                    }
-                    // So is a shape of content the snapshot cannot flatten, at its position.
-                    GraphDataProblem::InvalidContentShape { index, id, row, column, .. } => {
-                        let at = (GraphList::Nodes, *index, id.clone(), "content.shape".to_owned());
-                        prop_assert!(named.contains(&at), "refused {:?}", error);
-                        let node = &nodes_of_data(&value)[*index as usize];
-                        let shape = fields_of(node).and_then(first_shape);
-                        prop_assert_eq!(shape, Some((*row, *column)));
-                    }
-                    _ => {
-                        let batch = batch().expect("graph data of its shape reads as a batch");
-                        prop_assert!(named.is_empty(), "refused {:?}, not {:?}", error, named);
-                        prop_assert!(!acceptable_in(&batch, &value, lines), "refused {:?}", error);
-                    }
-                }
-            }
         }
     }
 
@@ -1947,8 +2599,8 @@ proptest! {
                     *key == "content" && content_ok(&node)
                 });
                 let sets = read.iter().any(|(key, _)| *key == "content");
-                match patch_of("n", crate::graph_data::RECTANGLE, &patch, &Fonts::default(), 0) {
-                    Ok(checked) => prop_assert!(fine && checked.is_some() == sets),
+                match patch_of("n", (crate::graph_data::RECTANGLE.0, false), None, &patch, &Fonts::default(), 0) {
+                    Ok(checked) => prop_assert!(fine && checked.content.is_some() == sets),
                     Err(error) => {
                         prop_assert!(!fine);
                         prop_assert!(!messages(&error).into_iter().any(names_rust));
@@ -2034,7 +2686,7 @@ fn content_input(rows: &[Vec<Counted>]) -> ContentInput {
                 }
             }
         }
-        content.end_row();
+        content.end_row(false);
     }
     content
 }
@@ -2047,6 +2699,16 @@ fn counted_node(id: String, rows: &[Vec<Counted>]) -> NodeInput {
         y: 0.0.into(),
         width: 100.0.into(),
         shape: crate::NodeShape::Rectangle.into(),
+        container: None.into(),
+        is_container: None.into(),
+        height: None.into(),
+        resizable: None.into(),
+        outline: None.into(),
+        divide: None.into(),
+        regions: None.into(),
+        attached_to: None.into(),
+        side: None.into(),
+        offset: None.into(),
         content: content_input(rows).into(),
     }
 }
@@ -2120,7 +2782,7 @@ proptest! {
                 }
                 Edit::Add(rows) => {
                     let id = format!("a{step}");
-                    let added = engine.add(&counted_node(id.clone(), &rows));
+                    let added = engine.add(&counted_node(id.clone(), &rows), (None, None));
                     let units = units_in(&rows);
                     if total + units <= budget {
                         let slot = added.expect("an addition within the budget is taken");
@@ -2162,4 +2824,350 @@ proptest! {
         }
         TEST_BUDGET.set(None);
     }
+}
+
+/// The outcomes a load of a random nesting rests on, counted per clause: a field of another type
+/// named in the first pass, a container that names no node, one that is no container, a node in
+/// itself or a node it holds, and a nesting taken.
+#[derive(Default)]
+struct NestingCases {
+    first_pass: Cell<u32>,
+    no_node: Cell<u32>,
+    not_a_container: Cell<u32>,
+    in_itself: Cell<u32>,
+    taken: Cell<u32>,
+}
+
+/// A nesting as the test below generates it: per node the slot its container names, or none;
+/// whether it is a container; and the first field of another type, its node and whether it is the
+/// mark, or none.
+type NestingInput = (Vec<Option<u32>>, Vec<bool>, Option<(u32, bool)>);
+
+/// A random nesting of up to eight nodes, a container naming one past the nodes where it names
+/// none.
+fn random_nesting() -> impl Strategy<Value = NestingInput> {
+    (1_usize..=8).prop_flat_map(|count| {
+        let slot = prop_oneof![1 => Just(None), 3 => (0..=count as u32).prop_map(Some)];
+        (
+            proptest::collection::vec(slot, count),
+            proptest::collection::vec(prop_oneof![1 => Just(false), 2 => Just(true)], count),
+            proptest::option::weighted(0.1, (0..count as u32, any::<bool>())),
+        )
+    })
+}
+
+#[test]
+fn a_load_s_nesting_is_refused_exactly_where_an_oracle_finds_a_node_out_of_place() {
+    // Verifies: API-bridge-columns-carry-nesting, ARCH-engine-edits-nested-graph, Q-7
+    let cases = NestingCases::default();
+    let mut config = ProptestConfig::with_cases(CASES);
+    config.source_file = Some(file!());
+    let mut runner = TestRunner::new(proptest::test_runner::contextualize_config(config));
+    let result = runner.run(&random_nesting(), |(containers, marks, mistyped)| {
+        nesting_case(&containers, &marks, mistyped, &cases)
+    });
+    if let Err(error) = result {
+        panic!("{error}\n{runner}");
+    }
+    for (clause, count) in [
+        ("first pass", &cases.first_pass),
+        ("no node", &cases.no_node),
+        ("not a container", &cases.not_a_container),
+        ("in itself", &cases.in_itself),
+        ("taken", &cases.taken),
+    ] {
+        assert!(count.get() >= 200, "{clause}: {}", count.get());
+    }
+}
+
+/// The name of node `i` of the test above.
+fn nested_name(i: usize) -> String {
+    format!("n{i}")
+}
+
+/// One case of the test above: nodes `n0`, `n1`, … at (10 i, 5 i), each 100 wide, nested by
+/// `containers` and `marks`, a field of another type at `mistyped`, loaded and judged by an oracle
+/// that walks each chain of containers from the inputs alone.
+fn nesting_case(
+    containers: &[Option<u32>],
+    marks: &[bool],
+    mistyped: Option<(u32, bool)>,
+    cases: &NestingCases,
+) -> Result<(), TestCaseError> {
+    use super::{NodeField, node_columns::Refused};
+    let count = containers.len();
+    let names: Vec<String> = (0..count).map(nested_name).collect();
+    let nodes: Vec<(&str, f64, f64)> = (0..count)
+        .map(|i| (names[i].as_str(), 10.0 * i as f64, 5.0 * i as f64))
+        .collect();
+    let data = super::tests::batch(&nodes, &[]);
+    let mut columns = OwnedColumns::of(data.nodes.iter().map(Some)).nested(containers, marks);
+    columns.refused = mistyped.map(|(index, mark)| Refused {
+        index,
+        field: if mark {
+            NodeField::IsContainer
+        } else {
+            NodeField::Container
+        },
+        row: None,
+        column: None,
+    });
+    let loaded = super::tests::load_columns(&columns);
+    match (loaded, expected_nesting(containers, marks, mistyped, cases)) {
+        (Err(problem), Some(expected)) => prop_assert_eq!(problem, expected),
+        (Ok(graph), None) => {
+            cases.taken.set(cases.taken.get() + 1);
+            for (node, &mark) in marks.iter().enumerate() {
+                let (mut x, mut y, mut at) = (0.0, 0.0, node);
+                loop {
+                    x += 10.0 * at as f64;
+                    y += 5.0 * at as f64;
+                    match containers[at] {
+                        Some(up) => at = up as usize,
+                        None => break,
+                    }
+                }
+                let world = &graph.positions()[node * 2..node * 2 + 2];
+                prop_assert_eq!(world, &[x as f32, y as f32][..], "node {}", node);
+                prop_assert_eq!(graph.is_container(node as u32), mark);
+            }
+        }
+        (outcome, expected) => {
+            prop_assert!(false, "{outcome:?}, but expected {expected:?}");
+        }
+    }
+    Ok(())
+}
+
+/// What the oracle of the test above expects a load of a nesting to refuse, counted in `cases`
+/// by the clause that settles it: the field of another type, else the first node in slot order out
+/// of place, by its rules in order; or none.
+fn expected_nesting(
+    containers: &[Option<u32>],
+    marks: &[bool],
+    mistyped: Option<(u32, bool)>,
+    cases: &NestingCases,
+) -> Option<GraphDataProblem> {
+    use super::problem::{
+        A_FLAG, A_MARKED_CONTAINER, A_NODE_OF_THE_GRAPH, AN_ID_OR_NONE, NOT_IN_ITSELF,
+    };
+    let count = containers.len();
+    if let Some((index, mark)) = mistyped {
+        cases.first_pass.set(cases.first_pass.get() + 1);
+        let (field, expected) = if mark {
+            ("isContainer", A_FLAG)
+        } else {
+            ("container", AN_ID_OR_NONE)
+        };
+        return Some(GraphDataProblem::InvalidField {
+            list: GraphList::Nodes,
+            index,
+            id: Some(nested_name(index as usize)),
+            field: field.to_owned(),
+            expected: expected.to_owned(),
+        });
+    }
+    let within = |slot: u32| (slot as usize) < count;
+    // Whether the chain of containers up from `from` reaches `node` within as many steps as there
+    // are nodes.
+    let reaches = |from: u32, node: u32| {
+        let mut at = from;
+        for _ in 0..=count {
+            if at == node {
+                return true;
+            }
+            match containers[at as usize] {
+                Some(up) if within(up) && marks[up as usize] => at = up,
+                _ => return false,
+            }
+        }
+        false
+    };
+    (0..count).find_map(|node| {
+        let container = containers[node]?;
+        let (clause, expected) = if !within(container) {
+            (&cases.no_node, A_NODE_OF_THE_GRAPH)
+        } else if !marks[container as usize] {
+            (&cases.not_a_container, A_MARKED_CONTAINER)
+        } else if reaches(container, node as u32) {
+            (&cases.in_itself, NOT_IN_ITSELF)
+        } else {
+            return None;
+        };
+        clause.set(clause.get() + 1);
+        Some(GraphDataProblem::InvalidContainer {
+            node: nested_name(node),
+            field: "container".to_owned(),
+            expected: expected.to_owned(),
+        })
+    })
+}
+
+/// A region of the test below: the index of the region it lies in, picked among those before it,
+/// or none; its size; whether it has a name and a dashed line; its division, which a region that
+/// holds regions takes in any case.
+type RegionCase = (Option<usize>, f64, bool, bool, bool);
+
+/// Regions of the test below, one to twelve, and now and then a field of another type in one of
+/// them, by the index of the region and of the field.
+fn random_regions() -> impl Strategy<Value = (Vec<RegionCase>, Option<(usize, usize)>)> {
+    (1_usize..=12).prop_flat_map(|count| {
+        let region = (
+            proptest::option::weighted(0.5, 0_usize..64),
+            1.0..200.0f64,
+            any::<bool>(),
+            any::<bool>(),
+            any::<bool>(),
+        );
+        (
+            proptest::collection::vec(region, count),
+            proptest::option::weighted(0.2, (0..count, 0_usize..6)),
+        )
+    })
+}
+
+/// The region `k` of `cases` as the host application's data, flat as `api` hands it over, its
+/// `of` the region it lies in, of the division `axis` where it divides, and `mistyped` naming one
+/// of its fields of another type.
+fn region_value(k: usize, case: &RegionCase, holds: bool, mistyped: Option<usize>) -> Value {
+    let (of, size, named, dashed, across) = *case;
+    let text = |s: &str| Value::Text(s.to_owned());
+    let mut fields = vec![
+        ("id".to_owned(), text(&format!("r{k}"))),
+        ("size".to_owned(), Value::Number(size)),
+        (
+            "line".to_owned(),
+            if dashed {
+                Value::List(vec![Value::Number(6.0), Value::Number(4.0)])
+            } else {
+                text("solid")
+            },
+        ),
+    ];
+    if named {
+        fields.push(("name".to_owned(), text("name")));
+    }
+    if holds || across {
+        fields.push((
+            "divide".to_owned(),
+            text(if across { "across" } else { "down" }),
+        ));
+    }
+    if let Some(of) = of {
+        fields.push(("of".to_owned(), Value::Number(of as f64)));
+    }
+    let Some(field) = mistyped else {
+        return Value::Object(fields);
+    };
+    let wrong = match field {
+        0 => ("id", Value::Number(1.0)),
+        1 => ("size", text("1")),
+        2 => ("line", Value::Number(1.0)),
+        3 => ("name", Value::Number(1.0)),
+        4 => ("divide", text("sideways")),
+        _ => return Value::Bool(false),
+    };
+    fields.retain(|(name, _)| name != wrong.0);
+    fields.push((wrong.0.to_owned(), wrong.1));
+    Value::Object(fields)
+}
+
+#[test]
+fn a_load_of_random_regions_crosses_them_unchanged_and_refuses_a_value_of_another_type_by_its_field()
+ {
+    // Verifies: API-bridge-columns-carry-nesting, ARCH-regions-are-container-slots
+    let (crossed, refused) = (Cell::new(0), Cell::new(0));
+    let mut config = ProptestConfig::with_cases(2_000);
+    config.source_file = Some(file!());
+    let mut runner = TestRunner::new(proptest::test_runner::contextualize_config(config));
+    let result = runner.run(&random_regions(), |(mut cases, mistyped)| {
+        // Each region lies in one before it, or in the node.
+        for (k, case) in cases.iter_mut().enumerate() {
+            case.0 = case.0.filter(|_| k > 0).map(|pick| pick % k);
+        }
+        let mut holds = vec![false; cases.len()];
+        for parent in cases.iter().filter_map(|case| case.0) {
+            holds[parent] = true;
+        }
+        let regions: Vec<Value> = cases
+            .iter()
+            .enumerate()
+            .map(|(k, case)| {
+                let wrong = mistyped.filter(|&(at, _)| at == k).map(|(_, field)| field);
+                region_value(k, case, holds[k], wrong)
+            })
+            .collect();
+        let mut node = match titled_node("act") {
+            Value::Object(fields) => fields,
+            _ => unreachable!("a node is an object"),
+        };
+        node.push(("divide".to_owned(), Value::Text("across".to_owned())));
+        node.push(("regions".to_owned(), Value::List(regions)));
+        let data = Value::Object(vec![
+            ("nodes".to_owned(), Value::List(vec![Value::Object(node)])),
+            ("edges".to_owned(), Value::List(Vec::new())),
+        ]);
+        let batch = GraphBatch::deserialize(data).expect("graph data of the right shape");
+        let loaded = graph_of(&batch);
+        if mistyped.is_some() {
+            prop_assert!(
+                matches!(&loaded, Err(GraphDataProblem::InvalidField { field, .. })
+                    if field == "regions" || field == "divide"),
+                "{loaded:?}"
+            );
+            refused.set(refused.get() + 1);
+            return Ok(());
+        }
+        let graph = loaded.expect("a valid load");
+        // Names, lines, sizes, and what each lies in cross the columns unchanged.
+        let node = &batch.nodes[0];
+        let (_, read) = super::regions_of("act", 0, &node.divide, &node.regions)
+            .expect("regions of their types");
+        for (region, case) in read.iter().zip(&cases) {
+            prop_assert_eq!(region.parent, case.0);
+            prop_assert_eq!(region.size, case.1);
+            prop_assert_eq!(region.name.as_deref(), case.2.then_some("name"));
+            prop_assert_eq!(region.dash, case.3.then_some([6.0, 4.0]));
+        }
+        let columns = OwnedColumns::of(batch.nodes.iter().map(Some));
+        let view = columns.view();
+        let trees = view.regions.trees(view.divide).expect("columns that fit");
+        prop_assert_eq!(&trees[0].1, &read);
+        // Each region in its slot after the node, in what it lies in, divided where it holds
+        // regions, and at least its size along the division it lies in.
+        let slot = |k: usize| k as u32 + 1;
+        prop_assert_eq!(graph.regions_of(0).len(), cases.len());
+        for (k, case) in cases.iter().enumerate() {
+            let container = case.0.map_or(0, slot);
+            prop_assert_eq!(graph.container(slot(k)), container);
+            prop_assert!(graph.is_region(slot(k)));
+            prop_assert_eq!(graph.holds_regions(slot(k)), holds[k]);
+            let axis = graph
+                .divided(container)
+                .expect("what a region lies in is divided");
+            let extent = graph.sizes()[slot(k) as usize * 2 + axis.index()];
+            prop_assert!(f64::from(extent) >= case.1 as f32 as f64 - 1e-3);
+        }
+        crossed.set(crossed.get() + 1);
+        Ok(())
+    });
+    if let Err(error) = result {
+        panic!("{error}\n{runner}");
+    }
+    assert!(
+        crossed.get() >= 500 && refused.get() >= 100,
+        "{crossed:?} {refused:?}"
+    );
+}
+
+/// A node of the example's shape: `id` at the origin, 100 wide, of one title.
+fn titled_node(id: &str) -> Value {
+    Value::Object(vec![
+        ("id".to_owned(), Value::Text(id.to_owned())),
+        ("x".to_owned(), Value::Number(0.0)),
+        ("y".to_owned(), Value::Number(0.0)),
+        ("width".to_owned(), Value::Number(100.0)),
+        ("shape".to_owned(), Value::Text("rectangle".to_owned())),
+        ("content".to_owned(), titled("t")),
+    ])
 }

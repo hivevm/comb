@@ -24,27 +24,29 @@ use comb_engine::content::{Cell, Font, Fonts, Placed, drawn_at};
 use comb_engine::geometry::Point;
 use comb_engine::geometry::Rect;
 use comb_engine::graph::{
-    Graph, Level, MeshAt, MoveError, PositionError, SlotError as GraphSlotError, Target, Visible,
+    AttachError, Axis, CANVAS, Graph, Handle, Level, LineError, MeshAt, MoveError, MoveIntoError,
+    PositionError, SlotError as GraphSlotError, Target, Visible,
 };
+use comb_engine::shape::Outline;
 use comb_engine::stroke::{Detail, Mesh};
 use serde::{Deserialize, Serialize};
 use tsify::{Ts, Tsify};
 use wasm_bindgen::prelude::*;
 
 pub use graph_data::{
-    Arrow, ArrowCode, ContentElement, DirectionCode, EdgeField, EdgeInput, EdgePatch, ElementHit,
-    ElementKind, Field, GraphDataProblem, GraphList, KindCode, LabelInput, MAX_COLUMNS,
-    MAX_CONTENT_UNITS, MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_ROWS, MAX_SEGMENTS, MAX_TEXT,
-    NodeContent, NodeField, NodeInput, NodePatch, NodeShape, NodeShapeCode, Pair, RoleCode,
-    Segment, Side, SideCode, TextRole, Trend, TrendDirection,
+    Arrow, ArrowCode, ContentElement, DirectionCode, Divide, EdgeField, EdgeInput, EdgePatch,
+    ElementHit, ElementKind, Field, GraphDataProblem, GraphList, KindCode, LabelInput, Line,
+    MAX_COLUMNS, MAX_CONTENT_UNITS, MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_ROWS, MAX_SEGMENTS,
+    MAX_TEXT, NodeContent, NodeField, NodeInput, NodePatch, NodeShape, NodeShapeCode, OutlineCode,
+    Pair, RegionInput, RoleCode, Segment, Side, SideCode, TextRole, Trend, TrendDirection,
 };
 
 use kept::{ContentStore, Drawn};
 
 use graph_data::{
-    COLUMN_LIMIT, ContentData, EdgeColumns, EdgeRefusal, ID_LIMIT, NodeColumns, ROW_LIMIT,
-    SEGMENT_LIMIT, TEXT_LIMIT, add_edge_to, add_node_to, edge_refused_of, height_of, load_of,
-    malformed, patch_of, refused_of, slot, unshaped, update_edge_in,
+    COLUMN_LIMIT, ContentData, EdgeColumns, EdgeRefusal, ID_LIMIT, LABEL_LIMIT, NodeColumns,
+    ROW_LIMIT, RegionColumns, SEGMENT_LIMIT, TEXT_LIMIT, add_edge_to, add_node_to, edge_refused_of,
+    height_of, load_of, malformed, numbered, patch_of, refused_of, slot, unshaped, update_edge_in,
 };
 
 /// A number the shell computed that an export cannot take: the shell's own mistake, never one of
@@ -127,6 +129,81 @@ impl From<GraphSlotError> for SlotError {
     }
 }
 
+/// A container the shell named for a move of a node that cannot take it: the shell's own mistake,
+/// never one of graph data, since `api` asks the engine for the container a drop lands in
+/// (ARCH-engine-edits-nested-graph, *Moving into a container*).
+#[derive(Tsify, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum ContainerError {
+    /// A slot that holds no node, or a node that is no container.
+    #[serde(rename_all = "camelCase")]
+    NoContainer { slot: u32 },
+    /// The node itself, or a node it holds at any depth.
+    #[serde(rename_all = "camelCase")]
+    InItself { slot: u32 },
+}
+
+/// Why `moveInto` was refused, as the shell receives it: a slot that holds no node, crossing as
+/// `SlotError`, or a container that cannot take the node, crossing as `ContainerError`.
+#[derive(Debug, PartialEq)]
+pub enum MoveIntoRefusal {
+    Slot(SlotError),
+    Container(ContainerError),
+}
+
+impl From<MoveIntoError> for MoveIntoRefusal {
+    fn from(error: MoveIntoError) -> Self {
+        match error {
+            MoveIntoError::Slot(error) => Self::Slot(error.into()),
+            MoveIntoError::NoContainer { slot } => {
+                Self::Container(ContainerError::NoContainer { slot })
+            }
+            MoveIntoError::InItself { slot } => Self::Container(ContainerError::InItself { slot }),
+        }
+    }
+}
+
+impl From<MoveIntoRefusal> for JsValue {
+    fn from(refusal: MoveIntoRefusal) -> Self {
+        match refusal {
+            MoveIntoRefusal::Slot(error) => thrown(error),
+            MoveIntoRefusal::Container(error) => thrown(error),
+        }
+    }
+}
+
+/// A region the shell named for a drag of the line after it that has no line after it: the
+/// shell's own mistake, never one of graph data, since `api` asks the engine's hit test for the
+/// line a press lands on (ARCH-regions-are-container-slots, *Lines*).
+#[derive(Tsify, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum LineRefusal {
+    /// A slot that holds no node.
+    #[serde(rename_all = "camelCase")]
+    NoNode { slot: u32 },
+    /// A slot that holds no region with a region after it in what it divides.
+    #[serde(rename_all = "camelCase")]
+    NoLine { slot: u32 },
+}
+
+impl From<LineError> for LineRefusal {
+    fn from(error: LineError) -> Self {
+        match error {
+            LineError::Slot(GraphSlotError::NoNode { slot }) => Self::NoNode { slot },
+            LineError::NoLine { slot } => Self::NoLine { slot },
+            LineError::Slot(GraphSlotError::NoEdge { .. }) => {
+                unreachable!("`move_line` checks the node slots it names alone, never an edge slot")
+            }
+        }
+    }
+}
+
+impl From<LineRefusal> for JsValue {
+    fn from(refusal: LineRefusal) -> Self {
+        thrown(refusal)
+    }
+}
+
 impl From<MoveError> for TranslateRefusal {
     fn from(error: MoveError) -> Self {
         match error {
@@ -189,6 +266,20 @@ impl From<EdgeRefusal> for JsValue {
     }
 }
 
+/// The node slots and the edge slots of a removal as they cross: the count of the nodes, then the
+/// nodes, then the edges, which the bridge splits into two lists.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "a count of node slots, which a u32 numbers (ARCH-engine-edits-nested-graph)"
+)]
+fn removed(nodes: &[u32], edges: &[u32]) -> Vec<u32> {
+    let mut crossed = Vec::with_capacity(1 + nodes.len() + edges.len());
+    crossed.push(nodes.len() as u32);
+    crossed.extend_from_slice(nodes);
+    crossed.extend_from_slice(edges);
+    crossed
+}
+
 /// The size of a screen pixel, in world units, a query and a hit test take, or its refusal as the
 /// shell's mistake where it is no finite number above zero, before any edge is flattened
 /// (API-shell-mistake-refused-as-shells).
@@ -198,6 +289,18 @@ fn checked_pixel(pixel: f64) -> Result<f64, NumberError> {
     } else {
         Err(NumberError::InvalidPixel)
     }
+}
+
+/// The code of `SideCode` of `side`, as `borderOf` and `slide` hand it back.
+fn side_code(side: comb_engine::geometry::Side) -> f64 {
+    use comb_engine::geometry::Side;
+    let code = match side {
+        Side::Top => SideCode::Top,
+        Side::Right => SideCode::Right,
+        Side::Bottom => SideCode::Bottom,
+        Side::Left => SideCode::Left,
+    };
+    f64::from(code as u8)
 }
 
 /// The world point `(x, y)` a hit test or a label's move takes, or its refusal as the shell's
@@ -276,6 +379,21 @@ pub fn badge_padding_y() -> f64 {
     comb_engine::content::BADGE_PADDING_Y
 }
 
+/// The thickness of the band a named region's name stands in, in world units: the engine's, by
+/// which the shell draws the band the engine laid the region's regions out beside
+/// (ARCH-regions-are-container-slots, *Name band*).
+#[wasm_bindgen(js_name = bandThickness)]
+pub fn band_thickness() -> f64 {
+    comb_engine::graph::BAND
+}
+
+/// The most edge labels of one edge, `MAX_LABELS`: the shell hands over no more than one beyond
+/// it (API-edges-dock-nodes-or-edges, *Edge labels*).
+#[wasm_bindgen(js_name = labelLimit)]
+pub fn label_limit() -> u32 {
+    LABEL_LIMIT
+}
+
 /// The most rows of a node's content, `MAX_ROWS`: the shell hands over no more than one beyond
 /// it.
 #[wasm_bindgen(js_name = rowLimit)]
@@ -309,8 +427,10 @@ pub enum Hit {
         slot: u32,
         side: Side,
     },
+    /// The edge label at `label`, its place in the list of labels of the edge in `slot`.
     Label {
         slot: u32,
+        label: u32,
     },
     Node {
         slot: u32,
@@ -321,6 +441,62 @@ pub enum Hit {
     Edge {
         slot: u32,
     },
+    /// The line after the region in `slot`, between it and the next region of a division in the
+    /// direction `divide` (REN-node-content-and-hits, *Line between regions*).
+    Line {
+        slot: u32,
+        divide: Divide,
+    },
+    /// A resize handle of the selected node in `slot` (REN-node-content-and-hits).
+    Handle {
+        slot: u32,
+        handle: ResizeHandle,
+    },
+}
+
+/// A resize handle of a selected node, at a corner or the middle of a side
+/// (API-edits-report-nested-changes, *Resizing*), as a hit names it and `resizeNode` takes it.
+#[derive(Tsify, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ResizeHandle {
+    TopLeft,
+    Top,
+    TopRight,
+    Right,
+    BottomRight,
+    Bottom,
+    BottomLeft,
+    Left,
+}
+
+impl From<Handle> for ResizeHandle {
+    fn from(handle: Handle) -> Self {
+        match handle {
+            Handle::TopLeft => Self::TopLeft,
+            Handle::Top => Self::Top,
+            Handle::TopRight => Self::TopRight,
+            Handle::Right => Self::Right,
+            Handle::BottomRight => Self::BottomRight,
+            Handle::Bottom => Self::Bottom,
+            Handle::BottomLeft => Self::BottomLeft,
+            Handle::Left => Self::Left,
+        }
+    }
+}
+
+impl From<ResizeHandle> for Handle {
+    fn from(handle: ResizeHandle) -> Self {
+        match handle {
+            ResizeHandle::TopLeft => Self::TopLeft,
+            ResizeHandle::Top => Self::Top,
+            ResizeHandle::TopRight => Self::TopRight,
+            ResizeHandle::Right => Self::Right,
+            ResizeHandle::BottomRight => Self::BottomRight,
+            ResizeHandle::Bottom => Self::Bottom,
+            ResizeHandle::BottomLeft => Self::BottomLeft,
+            ResizeHandle::Left => Self::Left,
+        }
+    }
 }
 
 /// A rectangle in world coordinates, as a query asks for it.
@@ -444,6 +620,11 @@ pub struct Engine {
     content_rects: Vec<f32>,
     /// The role and the drawn text of each element of `placed`.
     drawn: Drawn,
+    /// Of the nodes the last query found at the near or middle level, in its order, the
+    /// boundaries of each one's dash segments in `dashes`, and each segment's two ends `x0, y0,
+    /// x1, y1` relative to its node (REN-node-shapes-cover-uml, *Outline*).
+    dash_bounds: Vec<u32>,
+    dashes: Vec<f32>,
     /// The edges at the nodes a drag moves and those an edit at the far level added, and their
     /// mesh, which `meshAt` writes (REN-moving-layer-redraws-changes).
     moving_edges: Vec<u32>,
@@ -464,18 +645,24 @@ impl Engine {
     /// (API-bridge-takes-serde-and-columns), each in slot order, and serde-wasm-bindgen converts
     /// nothing of a load. Of the nodes: the identifiers as pieces of at most 2^28 UTF-16 code
     /// units, each ending where a value ends, with the boundaries across all pieces in UTF-16 code
-    /// units, the numbers as `Float64Array`, the node shapes as the codes of `NodeShapeCode`, the
-    /// content as the columns of `ContentColumns`, its texts in pieces as the identifiers are, with
-    /// per text whether it is a text, and the first value the shell refused by its type, the index
-    /// of its node, the code of its `NodeField`, and for a shape of content its row and column, or
-    /// none. Each node is as high as its content lays out to in the fonts `setFont` handed over
-    /// (REN-node-content-in-rows). Of the edges: the identifiers, sources, targets, and label texts
-    /// each as pieces with their boundaries, per label text whether it is a text; whether a label,
-    /// its background, and a dash are present, as bytes; the label's `t` and offset, the
-    /// background, the colour, and the dash and gap as `Float64Array`; the arrowhead and the sides
-    /// as the codes of `ArrowCode` and `SideCode`; and the first value the shell refused by its
-    /// type, the index of its edge and the code of its `EdgeField`, or none. A refused load leaves
-    /// the loaded graph as it was.
+    /// units, the numbers as `Float64Array`, a height its data gives with a byte that says whether
+    /// it does, whether it is resizable as a byte, the node shapes as the codes of `NodeShapeCode`,
+    /// the outlines as the codes of `OutlineCode` with the dash and the gap of a dashed one,
+    /// per border node the slot it is attached to, its side, its offset, and what stands beside
+    /// its `attachedTo`, with the identifier the first one attached to no node names
+    /// (ARCH-border-nodes-ride-sides), the content as the columns of `ContentColumns`, a byte per
+    /// row saying whether it is a separator among them, its texts
+    /// in pieces as the identifiers are,
+    /// with per text whether it is a text, and the first value the shell refused by its type, the
+    /// index of its node, the code of its `NodeField`, and for a shape of content its row and
+    /// column, or none. Each node is as high as its content lays out to in the fonts `setFont`
+    /// handed over (REN-node-content-in-rows). Of the edges: the identifiers, sources, targets, and
+    /// label texts each as pieces with their boundaries, per label text whether it is a text;
+    /// whether a label, its background, and a dash are present, as bytes; the label's `t` and
+    /// offset, the background, the colour, and the dash and gap as `Float64Array`; the arrowhead
+    /// and the sides as the codes of `ArrowCode` and `SideCode`; and the first value the shell
+    /// refused by its type, the index of its edge and the code of its `EdgeField`, or none. A
+    /// refused load leaves the loaded graph as it was.
     #[wasm_bindgen(js_name = loadGraph)]
     #[expect(
         clippy::too_many_arguments,
@@ -486,6 +673,10 @@ impl Engine {
         clippy::needless_pass_by_value,
         reason = "wasm-bindgen hands a list of strings over as an owned `Vec<String>` only"
     )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one parameter per column, each named once more where the columns are gathered"
+    )]
     pub fn load_graph(
         &mut self,
         ids: Vec<String>,
@@ -493,9 +684,37 @@ impl Engine {
         x: &[f64],
         y: &[f64],
         width: &[f64],
+        has_height: &[u8],
+        height: &[f64],
         shape: &[u8],
+        outline: &[u8],
+        outline_dash: &[f64],
+        outline_gap: &[f64],
+        has_container: &[u8],
+        container: &[u32],
+        is_container: &[u8],
+        resizable: &[u8],
+        divide: &[u8],
+        region_ids: Vec<String>,
+        region_id_bounds: &[u32],
+        region_of: &[u32],
+        region_size: &[f64],
+        region_divide: &[u8],
+        region_has_dash: &[u8],
+        region_dash: &[f64],
+        region_gap: &[f64],
+        region_named: &[u8],
+        region_names: Vec<String>,
+        region_name_bounds: &[u32],
+        has_attached: &[u8],
+        attached: &[u32],
+        side: &[u8],
+        offset: &[f64],
+        beside: &[u8],
+        attached_missing: Option<String>,
         row_bounds: Vec<u32>,
         element_bounds: Vec<u32>,
+        separators: Vec<u8>,
         kinds: Vec<u8>,
         weights: Vec<f64>,
         roles: Vec<u8>,
@@ -518,12 +737,18 @@ impl Engine {
         edge_id_bounds: &[u32],
         sources: Vec<String>,
         source_bounds: &[u32],
+        source_on_edge: &[u8],
+        source_t: &[f64],
         targets: Vec<String>,
         target_bounds: &[u32],
-        has_label: &[u8],
-        labels: Vec<String>,
+        target_on_edge: &[u8],
+        target_t: &[f64],
         label_bounds: &[u32],
-        label_texts: &[u8],
+        label_ids: Vec<String>,
+        label_id_bounds: &[u32],
+        label_texts: Vec<String>,
+        label_text_bounds: &[u32],
+        label_texts_valid: &[u8],
         label_t: &[f64],
         label_offset: &[f64],
         has_background: &[u8],
@@ -533,10 +758,12 @@ impl Engine {
         dash: &[f64],
         gap: &[f64],
         arrow: &[u8],
+        lightning: &[u8],
         source_side: &[u8],
         target_side: &[u8],
         edge_refused_at: Option<u32>,
         edge_refused_field: Option<u32>,
+        edge_refused_label: Option<u32>,
     ) -> Result<u32, GraphDataProblem> {
         trap::spring();
         let refused = refused_of(refused_at, refused_field, refused_row, refused_column)?;
@@ -545,12 +772,18 @@ impl Engine {
             id_bounds: edge_id_bounds,
             sources: &sources,
             source_bounds,
+            source_on_edge,
+            source_t,
             targets: &targets,
             target_bounds,
-            has_label,
-            labels: &labels,
+            target_on_edge,
+            target_t,
             label_bounds,
-            label_texts,
+            label_ids: &label_ids,
+            label_id_bounds,
+            label_texts: &label_texts,
+            label_text_bounds,
+            label_texts_valid,
             label_t,
             label_offset,
             has_background,
@@ -560,14 +793,16 @@ impl Engine {
             dash,
             gap,
             arrow,
+            lightning,
             source_side,
             target_side,
-            refused: edge_refused_of(edge_refused_at, edge_refused_field)?,
+            refused: edge_refused_of(edge_refused_at, edge_refused_field, edge_refused_label)?,
         };
         // The content's columns, which the engine keeps as they crossed, owned without a copy.
-        let mut content = ContentData {
+        let content = ContentData {
             row_bounds,
             element_bounds,
+            separators,
             kinds,
             weights,
             roles,
@@ -590,18 +825,41 @@ impl Engine {
             x,
             y,
             width,
+            has_height,
+            height,
             shape,
+            outline,
+            outline_dash,
+            outline_gap,
+            has_container,
+            container,
+            is_container,
+            resizable,
+            divide,
+            regions: RegionColumns {
+                ids: &region_ids,
+                id_bounds: region_id_bounds,
+                of: region_of,
+                size: region_size,
+                divide: region_divide,
+                has_dash: region_has_dash,
+                dash: region_dash,
+                gap: region_gap,
+                named: region_named,
+                names: &region_names,
+                name_bounds: region_name_bounds,
+            },
+            has_attached,
+            attached,
+            side,
+            offset,
+            beside,
+            attached_missing: attached_missing.as_deref(),
             content: content.view(),
             refused,
         };
         let loaded = load_of(&nodes, &edges, &self.fonts)?;
-        self.graph = loaded.graph;
-        content.spans = loaded.spans;
-        content.name_spans = loaded.name_spans;
-        content.index_strings();
-        self.content = ContentStore::of_load(content, loaded.units);
-        self.visible = Visible::default();
-        slot(x.len())
+        self.take_load(loaded, content, x.len(), region_of.len())
     }
 
     /// The texts the last `query` placed, as the shell draws them, one after another, which the
@@ -625,6 +883,24 @@ impl Engine {
         }
         Ts::from_rust(&self.content.content_of(slot))
             .map_err(|_| malformed("the content could not be handed back").into())
+    }
+
+    /// The inner rectangle of the node in `slot`, `[x, y, width, height]` relative to its top-left
+    /// corner, that its content is laid out in, a frame's tab: for inspection, which reports it
+    /// (REN-node-shapes-cover-uml). A slot that holds no node throws a `SlotError`.
+    #[wasm_bindgen(js_name = innerOf)]
+    pub fn inner_of(&mut self, slot: u32) -> Result<Vec<f64>, CallRefusal> {
+        trap::spring();
+        if !self.graph.holds_node(slot) {
+            return Err(CallRefusal::Slot(SlotError::NoNode { slot }));
+        }
+        let at = slot as usize * 2;
+        let size = [self.graph.sizes()[at], self.graph.sizes()[at + 1]];
+        let (content, node) = self.content.of(slot);
+        let (mut cells, mut rows) = (Vec::new(), Vec::new());
+        let frame = (self.graph.shape(slot), size);
+        let inner = content.inner(node, frame, &self.fonts, &mut cells, &mut rows);
+        Ok(vec![inner.x, inner.y, inner.width, inner.height])
     }
 
     /// Hands over the metrics of the font the shell draws the texts of the role `role`, a
@@ -652,15 +928,23 @@ impl Engine {
     }
 
     /// Checks the node `addNode` hands over as a load checks a node, its strings of content
-    /// counted against the budget on from those the graph holds, and adds it, drawn and hit
-    /// above every other node, and returns the slot the engine chose for it: the free slot freed
-    /// last, or a new one after the highest (ARCH-engine-edits-graph-in-place). A refused node
-    /// leaves the graph as it was.
+    /// counted against the budget on from those the graph holds, and adds it into the container
+    /// in the slot `container`, which the shell resolved, or onto the canvas for none, drawn and
+    /// hit above every other node of its kind, and returns the slot the engine chose for it: the
+    /// free slot freed last, or a new one after the highest (ARCH-engine-edits-nested-graph). A
+    /// border node rides the node in the slot `attached`, which the shell resolved from its
+    /// `attachedTo`, or names none (ARCH-border-nodes-ride-sides). A refused node leaves the graph
+    /// as it was.
     #[wasm_bindgen(js_name = addNode)]
-    pub fn add_node(&mut self, node: Ts<NodeInput>) -> Result<u32, GraphDataProblem> {
+    pub fn add_node(
+        &mut self,
+        node: Ts<NodeInput>,
+        container: Option<u32>,
+        attached: Option<u32>,
+    ) -> Result<u32, GraphDataProblem> {
         trap::spring();
         let node = node.to_rust().map_err(unshaped)?;
-        self.add(&node)
+        self.add(&node, (container, attached))
     }
 
     /// The height, in world units, the content of the node `heightOf` hands over lays out to at
@@ -676,18 +960,23 @@ impl Engine {
     /// Checks the patch `updateNode` hands over for the node `id` in `slot`, reading it once, as a
     /// load checks a node's content, its strings counted against the budget on from those the
     /// graph holds besides the node's, and gives the node its new content and the height it lays
-    /// out to, its edges re-placed (REN-node-content-in-rows); the store merges the patch. A
-    /// refused patch changes nothing; a slot that holds no node throws a `SlotError`.
+    /// out to, its edges re-placed (REN-node-content-in-rows); the store merges the patch. A patch
+    /// that sets regions divides the node anew (`divide_anew`), `kept` naming per region of the
+    /// patch, depth first, the slot of the node's region of its identifier, which `api` resolved,
+    /// or `u32::MAX`; it returns what went with the regions left out as `removed` lays it out, and
+    /// nothing for a patch that sets no regions. A refused patch changes nothing; a slot that
+    /// holds no node throws a `SlotError`.
     #[wasm_bindgen(js_name = updateNode)]
     pub fn update_node(
         &mut self,
         slot: u32,
         id: &str,
         patch: Ts<NodePatch>,
-    ) -> Result<(), CallRefusal> {
+        kept: &[u32],
+    ) -> Result<Vec<u32>, CallRefusal> {
         trap::spring();
         let patch = patch.to_rust().map_err(unshaped)?;
-        self.update(slot, id, &patch)
+        self.update_with(slot, id, &patch, kept)
     }
 
     /// Checks the edge `addEdge` hands over as a load checks an edge, refuses one from a node to
@@ -724,39 +1013,50 @@ impl Engine {
         update_edge_in(&mut self.graph, slot, id, patch)
     }
 
-    /// Records the half width and half height of the pill of the label of the edge in `slot`, in
-    /// world units, as the shell draws it; a label it has not measured is not hit
-    /// (REN-node-content-in-rows).
+    /// Records the half width and half height of the pill of the label at `label` of the list of
+    /// labels of the edge in `slot`, in world units, as the shell draws it; a label it has not
+    /// measured is not hit (REN-node-content-in-rows). A slot that holds no edge with a label
+    /// there refuses it.
     #[wasm_bindgen(js_name = setLabelSize)]
     pub fn set_label_size(
         &mut self,
         slot: u32,
+        label: u32,
         half_width: f64,
         half_height: f64,
     ) -> Result<(), SlotError> {
         trap::spring();
-        Ok(self.graph.set_label_size(slot, half_width, half_height)?)
+        Ok(self
+            .graph
+            .set_label_size(slot, label, half_width, half_height)?)
     }
 
-    /// The world point of the label of the edge in `slot`, `x, y`, or nothing where it holds no
-    /// edge with a label.
+    /// The world point of the label at `label` of the edge in `slot`, `x, y`, or nothing where it
+    /// holds no edge with a label there.
     #[wasm_bindgen(js_name = labelPoint)]
-    pub fn label_point(&mut self, slot: u32) -> Vec<f64> {
+    pub fn label_point(&mut self, slot: u32, label: u32) -> Vec<f64> {
         trap::spring();
         self.graph
-            .label_point(slot)
+            .label_point(slot, label)
             .map_or_else(Vec::new, |p| vec![p.x, p.y])
     }
 
-    /// Places the label of the edge in `slot` at the world point `(x, y)`, at the path parameter
-    /// nearest it and its distance along the normal there, and returns the two, `t, offset`
-    /// (G-6). A slot that holds no edge with a label refuses it with a `SlotError`, and a point
-    /// that is not finite with a `NumberError`, before anything moves.
+    /// Places the label at `label` of the edge in `slot` at the world point `(x, y)`, at the path
+    /// parameter nearest it and its distance along the normal there, and returns the two, `t,
+    /// offset` (G-6); the edge's other labels stay. A slot that holds no edge with a label there
+    /// refuses it with a `SlotError`, and a point that is not finite with a `NumberError`, before
+    /// anything moves.
     #[wasm_bindgen(js_name = moveLabel)]
-    pub fn move_label(&mut self, slot: u32, x: f64, y: f64) -> Result<Vec<f64>, CallRefusal> {
+    pub fn move_label(
+        &mut self,
+        slot: u32,
+        label: u32,
+        x: f64,
+        y: f64,
+    ) -> Result<Vec<f64>, CallRefusal> {
         trap::spring();
         let point = checked_point(x, y)?;
-        let placed = self.graph.move_label(slot, point)?;
+        let placed = self.graph.move_label(slot, label, point)?;
         Ok(vec![placed.t, placed.offset])
     }
 
@@ -769,22 +1069,45 @@ impl Engine {
         Ok(self.graph.edges_at(slots)?)
     }
 
-    /// Removes the nodes in `slots` and every edge at them, and returns the slots of those edges
-    /// in ascending order; the slots go onto the free lists (ARCH-engine-edits-graph-in-place). A
-    /// slot that holds no node refuses the call, which then changes nothing.
+    /// The node slots and the edge slots a removal of the nodes in `slots` would take along, named
+    /// before anything is removed: the nodes, everything they hold at every depth, and every edge
+    /// at any of them (ARCH-engine-edits-nested-graph), as `removed` lays them out. A slot that
+    /// holds no node refuses the call.
+    #[wasm_bindgen(js_name = removalOf)]
+    pub fn removal_of(&mut self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
+        trap::spring();
+        let (nodes, edges) = self.graph.removal(slots)?;
+        Ok(removed(&nodes, &edges))
+    }
+
+    /// Removes the nodes in `slots`, everything they hold at every depth, and every edge at any of
+    /// them, and returns the slots of those nodes and edges as `removed` lays them out; the slots
+    /// go onto the free lists (ARCH-engine-edits-nested-graph). A slot that holds no node refuses
+    /// the call, which then changes nothing.
     #[wasm_bindgen(js_name = removeNodes)]
     pub fn remove_nodes(&mut self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
         trap::spring();
-        let edges = self.graph.remove_nodes(slots)?;
-        self.content.remove(slots);
-        Ok(edges)
+        let (nodes, edges) = self.graph.remove_nodes(slots)?;
+        self.content.remove(&nodes);
+        Ok(removed(&nodes, &edges))
     }
 
-    /// Removes the edges in `slots`; the slots go onto the free list
-    /// (ARCH-engine-edits-graph-in-place). A slot that holds no edge refuses the call, which then
-    /// changes nothing.
+    /// The slots of the edges in `slots`, in the order first named, and of every other edge that
+    /// ends on one of them, in ascending order, as a removal of them would take along, named before
+    /// anything is removed (API-edges-dock-nodes-or-edges, *Ends*). A slot that holds no edge
+    /// refuses the call.
+    #[wasm_bindgen(js_name = edgeRemovalOf)]
+    pub fn edge_removal_of(&mut self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
+        trap::spring();
+        Ok(self.graph.edge_removal(slots)?)
+    }
+
+    /// Removes the edges in `slots` and every edge that ends on one of them, and returns the slots
+    /// of all of them as `edgeRemovalOf` names them; the slots go onto the free list
+    /// (ARCH-engine-edits-graph-in-place, API-edges-dock-nodes-or-edges). A slot that holds no edge
+    /// refuses the call, which then changes nothing.
     #[wasm_bindgen(js_name = removeEdges)]
-    pub fn remove_edges(&mut self, slots: &[u32]) -> Result<(), SlotError> {
+    pub fn remove_edges(&mut self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
         trap::spring();
         Ok(self.graph.remove_edges(slots)?)
     }
@@ -797,6 +1120,150 @@ impl Engine {
         self.graph
             .translate(slots, dx, dy)
             .map_err(TranslateRefusal::from)
+    }
+
+    /// Puts the node in `slot` at the world position `(x, y)`, everything it holds with it: a drag
+    /// taken back puts the node exactly where it lay at the press (API-edits-report-nested-changes,
+    /// *Vetoes*). A slot that holds no node throws a `SlotError`, and a point that is not finite a
+    /// `NumberError` `nonFinitePoint`; either way nothing moves.
+    pub fn place(&mut self, slot: u32, x: f64, y: f64) -> Result<(), CallRefusal> {
+        trap::spring();
+        self.graph.place(slot, x, y).map_err(|error| match error {
+            MoveError::Slot(error) => error.into(),
+            MoveError::Position(PositionError::NonFinite) => NumberError::NonFinitePoint.into(),
+        })
+    }
+
+    /// Resizes the node in `slot`, whose box was `from`, `x, y, width, height`, at the press, by a
+    /// drag of `handle` by `(dx, dy)` world units (API-edits-report-nested-changes, *Resizing*):
+    /// the sides the handle pulls move by the drag, never so far that the node is less than 8
+    /// world units a side, lower than its content needs, an actor and an hourglass their drawing
+    /// and their content at the new width, or leaves out a box of the nodes that lie directly in
+    /// it; a circle, a ringed circle, a crossed circle, and a cross stay as high as wide. The
+    /// nodes it holds keep their world positions, and its height becomes the one its data gives;
+    /// the buffers hold the box it now has. A slot that holds no node throws a `SlotError`, and a
+    /// box or a drag that is not finite a `NumberError` `nonFinitePoint`; either way nothing
+    /// changes.
+    #[wasm_bindgen(js_name = resizeNode)]
+    pub fn resize_node(
+        &mut self,
+        slot: u32,
+        handle: Ts<ResizeHandle>,
+        from: &[f64],
+        dx: f64,
+        dy: f64,
+    ) -> Result<(), CallRefusal> {
+        trap::spring();
+        let handle: ResizeHandle = handle.to_rust().map_err(unshaped)?;
+        self.resize(slot, handle.into(), from, [dx, dy])
+    }
+
+    /// The regions of the node or region in `slot`, at every depth, each followed by its own, in
+    /// the order of each division (ARCH-regions-are-container-slots); none for a slot that holds
+    /// no node.
+    #[wasm_bindgen(js_name = regionsOf)]
+    pub fn regions_of(&self, slot: u32) -> Vec<u32> {
+        trap::spring();
+        if self.graph.holds_node(slot) {
+            self.graph.regions_of(slot)
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Moves the line after the region in `slot` to the world coordinate `to` along the direction
+    /// of its division, as far as the regions beside it allow, and returns where it now stands
+    /// (ARCH-regions-are-container-slots, *Lines*). A slot that holds no node, or no region with a
+    /// region after it, throws a `LineRefusal`, the shell's own mistake; either way, and for a
+    /// coordinate that is not finite, nothing moves.
+    #[wasm_bindgen(js_name = moveLine)]
+    pub fn move_line(&mut self, slot: u32, to: f64) -> Result<f64, LineRefusal> {
+        trap::spring();
+        Ok(self.graph.move_line(slot, to)?)
+    }
+
+    /// `name` as the band of a region `length` world units long draws it in the font of the role
+    /// `title`: whole where it fits within the band's padding at both ends, else cut and followed
+    /// by an ellipsis (ARCH-regions-are-container-slots, *Name band*).
+    #[wasm_bindgen(js_name = bandName)]
+    pub fn band_name(&self, name: &str, length: f64) -> String {
+        trap::spring();
+        let font = self.fonts.of(comb_engine::content::Role::Title);
+        let room = (length - 2.0 * comb_engine::content::PADDING_X).max(0.0);
+        let (end, cut) = comb_engine::content::cut(name, room, font);
+        // The code units `cut` keeps, as whole characters.
+        let mut units = 0;
+        let mut drawn: String = name
+            .chars()
+            .take_while(|c| {
+                units += c.len_utf16();
+                units <= end as usize
+            })
+            .collect();
+        if cut {
+            drawn.push(comb_engine::content::ELLIPSIS);
+        }
+        drawn
+    }
+
+    /// Where the border node in `slot` sits: the slot of the node it rides, its side as the code of
+    /// `SideCode`, and its offset along that side as the engine keeps it, held within the side's
+    /// length when it was given; nothing for a slot that holds no border node
+    /// (ARCH-border-nodes-ride-sides).
+    #[wasm_bindgen(js_name = borderOf)]
+    pub fn border_of(&self, slot: u32) -> Vec<f64> {
+        trap::spring();
+        if !self.graph.holds_node(slot) {
+            return Vec::new();
+        }
+        self.graph.place_of(slot).map_or_else(Vec::new, |place| {
+            vec![f64::from(place.on), side_code(place.side), place.offset]
+        })
+    }
+
+    /// Slides the border node in `slot` to the point of its node's outline nearest the world point
+    /// `(x, y)`, onto the side of the box nearest that point, and returns its side as the code of
+    /// `SideCode` and its offset (ARCH-border-nodes-ride-sides, *Drag*). A slot that holds no
+    /// border node throws a `SlotError`, and a point that is not finite a `NumberError`
+    /// `nonFinitePoint`; either way nothing moves.
+    pub fn slide(&mut self, slot: u32, x: f64, y: f64) -> Result<Vec<f64>, CallRefusal> {
+        trap::spring();
+        let point = checked_point(x, y)?;
+        match self.graph.slide(slot, point) {
+            Ok(place) => Ok(vec![side_code(place.side), place.offset]),
+            Err(AttachError::Slot(error)) => Err(error.into()),
+            Err(AttachError::NotBorder { slot }) => Err(GraphSlotError::NoNode { slot }.into()),
+            Err(AttachError::NonFinite) => Err(NumberError::NonFinitePoint.into()),
+        }
+    }
+
+    /// The slot of the container a drop of the node in `dragged` at the world point `(x, y)` lands
+    /// in: of the containers whose outline holds the point, neither the node nor one it holds at
+    /// any depth, the topmost; none for the canvas (API-edits-report-nested-changes, *Vetoes*). A
+    /// slot that holds no node throws a `SlotError`, and a point that is not finite a
+    /// `NumberError` `nonFinitePoint`.
+    #[wasm_bindgen(js_name = containerAt)]
+    pub fn container_at(
+        &mut self,
+        x: f64,
+        y: f64,
+        dragged: u32,
+    ) -> Result<Option<u32>, CallRefusal> {
+        trap::spring();
+        let point = checked_point(x, y)?;
+        Ok(self.graph.container_at(point, dragged)?)
+    }
+
+    /// Puts the node in `slot` into the container in the slot `container`, or onto the canvas for
+    /// none, at the world position it has, and gives it the next rank, so that it is drawn and hit
+    /// above every other node of its kind (ARCH-engine-edits-nested-graph, *Moving into a
+    /// container*). A slot that holds no node throws a `SlotError`, and a container that holds no
+    /// container, or that is the node or one it holds, a `ContainerError`; either way the graph
+    /// stays as it was.
+    #[wasm_bindgen(js_name = moveInto)]
+    pub fn move_into(&mut self, slot: u32, container: Option<u32>) -> Result<(), MoveIntoRefusal> {
+        trap::spring();
+        Ok(self.graph.move_into(slot, container.unwrap_or(CANVAS))?)
     }
 
     /// Finds the nodes and edges that meet the rectangle and builds the mesh of the edges for
@@ -874,7 +1341,9 @@ impl Engine {
     }
 
     /// What a press at the world point `(x, y)` hits where a screen pixel is `pixel` world units,
-    /// at `level`: where `connectors` asks for them, at the near and middle level, a connector
+    /// at `level`: at the near and middle level, a resize handle of the node in `selected`, the
+    /// selected node, where it is resizable, within 6 screen pixels; else where `connectors` asks
+    /// for them, at the near and middle level, a connector
     /// within 8 screen pixels, of the node drawn on top; else, at the near level, the label whose
     /// measured pill holds the point; else the node drawn on top there, else the edge drawn on top
     /// within 4 screen pixels of its path, else nothing (REN-node-content-in-rows). Of a node, the
@@ -889,28 +1358,112 @@ impl Engine {
         pixel: f64,
         level: DetailLevel,
         connectors: bool,
+        selected: Option<u32>,
     ) -> Result<Ts<Hit>, CallRefusal> {
         trap::spring();
         let point = checked_point(x, y)?;
         let pixel = checked_pixel(pixel)?;
-        let hit = match self.graph.hit_at(point, pixel, level.into(), connectors) {
-            Some(Target::Connector(slot, side)) => Hit::Connector {
+        let handle = selected.and_then(|slot| {
+            let handle = self.graph.handle_at(point, pixel, level.into(), slot)?;
+            Some(Hit::Handle {
                 slot,
-                side: side.into(),
-            },
-            Some(Target::Label(slot)) => Hit::Label { slot },
-            Some(Target::Node(slot)) => Hit::Node {
-                slot,
-                element: self.element_at(slot, point, level),
-            },
-            Some(Target::Edge(slot)) => Hit::Edge { slot },
-            None => Hit::None,
+                handle: handle.into(),
+            })
+        });
+        let hit = match handle {
+            Some(hit) => hit,
+            None => self.hit_below(point, pixel, level, connectors),
         };
         Ts::from_rust(&hit).map_err(|_| malformed("the hit could not be handed back").into())
     }
 }
 
 impl Engine {
+    /// Takes the load `loaded` of `nodes` nodes and `regions` regions, its content's columns
+    /// `content`, and returns its number of node slots.
+    fn take_load(
+        &mut self,
+        loaded: graph_data::Loaded,
+        mut content: ContentData,
+        nodes: usize,
+        regions: usize,
+    ) -> Result<u32, GraphDataProblem> {
+        self.graph = loaded.graph;
+        content.spans = loaded.spans;
+        content.name_spans = loaded.name_spans;
+        content.index_strings();
+        self.content = ContentStore::of_load(content, loaded.units);
+        // A region holds no content, and its name counts as content does
+        // (ARCH-regions-are-container-slots).
+        let slots = (nodes..nodes + regions).map(numbered);
+        self.content
+            .set_regions(slots.zip(loaded.names.iter().copied()));
+        self.visible = Visible::default();
+        slot(nodes + regions)
+    }
+
+    /// `resizeNode` of the handle read.
+    fn resize(
+        &mut self,
+        slot: u32,
+        handle: Handle,
+        from: &[f64],
+        by: [f64; 2],
+    ) -> Result<(), CallRefusal> {
+        let &[x, y, width, height] = from else {
+            return Err(malformed("a box is x, y, width, and height").into());
+        };
+        if !self.graph.holds_node(slot) {
+            return Err(CallRefusal::Slot(SlotError::NoNode { slot }));
+        }
+        let shape = self.graph.shape(slot);
+        let (content, node) = self.content.of(slot);
+        let (laid, rows) = content.laid(node, &self.fonts);
+        // The height of its rows and their padding, before the least height of a node, which the
+        // node shape raises and grows at the width the drag leaves (`NodeShape::needed`).
+        let content = if rows > 0 && shape.holds_content() {
+            laid
+        } else {
+            0.0
+        };
+        let from = Rect::new(x, y, x + width, y + height);
+        self.graph
+            .resize(slot, handle, &from, by, content)
+            .map_err(|error| match error {
+                MoveError::Slot(error) => CallRefusal::from(error),
+                MoveError::Position(PositionError::NonFinite) => NumberError::NonFinitePoint.into(),
+            })?;
+        Ok(())
+    }
+
+    /// What a press at `point` hits below the resize handles, as `hit` names it.
+    fn hit_below(&mut self, point: Point, pixel: f64, level: DetailLevel, connectors: bool) -> Hit {
+        match self.graph.hit_at(point, pixel, level.into(), connectors) {
+            Some(Target::Connector(slot, side)) => Hit::Connector {
+                slot,
+                side: side.into(),
+            },
+            Some(Target::Label(slot, label)) => Hit::Label { slot, label },
+            Some(Target::Node(slot)) => Hit::Node {
+                slot,
+                element: self.element_at(slot, point, level),
+            },
+            Some(Target::Edge(slot)) => Hit::Edge { slot },
+            Some(Target::Line(slot)) => {
+                let divide = self.graph.divided(self.graph.container(slot));
+                Hit::Line {
+                    slot,
+                    divide: if divide == Some(Axis::Down) {
+                        Divide::Down
+                    } else {
+                        Divide::Across
+                    },
+                }
+            }
+            None => Hit::None,
+        }
+    }
+
     /// The edge mesh `meshPtr` and `meshLen` read of `of`.
     fn mesh_of(&self, of: MeshOf) -> &Mesh {
         match of {
@@ -920,36 +1473,226 @@ impl Engine {
     }
 
     /// `addNode` of `node`, read: its strings of content counted on from those the graph holds.
-    fn add(&mut self, node: &NodeInput) -> Result<u32, GraphDataProblem> {
-        let (slot, content) =
-            add_node_to(&mut self.graph, node, &self.fonts, self.content.units())?;
+    fn add(
+        &mut self,
+        node: &NodeInput,
+        nest: (Option<u32>, Option<u32>),
+    ) -> Result<u32, GraphDataProblem> {
+        let units = self.content.units();
+        let (slot, content) = add_node_to(&mut self.graph, node, nest, &self.fonts, units)?;
         self.content.set(slot, content);
+        // Read again, as `add_node_to` took them, for the code units of their names.
+        let id = node.id.0.as_deref().unwrap_or_default();
+        let names = graph_data::regions_of(id, 0, &node.divide, &node.regions)
+            .map(|(_, regions)| regions.iter().map(graph_data::Region::name_units).collect())
+            .unwrap_or_else(|_| Vec::new());
+        let regions = self.graph.regions_of(slot);
+        self.content.set_regions(regions.into_iter().zip(names));
         Ok(slot)
     }
 
     /// `updateNode` of the node `id` in `slot` by `patch`, read: its strings of content counted on
     /// from those the graph holds besides the node's.
+    #[cfg(test)]
     fn update(&mut self, slot: u32, id: &str, patch: &NodePatch) -> Result<(), CallRefusal> {
-        let held = self.content.held_besides(slot);
+        self.update_with(slot, id, patch, &[]).map(drop)
+    }
+
+    /// `updateNode` of the node `id` in `slot` by `patch`, read, the regions it keeps named by
+    /// `kept`: its strings of content counted on from those the graph holds besides the node's.
+    fn update_with(
+        &mut self,
+        slot: u32,
+        id: &str,
+        patch: &NodePatch,
+        kept: &[u32],
+    ) -> Result<Vec<u32>, CallRefusal> {
+        let mut held = self.content.held_besides(slot);
+        // A patch of regions replaces the node's, whose names then count no more.
+        let divides = patch
+            .0
+            .iter()
+            .any(|(key, _)| key == "regions" || key == "divide");
+        if divides && self.graph.holds_node(slot) {
+            let names: u64 = self
+                .graph
+                .regions_of(slot)
+                .iter()
+                .map(|&r| self.content.units_of(r))
+                .sum();
+            held -= names;
+        }
         // A slot that holds no node is refused below as a slot, whatever node shape it held.
-        let shaped = if self.graph.holds_node(slot) {
-            (
-                self.graph.shape(slot),
-                self.graph.sizes()[slot as usize * 2],
-            )
+        let shape = if self.graph.holds_node(slot) {
+            self.graph.shape(slot)
         } else {
-            (comb_engine::shape::NodeShape::Rectangle, 0.0)
+            comb_engine::shape::NodeShape::Rectangle
         };
-        let Some((content, height)) = patch_of(id, shaped, patch, &self.fonts, held)? else {
-            return Ok(());
-        };
+        let current = self.graph.divided(slot);
+        let place = self.graph.place_of(slot);
+        let patched = patch_of(
+            id,
+            (shape, place.is_some()),
+            current,
+            patch,
+            &self.fonts,
+            held,
+        )?;
+        if patched.is_empty() {
+            return Ok(Vec::new());
+        }
         if !self.graph.holds_node(slot) {
             return Err(CallRefusal::Slot(SlotError::NoNode { slot }));
         }
+        if let Some((_, regions)) = &patched.regions {
+            // Each new region takes a node slot, the old ones free theirs.
+            let old = self.graph.regions_of(slot).len();
+            let nodes = f64::from(self.graph.nodes_in_use()) + regions.len() as f64 - old as f64;
+            graph_data::check_graph_size(nodes, 0.0)?;
+            // Their names count against the budget of content beside the node's content.
+            let names: u64 = regions.iter().map(graph_data::Region::name_units).sum();
+            let content = patched
+                .content
+                .as_ref()
+                .map_or_else(|| self.content.units_of(slot), |(checked, _)| checked.units);
+            if names > 0 {
+                graph_data::within_budget(id, held + content + names)?;
+            }
+        }
+        // The height the node then has, never less than its content, old or new, needs.
+        let given = patched.height.or_else(|| self.graph.given_height(slot));
+        let laid = patched.content.as_ref().map_or_else(
+            || {
+                let (content, node) = self.content.of(slot);
+                content.laid(node, &self.fonts)
+            },
+            |&(_, laid)| laid,
+        );
+        let width = self.graph.sizes()[slot as usize * 2];
+        let height = graph_data::node_height(shape, width, laid, given);
         graph_data::within_by_height(id, self.graph.positions()[slot as usize * 2 + 1], height)?;
         self.graph.resize_node(slot, height)?;
-        self.content.set(slot, content);
+        let resizable = patched
+            .resizable
+            .unwrap_or_else(|| self.graph.is_resizable(slot));
+        self.graph.set_sizing(slot, given, resizable)?;
+        if let Some((content, _)) = patched.content {
+            self.content.set(slot, content);
+        }
+        self.graph
+            .set_outline(slot, patched.outline.unwrap_or(self.graph.outline(slot)))?;
+        let top = graph_data::content_top(shape, width, laid);
+        self.graph.set_top(slot, top);
+        let removed = match patched.regions {
+            Some((divide, regions)) => self.divide_anew(slot, divide, &regions, kept, top)?,
+            None => Vec::new(),
+        };
+        self.graph.arrange(slot);
+        if let Some(place) = place {
+            self.place_anew(slot, place, patched.side, patched.offset)?;
+        }
+        Ok(removed)
+    }
+
+    /// Gives the border node in `slot`, at `place`, the side and the offset a patch set, each kept
+    /// where it set none (ARCH-border-nodes-ride-sides).
+    fn place_anew(
+        &mut self,
+        slot: u32,
+        place: comb_engine::graph::Place,
+        side: Option<comb_engine::geometry::Side>,
+        offset: Option<f64>,
+    ) -> Result<(), CallRefusal> {
+        if side.is_none() && offset.is_none() {
+            return Ok(());
+        }
+        let side = side.unwrap_or(place.side);
+        let offset = offset.unwrap_or(place.offset);
+        self.graph
+            .set_place(slot, side, offset)
+            .map_err(|_| malformed("a border node the patch checked refused its place"))?;
         Ok(())
+    }
+
+    /// Divides the node in `slot` anew into `regions` in the direction `divide`, below its
+    /// content, `top` high, in place of the regions it has, and returns what went with those as
+    /// `removed` lays it out: the regions, and what a region `kept` does not name held, with every
+    /// edge at it. `kept` names, per region of `regions` at every depth, depth first, the slot of
+    /// the region of the node that has its identifier, or `u32::MAX`; what that region holds
+    /// directly moves into the new one at its position relative to it
+    /// (ARCH-regions-are-container-slots, *Removing a region*).
+    fn divide_anew(
+        &mut self,
+        slot: u32,
+        divide: Option<Axis>,
+        regions: &[graph_data::Region],
+        kept: &[u32],
+        top: f32,
+    ) -> Result<Vec<u32>, CallRefusal> {
+        let old = self.graph.regions_of(slot);
+        // Divided into no regions, it is divided no more (ARCH-regions-are-container-slots).
+        let divide = divide.filter(|_| !regions.is_empty());
+        let holds = graph_data::holding(regions);
+        // What each kept region holds directly that is no region, taken out onto the canvas so
+        // that its removal leaves it, and where it goes: into the region of the same identifier
+        // at its position relative to it, or, where that region now holds regions, nothing lying
+        // beside them, into its first region, to any depth, at its world position (the human's
+        // decision of 2026-11-18).
+        let mut moved = Vec::new();
+        for (index, &from) in kept.iter().enumerate() {
+            if !old.contains(&from) || index >= regions.len() {
+                continue;
+            }
+            let into = first_leaf(regions, &holds, index);
+            let origin = self.graph.positions()[from as usize * 2..][..2].to_vec();
+            for &held in &self.graph.held_by(from) {
+                if self.graph.is_region(held) {
+                    continue;
+                }
+                let at = &self.graph.positions()[held as usize * 2..];
+                let world = [f64::from(at[0]), f64::from(at[1])];
+                let place = if into == index {
+                    Landing::Relative([
+                        world[0] - f64::from(origin[0]),
+                        world[1] - f64::from(origin[1]),
+                    ])
+                } else {
+                    Landing::World(world)
+                };
+                moved.push((into, held, place));
+            }
+        }
+        for &(_, held, _) in &moved {
+            let _ = self.graph.move_into(held, CANVAS);
+        }
+        let tops: Vec<u32> = old
+            .iter()
+            .copied()
+            .filter(|&r| self.graph.container(r) == slot)
+            .collect();
+        let (nodes, edges) = self.graph.remove_nodes(&tops)?;
+        self.content.remove(&nodes);
+        self.graph.divide(slot, divide, top)?;
+        let added = match divide {
+            Some(axis) => graph_data::add_regions(&mut self.graph, slot, axis, regions)?,
+            None => Vec::new(),
+        };
+        let names = regions.iter().map(graph_data::Region::name_units);
+        self.content.set_regions(added.iter().copied().zip(names));
+        self.graph.arrange(slot);
+        for (index, held, place) in moved {
+            let Some(&region) = added.get(index) else {
+                continue;
+            };
+            let at = &self.graph.positions()[region as usize * 2..];
+            let world = match place {
+                Landing::Relative([x, y]) => [f64::from(at[0]) + x, f64::from(at[1]) + y],
+                Landing::World(world) => world,
+            };
+            let _ = self.graph.move_into(held, region);
+            let _ = self.graph.place(held, world[0], world[1]);
+        }
+        Ok(removed(&nodes, &edges))
     }
 
     /// The element of the content of the node in `slot` whose rectangle holds `point`, of those
@@ -993,6 +1736,7 @@ impl Engine {
         self.moving_edges.clear();
         self.moving.clear();
         self.lay_out_found(level);
+        self.lay_dashes(level, &rect);
         Ok(self.visible.mesh.detail.into())
     }
 
@@ -1001,16 +1745,24 @@ impl Engine {
     fn lay_out_heights(&mut self) {
         let slots = graph_data::numbered(self.graph.sizes().len() / 2);
         for slot in 0..slots {
-            if !self.graph.holds_node(slot) {
+            // A region takes its box from the node it divides (ARCH-regions-are-container-slots).
+            if !self.graph.holds_node(slot) || self.graph.is_region(slot) {
                 continue;
             }
             let (content, node) = self.content.of(slot);
             let width = self.graph.sizes()[slot as usize * 2];
-            let height = content.height(node, &self.fonts);
-            let height = graph_data::shaped_height(self.graph.shape(slot), width, height);
+            let laid = content.laid(node, &self.fonts);
+            let given = self.graph.given_height(slot);
+            let shape = self.graph.shape(slot);
+            let height = graph_data::node_height(shape, width, laid, given);
             if self.graph.sizes()[slot as usize * 2 + 1] != height {
                 // A slot that holds a node, as the check above found, which no resize refuses.
                 let _ = self.graph.resize_node(slot, height);
+            }
+            if self.graph.divided(slot).is_some() {
+                self.graph
+                    .set_top(slot, graph_data::content_top(shape, width, laid));
+                self.graph.arrange(slot);
             }
         }
     }
@@ -1031,7 +1783,9 @@ impl Engine {
             let mut laid = Vec::new();
             let sizes = self.graph.sizes();
             let level = level.into();
-            for &slot in &self.visible.nodes {
+            // The containers first, then the other nodes, as the shell binds them.
+            let found = self.visible.containers.iter().chain(&self.visible.nodes);
+            for &slot in found {
                 let at = slot as usize * 2;
                 let frame = (self.graph.shape(slot), [sizes[at], sizes[at + 1]]);
                 let (content, node) = self.content.of(slot);
@@ -1052,6 +1806,69 @@ impl Engine {
             self.content_rects.extend(rect);
         }
     }
+}
+
+impl Engine {
+    /// Lays the dashes of the dashed outlines of the nodes the last query found, at the near and
+    /// the middle level, within `rect`, the query's rectangle, into the buffers of dashes, each
+    /// node's in the order the shell binds them; at the far level, which draws no outline, the
+    /// buffers hold no node (REN-node-shapes-cover-uml, *Outline*).
+    fn lay_dashes(&mut self, level: DetailLevel, rect: &Rect) {
+        self.dash_bounds.clear();
+        self.dashes.clear();
+        if level == DetailLevel::Far {
+            return;
+        }
+        self.dash_bounds.push(0);
+        let (mut points, mut segments) = (Vec::new(), Vec::new());
+        let found = self.visible.containers.iter().chain(&self.visible.nodes);
+        for &slot in found {
+            if let Outline::Dashed(pattern) = self.graph.outline(slot) {
+                let at = slot as usize * 2;
+                let [x, y] = [0, 1].map(|axis| f64::from(self.graph.positions()[at + axis]));
+                let size = [0, 1].map(|axis| f64::from(self.graph.sizes()[at + axis]));
+                let clip = [
+                    rect.min_x - x,
+                    rect.min_y - y,
+                    rect.max_x - x,
+                    rect.max_y - y,
+                ];
+                segments.clear();
+                self.graph.shape(slot).dashes(
+                    (size[0], size[1]),
+                    pattern.map(f64::from),
+                    clip,
+                    &mut points,
+                    &mut segments,
+                );
+                self.dashes.extend(segments.iter().flatten());
+            }
+            self.dash_bounds
+                .push(graph_data::numbered(self.dashes.len() / 4));
+        }
+    }
+}
+
+/// Where a node a kept region held lies once the regions are divided anew: at its position
+/// relative to the region of the same identifier, or at its world position in another.
+#[derive(Clone, Copy)]
+enum Landing {
+    Relative([f64; 2]),
+    World([f64; 2]),
+}
+
+/// The region of `regions` a node held by the region at `index` moves into: that region where it
+/// holds none, else its first region, to any depth (the human's decision of 2026-11-18).
+fn first_leaf(regions: &[graph_data::Region], holds: &[bool], index: usize) -> usize {
+    let mut at = index;
+    while holds[at] {
+        // A region that holds regions holds one after it, the first of them next in the list.
+        match (at + 1..regions.len()).find(|&next| regions[next].parent == Some(at)) {
+            Some(next) => at = next,
+            None => break,
+        }
+    }
+    at
 }
 
 /// The buffers the shell reads, each as a pointer into WebAssembly memory and a length in values.
@@ -1096,6 +1913,35 @@ impl Engine {
     #[wasm_bindgen(js_name = contentBoundsLen)]
     pub fn content_bounds_len(&self) -> usize {
         self.content_bounds.len()
+    }
+
+    /// Where the buffer starts that `query` writes, at the near and the middle level, the
+    /// boundaries of the dash segments of each node it found into, one more than it found, in the
+    /// order of the found node slots, none for a node whose outline is not dashed; at the far
+    /// level it holds none (REN-node-shapes-cover-uml, *Outline*).
+    #[wasm_bindgen(js_name = dashBoundsPtr)]
+    pub fn dash_bounds_ptr(&self) -> *const u32 {
+        self.dash_bounds.as_ptr()
+    }
+
+    /// How many boundaries the buffer of dash segments' boundaries holds.
+    #[wasm_bindgen(js_name = dashBoundsLen)]
+    pub fn dash_bounds_len(&self) -> usize {
+        self.dash_bounds.len()
+    }
+
+    /// Where the buffer starts that `query` writes each dash segment's two ends into, `x0, y0, x1,
+    /// y1` relative to its node's top-left corner, laid along its node's outline clockwise from the
+    /// point nearest the top left corner of its box, within the query's rectangle.
+    #[wasm_bindgen(js_name = dashesPtr)]
+    pub fn dashes_ptr(&self) -> *const f32 {
+        self.dashes.as_ptr()
+    }
+
+    /// How many values the buffer of dash segments holds: four per segment.
+    #[wasm_bindgen(js_name = dashesLen)]
+    pub fn dashes_len(&self) -> usize {
+        self.dashes.len()
     }
 
     /// Where the buffer starts that `query` writes each placed element's rectangle into, `x, y,
@@ -1274,7 +2120,21 @@ impl Engine {
         self.drawn.bounds.len()
     }
 
-    /// Where the buffer starts that `query` writes the node slots it found into.
+    /// Where the buffer starts that `query` writes the containers it found into, in the order they
+    /// are drawn (ARCH-engine-edits-nested-graph).
+    #[wasm_bindgen(js_name = visibleContainersPtr)]
+    pub fn visible_containers_ptr(&self) -> *const u32 {
+        self.visible.containers.as_ptr()
+    }
+
+    /// How many containers the last query found.
+    #[wasm_bindgen(js_name = visibleContainersLen)]
+    pub fn visible_containers_len(&self) -> usize {
+        self.visible.containers.len()
+    }
+
+    /// Where the buffer starts that `query` writes the node slots it found into, the containers
+    /// apart, by rank.
     #[wasm_bindgen(js_name = visibleNodesPtr)]
     pub fn visible_nodes_ptr(&self) -> *const u32 {
         self.visible.nodes.as_ptr()
@@ -1415,16 +2275,20 @@ mod tests {
 
     #[test]
     fn a_freed_slot_is_refused_by_every_export_that_takes_slots_as_a_slot_beyond_the_graph() {
-        // Verifies: ARCH-engine-edits-graph-in-place
+        // Verifies: ARCH-engine-edits-graph-in-place, ARCH-engine-edits-nested-graph
         let data = batch(
             &[("a", 0.0, 0.0), ("b", 300.0, 0.0), ("c", 600.0, 0.0)],
             &[("a-b", "a", "b"), ("b-c", "b", "c")],
         );
         let mut engine = Engine::new();
         engine.graph = graph_of(&data).unwrap();
-        // Node c goes, and edge b-c, slot 1, with it.
-        assert_eq!(engine.remove_nodes(&[2]), Ok(vec![1]));
+        // Node c goes, and edge b-c, slot 1, with it: one node, slot 2, and edge 1.
+        assert_eq!(engine.remove_nodes(&[2]), Ok(vec![1, 2, 1]));
         for slot in [2, 9] {
+            assert_eq!(
+                engine.removal_of(&[0, slot]),
+                Err(SlotError::NoNode { slot })
+            );
             assert_eq!(
                 engine.remove_nodes(&[0, slot]),
                 Err(SlotError::NoNode { slot })
@@ -1432,6 +2296,13 @@ mod tests {
             assert_eq!(
                 engine.translate(&[0, slot], 1.0, 1.0),
                 Err(TranslateRefusal::Slot(SlotError::NoNode { slot }))
+            );
+            let no_node = || CallRefusal::Slot(SlotError::NoNode { slot });
+            assert_eq!(engine.place(slot, 1.0, 1.0), Err(no_node()));
+            assert_eq!(engine.container_at(1.0, 1.0, slot), Err(no_node()));
+            assert_eq!(
+                engine.move_into(slot, None),
+                Err(MoveIntoRefusal::Slot(SlotError::NoNode { slot }))
             );
         }
         for slot in [1, 9] {
@@ -1441,7 +2312,192 @@ mod tests {
             );
         }
         assert_eq!(engine.graph.positions()[..4], [0.0, 0.0, 300.0, 0.0]);
-        assert_eq!(engine.remove_edges(&[0]), Ok(()));
+        assert_eq!(engine.remove_edges(&[0]), Ok(vec![0]));
+    }
+
+    /// The engine of nodes a, b, and c, edge a-b, and freed slots of each kind that held what an
+    /// export reads, with the batch it was loaded from: node 2, c, which held content and was
+    /// resizable, with its border node 3 and its edges 1 and 2, the second of a measured label,
+    /// and node 4, divided into regions 5 and 6.
+    fn freed() -> (Engine, GraphBatch) {
+        use comb_engine::geometry::{Side as BoxSide, Sides};
+        use comb_engine::graph::{EdgeSpec, End, LabelPlacement};
+        use comb_engine::stroke::{Arrowhead, EdgeStyle};
+        let data = batch(
+            &[("a", 0.0, 0.0), ("b", 300.0, 0.0), ("c", 600.0, 0.0)],
+            &[("a-b", "a", "b"), ("b-c", "b", "c")],
+        );
+        let mut engine = Engine::new();
+        engine.graph = graph_of(&data).unwrap();
+        let graph = &mut engine.graph;
+        let label = LabelPlacement {
+            t: 0.5,
+            offset: 0.0,
+        };
+        let style = EdgeStyle {
+            color: 0,
+            dash: None,
+            arrow: Arrowhead::None,
+            lightning: false,
+        };
+        let labelled = EdgeSpec {
+            sides: Sides::default(),
+            source: End::Node(1),
+            target: End::Node(2),
+            labels: vec![label],
+            style,
+        };
+        assert_eq!(graph.add_edge(labelled), Ok(2));
+        assert_eq!(graph.set_label_size(2, 0, 20.0, 10.0), Ok(()));
+        assert_eq!(graph.add_node(0.0, 0.0, 10.0, 10.0), Ok(3));
+        assert_eq!(graph.attach(3, 2, BoxSide::Right, 10.0), Ok(10.0));
+        graph.set_sizing(2, None, true).unwrap();
+        assert_eq!(graph.add_node(0.0, 400.0, 300.0, 200.0), Ok(4));
+        graph.divide(4, Some(Axis::Across), 0.0).unwrap();
+        for _ in 0..2 {
+            let region = graph.add_node_in(4, true, [0.0, 0.0, 100.0, 0.0]).unwrap();
+            graph.mark_region(region, false, None).unwrap();
+        }
+        graph.arrange(4);
+        assert_eq!(
+            engine.remove_nodes(&[2, 4]),
+            Ok(vec![5, 2, 4, 5, 6, 3, 1, 2])
+        );
+        (engine, data)
+    }
+
+    /// The rectangle of a mesh the moving layer makes, at the near level.
+    const MESHED: MeshAt = MeshAt {
+        rect: Rect {
+            min_x: -1000.0,
+            min_y: -1000.0,
+            max_x: 1000.0,
+            max_y: 1000.0,
+        },
+        level: Level::Near,
+        pixel: 1.0,
+        origin: Point { x: 0.0, y: 0.0 },
+    };
+
+    #[test]
+    fn a_freed_node_slot_is_refused_or_answered_for_by_every_other_export_as_one_beyond_the_graph()
+    {
+        // Verifies: ARCH-engine-edits-nested-graph
+        // The exports the first test leaves out, each called past the reading of its generated
+        // values where it takes one, on each freed node slot and on slot 99 beyond the graph.
+        use graph_data::tests::titled;
+        let (mut engine, data) = freed();
+        let no_node = |slot| CallRefusal::Slot(SlotError::NoNode { slot });
+        let patch = NodePatch(vec![("content".to_owned(), titled("t").into())]);
+        for slot in [2, 3, 4, 5, 99] {
+            assert_eq!(engine.content(slot).err(), Some(no_node(slot)));
+            assert_eq!(engine.inner_of(slot), Err(no_node(slot)));
+            let from = [0.0, 0.0, 300.0, 200.0];
+            let resized = engine.resize(slot, Handle::Right, &from, [10.0, 0.0]);
+            assert_eq!(resized, Err(no_node(slot)));
+            assert_eq!(engine.slide(slot, 600.0, 0.0), Err(no_node(slot)));
+            let updated = engine.update_with(slot, "c", &patch, &[]);
+            assert_eq!(updated, Err(no_node(slot)));
+            let moved = engine.move_line(slot, 50.0);
+            assert_eq!(moved, Err(LineRefusal::NoNode { slot }));
+            assert_eq!(engine.regions_of(slot), Vec::<u32>::new());
+            assert_eq!(engine.border_of(slot), Vec::<f64>::new());
+            assert_eq!(engine.edges_at(&[0, slot]), Err(SlotError::NoNode { slot }));
+            let (edges, mesh) = (&mut engine.moving_edges, &mut engine.moving);
+            let meshed = engine.graph.mesh_at(&[0, slot], &[], &MESHED, edges, mesh);
+            assert_eq!(meshed, Err(GraphSlotError::NoNode { slot }));
+            let added = add_edge_to(&mut engine.graph, &data.edges[0], 0, slot, false);
+            let refused = EdgeRefusal::Slot(GraphSlotError::NoNode { slot });
+            assert_eq!(added, Err(refused));
+            // No resize handle of a freed node, and a press where it lay finds what lies there.
+            let corner = Point::new(600.0, 0.0);
+            assert_eq!(engine.graph.handle_at(corner, 1.0, Level::Near, slot), None);
+            let pressed = engine.hit_below(Point::new(605.0, 30.0), 1.0, DetailLevel::Near, false);
+            assert_eq!(pressed, Hit::None);
+        }
+    }
+
+    #[test]
+    fn a_node_into_or_onto_a_freed_node_is_refused_as_into_or_onto_one_beyond_the_graph() {
+        // Verifies: ARCH-engine-edits-nested-graph
+        type Nest = fn(u32) -> (Option<u32>, Option<u32>);
+        let (mut engine, data) = freed();
+        // A border node of c, which went.
+        let mut pin = batch(&[("p", 0.0, 0.0)], &[]).nodes.remove(0);
+        pin.x = None.into();
+        pin.y = None.into();
+        pin.attached_to = Some("c".to_owned()).into();
+        pin.side = Some(Side::Right).into();
+        pin.offset = Some(10.0).into();
+        let nests: [(&NodeInput, u32, Nest); 2] = [
+            (&data.nodes[0], 4, |s| (Some(s), None)),
+            (&pin, 2, |s| (None, Some(s))),
+        ];
+        for (node, freed, nest) in nests {
+            let beyond = engine.add(node, nest(99)).unwrap_err();
+            assert_eq!(engine.add(node, nest(freed)), Err(beyond));
+        }
+        // A move into a freed container, as into one beyond the graph.
+        for slot in [4, 99] {
+            let refused = MoveIntoRefusal::Container(ContainerError::NoContainer { slot });
+            assert_eq!(engine.move_into(0, Some(slot)), Err(refused));
+        }
+        assert_eq!(engine.graph.nodes_in_use(), 2);
+    }
+
+    #[test]
+    fn a_freed_edge_slot_is_refused_or_answered_for_by_every_other_export_as_one_beyond_the_graph()
+    {
+        // Verifies: ARCH-engine-edits-nested-graph
+        let (mut engine, _) = freed();
+        for slot in [1, 2, 99] {
+            let no_edge = || SlotError::NoEdge { slot };
+            assert_eq!(engine.edge_removal_of(&[0, slot]), Err(no_edge()));
+            assert_eq!(engine.set_label_size(slot, 0, 20.0, 10.0), Err(no_edge()));
+            assert_eq!(engine.label_point(slot, 0), Vec::<f64>::new());
+            let moved = engine.move_label(slot, 0, 450.0, 30.0);
+            assert_eq!(moved, Err(CallRefusal::Slot(no_edge())));
+            let updated = update_edge_in(&mut engine.graph, slot, "b-c", EdgePatch::default());
+            let refused = EdgeRefusal::Slot(GraphSlotError::NoEdge { slot });
+            assert_eq!(updated, Err(refused));
+            let (edges, mesh) = (&mut engine.moving_edges, &mut engine.moving);
+            let meshed = engine.graph.mesh_at(&[0], &[slot], &MESHED, edges, mesh);
+            assert_eq!(meshed, Err(GraphSlotError::NoEdge { slot }));
+        }
+        assert_eq!(engine.graph.positions()[..4], [0.0, 0.0, 300.0, 0.0]);
+    }
+
+    #[test]
+    fn a_drop_finds_its_container_and_a_move_into_one_refuses_what_cannot_take_the_node() {
+        // Verifies: ARCH-engine-edits-nested-graph, API-shell-mistake-refused-as-shells
+        // Nodes a and b on the canvas, and container c over a, added last, in slot 2.
+        let mut engine = Engine::new();
+        engine.graph = graph_of(&batch(&[("a", 0.0, 0.0), ("b", 900.0, 0.0)], &[])).unwrap();
+        let shape = [-100.0, -100.0, 600.0, 400.0];
+        assert_eq!(engine.graph.add_node_in(CANVAS, true, shape), Ok(2));
+        assert_eq!(engine.container_at(10.0, 10.0, 0), Ok(Some(2)));
+        // The container is never its own target, and beside it lies the canvas.
+        assert_eq!(engine.container_at(10.0, 10.0, 2), Ok(None));
+        assert_eq!(engine.container_at(800.0, 10.0, 0), Ok(None));
+        let refused = |error| Err(MoveIntoRefusal::Container(error));
+        let no_container = ContainerError::NoContainer { slot: 1 };
+        assert_eq!(engine.move_into(0, Some(1)), refused(no_container));
+        let in_itself = ContainerError::InItself { slot: 2 };
+        assert_eq!(engine.move_into(2, Some(2)), refused(in_itself));
+        assert_eq!(engine.move_into(0, Some(2)), Ok(()));
+        // A node in it now, so the container takes it along to where it is placed.
+        assert_eq!(
+            engine.move_into(2, Some(0)),
+            refused(ContainerError::NoContainer { slot: 0 })
+        );
+        assert_eq!(engine.place(2, 0.0, 0.0), Ok(()));
+        assert_eq!(engine.graph.positions()[..2], [100.0, 100.0]);
+        let refusal = || CallRefusal::Number(NumberError::NonFinitePoint);
+        for bad in [f64::NAN, f64::INFINITY] {
+            assert_eq!(engine.place(2, bad, 0.0), Err(refusal()));
+            assert_eq!(engine.container_at(0.0, bad, 0), Err(refusal()));
+        }
+        assert_eq!(engine.graph.positions()[4..6], [0.0, 0.0]);
     }
 
     #[test]
@@ -1493,6 +2549,270 @@ mod tests {
             .unwrap();
     }
 
+    /// The query of `level` over `rect` on `engine`, where a pixel is a world unit.
+    fn query_at(engine: &mut Engine, rect: [f64; 4], level: DetailLevel) {
+        let [min_x, min_y, max_x, max_y] = rect;
+        let rect = RectInput {
+            min_x,
+            min_y,
+            max_x,
+            max_y,
+        };
+        engine.query_rect(&rect, level, 1.0, 0.0).unwrap();
+    }
+
+    #[test]
+    fn a_pentagon_a_notch_a_note_and_a_frame_lay_their_content_out_in_their_inner_rectangle() {
+        // Verifies: REN-node-shapes-cover-uml
+        use graph_data::tests::{a_and, content, load_into, text};
+        // Node `b` at (300, 0), 220 wide, of one title "Send" of 4 glyphs of 7: 64 high, its
+        // title at the padding of 12 and 10 inside its inner rectangle. A frame 300 wide and 200
+        // high lays it out in its tab, 4 × 7 and the padding wide and one line and the padding
+        // high.
+        let edges = graph_data::OwnedEdgeColumns::of([]);
+        let cases = [
+            (NodeShape::Pentagon, [0.0, 0.0, 188.0, 64.0]),
+            (NodeShape::NotchedRectangle, [32.0, 0.0, 188.0, 64.0]),
+            (NodeShape::Note, [0.0, 0.0, 220.0, 64.0]),
+            (NodeShape::Frame, [0.0, 0.0, 52.0, 38.0]),
+        ];
+        for (shape, inner) in cases {
+            let mut engine = fonted();
+            let frame = shape == NodeShape::Frame;
+            let nodes = a_and(|n| {
+                n.shape = shape.into();
+                n.width = if frame { 300.0 } else { 220.0 }.into();
+                n.height = Some(if frame { 200.0 } else { 20.0 }).into();
+                n.content = content(&[&[text(RoleCode::Title, "Send")]]).into();
+            });
+            assert_eq!(load_into(&mut engine, &nodes, &edges), Ok(2), "{shape:?}");
+            let height = if frame { 200.0 } else { 64.0 };
+            assert_eq!(engine.graph.sizes()[3], height, "{shape:?}");
+            assert_eq!(engine.inner_of(1), Ok(inner.to_vec()), "{shape:?}");
+            near(&mut engine, [-10.0, -10.0, 700.0, 300.0]);
+            let [x, y, width, _] = inner.map(|v| v as f32);
+            assert_eq!(
+                engine.content_rects[4..],
+                [x + 12.0, y + 10.0, width - 24.0, 18.0],
+                "{shape:?}"
+            );
+        }
+        let mut engine = fonted();
+        assert_eq!(
+            engine.inner_of(0),
+            Err(CallRefusal::Slot(SlotError::NoNode { slot: 0 }))
+        );
+    }
+
+    #[test]
+    fn a_frame_resized_lower_than_its_tab_stays_as_high_as_its_content() {
+        // Verifies: REN-node-shapes-cover-uml
+        use graph_data::tests::{a_and, content, load_into, text};
+        // Node `b`, a frame 300 wide and 200 high of one title, resizable, dragged by its bottom
+        // up past its top: never lower than its content, which its tab of one line lies within.
+        let mut engine = fonted();
+        let nodes = a_and(|n| {
+            n.shape = NodeShape::Frame.into();
+            n.width = 300.0.into();
+            n.height = Some(200.0).into();
+            n.resizable = Some(true).into();
+            n.content = content(&[&[text(RoleCode::Title, "Load")]]).into();
+        });
+        let edges = graph_data::OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &nodes, &edges), Ok(2));
+        let from = [300.0, 0.0, 300.0, 200.0];
+        assert_eq!(
+            engine.resize(1, Handle::Bottom, &from, [0.0, -500.0]),
+            Ok(())
+        );
+        assert_eq!(engine.graph.sizes()[2..], [300.0, 64.0]);
+        let tab = engine.inner_of(1).unwrap();
+        assert!(tab[3] <= 64.0, "{tab:?}");
+        // A drag of its right side sets its width alone.
+        let from = [300.0, 0.0, 300.0, 64.0];
+        assert_eq!(
+            engine.resize(1, Handle::Right, &from, [-100.0, 0.0]),
+            Ok(())
+        );
+        assert_eq!(engine.graph.sizes()[2..], [200.0, 64.0]);
+    }
+
+    #[test]
+    fn an_actor_and_an_hourglass_lay_their_content_out_below_their_drawing_and_resize_above_both() {
+        // Verifies: REN-node-shapes-cover-uml, REN-node-content-and-hits
+        use graph_data::tests::{a_and, content, load_into, text};
+        // Node `b` at (300, 0), 220 wide, of one title "Send": its drawing 48 high at its top,
+        // its content below it to its width, the title and its padding, 38 high, the node 86, at
+        // least the least height of 64 as a whole (REN-node-shapes-cover-uml, *Height*).
+        let edges = graph_data::OwnedEdgeColumns::of([]);
+        for shape in [NodeShape::Actor, NodeShape::Hourglass] {
+            let mut engine = fonted();
+            let nodes = a_and(|n| {
+                n.shape = shape.into();
+                n.width = 220.0.into();
+                n.height = Some(20.0).into();
+                n.resizable = Some(true).into();
+                n.content = content(&[&[text(RoleCode::Title, "Send")]]).into();
+            });
+            assert_eq!(load_into(&mut engine, &nodes, &edges), Ok(2), "{shape:?}");
+            assert_eq!(engine.graph.sizes()[2..], [220.0, 86.0], "{shape:?}");
+            assert_eq!(
+                engine.inner_of(1),
+                Ok(vec![0.0, 48.0, 220.0, 38.0]),
+                "{shape:?}"
+            );
+            near(&mut engine, [-10.0, -10.0, 700.0, 300.0]);
+            assert_eq!(
+                engine.content_rects[4..],
+                [12.0, 58.0, 196.0, 18.0],
+                "{shape:?}"
+            );
+            // Dragged by its bottom up past its top: as high as its drawing and its content.
+            let from = [300.0, 0.0, 220.0, 86.0];
+            assert_eq!(
+                engine.resize(1, Handle::Bottom, &from, [0.0, -500.0]),
+                Ok(()),
+                "{shape:?}"
+            );
+            assert_eq!(engine.graph.sizes()[2..], [220.0, 86.0], "{shape:?}");
+            // Dragged by its corner, its width and its height each follow.
+            assert_eq!(
+                engine.resize(1, Handle::BottomRight, &from, [-20.0, 30.0]),
+                Ok(()),
+                "{shape:?}"
+            );
+            assert_eq!(engine.graph.sizes()[2..], [200.0, 116.0], "{shape:?}");
+        }
+        // Without content, an actor narrowed to 16 is as high as its drawing of 32 at least.
+        let mut engine = fonted();
+        let nodes = a_and(|n| {
+            n.shape = NodeShape::Actor.into();
+            n.width = 100.0.into();
+            n.resizable = Some(true).into();
+            n.content = crate::graph_data::ContentInput::new().into();
+        });
+        assert_eq!(load_into(&mut engine, &nodes, &edges), Ok(2));
+        assert_eq!(engine.graph.sizes()[2..], [100.0, 48.0]);
+        let from = [300.0, 0.0, 100.0, 48.0];
+        assert_eq!(
+            engine.resize(1, Handle::BottomRight, &from, [-84.0, -500.0]),
+            Ok(())
+        );
+        assert_eq!(engine.graph.sizes()[2..], [16.0, 32.0]);
+    }
+
+    #[test]
+    fn a_separator_row_lays_out_as_a_line_across_the_inner_rectangle_between_its_rows() {
+        // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting
+        use graph_data::tests::{a_and, load_into};
+        // Node `b` at (300, 0), 100 wide: a title "Idle", a separator, and a body "entry".
+        let mut rows = graph_data::ContentInput::new();
+        rows.push(
+            KindCode::Text,
+            1.0,
+            RoleCode::Title as u8,
+            f64::NAN,
+            Some("Idle"),
+            None,
+        );
+        rows.end_row(false);
+        rows.end_row(true);
+        rows.push(
+            KindCode::Text,
+            1.0,
+            RoleCode::Body as u8,
+            f64::NAN,
+            Some("entry"),
+            None,
+        );
+        rows.end_row(false);
+        let mut engine = fonted();
+        let nodes = a_and(|n| n.content = rows.into());
+        let edges = graph_data::OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &nodes, &edges), Ok(2));
+        // Its rows of 18, 21, and 16 and the padding of 10 above and below.
+        assert_eq!(engine.graph.sizes()[3], 75.0);
+        near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
+        assert_eq!(engine.content_bounds, [0, 1, 4]);
+        let kinds = [KindCode::Text, KindCode::Separator, KindCode::Text].map(|k| k as u8);
+        assert_eq!(engine.drawn.kinds[1..], kinds);
+        // The line, 1 high, across the whole inner rectangle 10 below the title's line, as the
+        // one piece of its element.
+        assert_eq!(engine.content_rects[8..12], [0.0, 38.0, 100.0, 1.0]);
+        assert_eq!(engine.drawn.bar_bounds[2..4], [0, 1]);
+        assert_eq!(engine.drawn.bars, [0.0, 38.0, 100.0, 1.0]);
+        // Its rows as the host application's type describes them, the separator marked.
+        assert_eq!(engine.content.content_of(1).1, [false, true, false]);
+        // Drawn at the middle level too, beside the title, and hit at neither level.
+        query_at(
+            &mut engine,
+            [-10.0, -10.0, 500.0, 200.0],
+            DetailLevel::Middle,
+        );
+        let middle = [KindCode::Text, KindCode::Separator].map(|k| k as u8);
+        assert_eq!(engine.drawn.kinds[1..], middle);
+        assert_eq!(element(&engine, 1, 350.0, 38.5, DetailLevel::Near), None);
+        let body = hit(2, 0, ElementKind::Text, None);
+        assert_eq!(element(&engine, 1, 350.0, 55.0, DetailLevel::Near), body);
+    }
+
+    #[test]
+    fn a_dashed_outline_is_laid_as_dash_segments_on_its_node_which_update_node_sets() {
+        // Verifies: REN-node-shapes-cover-uml, API-bridge-columns-carry-nesting
+        use graph_data::tests::{a_and, load_into};
+        let mut engine = fonted();
+        let nodes = a_and(|n| {
+            n.shape = NodeShape::RoundedRectangle.into();
+            n.outline = Some(graph_data::Outline::Dashed(Pair([6.0, 4.0]))).into();
+        });
+        let edges = graph_data::OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &nodes, &edges), Ok(2));
+        let rect = [-10.0, -10.0, 500.0, 200.0];
+        near(&mut engine, rect);
+        // None for the solid node `a`; for `b`, 100 × 64, a dash for every 10 of its outline.
+        let perimeter = 2.0 * (100.0 + 64.0) - 80.0 + core::f64::consts::TAU * 10.0;
+        assert_eq!(engine.dash_bounds[..2], [0, 0]);
+        let dashes = engine.dash_bounds[2] as usize;
+        assert!(dashes as f64 >= (perimeter / 10.0).floor(), "{dashes}");
+        assert_eq!(engine.dashes.len(), 4 * dashes);
+        for value in &engine.dashes {
+            assert!((-0.01..=100.01).contains(value), "{value}");
+        }
+        // At the far level, which draws no outline, none.
+        query_at(&mut engine, rect, DetailLevel::Far);
+        assert!(engine.dash_bounds.is_empty() && engine.dashes.is_empty());
+        // `updateNode` draws it without an outline, then dashed again; a dash an edge's rule
+        // refuses is refused by its field and changes nothing.
+        let outline = |outline| {
+            NodePatch(vec![(
+                "outline".to_owned(),
+                graph_data::PatchValue::Outline(Field(Some(outline))),
+            )])
+        };
+        assert_eq!(
+            engine.update(1, "b", &outline(graph_data::Outline::None)),
+            Ok(())
+        );
+        assert_eq!(engine.graph.outline(1), Outline::None);
+        near(&mut engine, rect);
+        assert_eq!(engine.dash_bounds, [0, 0, 0]);
+        let dashed = graph_data::Outline::Dashed(Pair([6.0, 4.0]));
+        assert_eq!(engine.update(1, "b", &outline(dashed)), Ok(()));
+        assert_eq!(engine.graph.outline(1), Outline::Dashed([6.0, 4.0]));
+        let refused = graph_data::Outline::Dashed(Pair([0.0, 4.0]));
+        assert_eq!(
+            engine.update(1, "b", &outline(refused)),
+            Err(CallRefusal::Data(GraphDataProblem::InvalidField {
+                list: GraphList::Nodes,
+                index: 0,
+                id: Some("b".to_owned()),
+                field: "outline".to_owned(),
+                expected: "\"solid\", \"none\", or a dash pattern, or none".to_owned(),
+            }))
+        );
+        assert_eq!(engine.graph.outline(1), Outline::Dashed([6.0, 4.0]));
+    }
+
     #[test]
     fn a_node_s_content_lies_in_its_node_shape_s_inner_rectangle_and_is_hit_there() {
         // Verifies: REN-closed-set-of-node-shapes
@@ -1517,7 +2837,7 @@ mod tests {
             n.content = graph_data::ContentInput::new().into();
         });
         assert_eq!(load_into(&mut engine, &nodes, &edges), Ok(2));
-        let patch = NodePatch(vec![("content".to_owned(), titled("t"))]);
+        let patch = NodePatch(vec![("content".to_owned(), titled("t").into())]);
         assert_eq!(
             engine.update(1, "b", &patch),
             Err(CallRefusal::Data(GraphDataProblem::ContentInFilledShape {
@@ -1663,11 +2983,7 @@ mod tests {
             "content".to_owned(),
             named_content(&[&[action("Next", "next")]]).into(),
         )]);
-        let (checked, height) = patch_of("b", graph_data::RECTANGLE, &patch, &engine.fonts, 0)
-            .unwrap()
-            .unwrap();
-        engine.graph.resize_node(1, height).unwrap();
-        engine.content.set(1, checked);
+        engine.update(1, "b", &patch).unwrap();
         assert_eq!(
             element(&engine, 1, 320.0, 15.0, DetailLevel::Near),
             hit(0, 0, ElementKind::Action, Some("next"))
@@ -1966,20 +3282,20 @@ mod tests {
         let mut content = graph_data::ContentInput::new();
         content.push(KindCode::Text, 1.0, title, f64::NAN, Some("Bet"), None);
         content.push(KindCode::Badge, 1.0, 0, 34_816.0, Some("Done"), None);
-        content.end_row();
+        content.end_row(false);
         content.push(KindCode::Text, 1.0, body, f64::NAN, Some("b"), None);
         content.push(KindCode::Action, 1.0, 0, f64::NAN, Some("Go"), Some("go"));
         content.push(KindCode::Icon, 1.0, 0, f64::NAN, None, Some("bet"));
-        content.end_row();
+        content.end_row(false);
         content.push(KindCode::Progress, 1.0, 0, f64::NAN, None, None);
         content.push_segment(0.5, 34_816.0);
-        content.end_row();
+        content.end_row(false);
         let down = DirectionCode::Down as u8;
         let texts = [Some("Revenue"), Some("42"), Some("+3%")];
         content.push_metric(1.0, down, f64::from(RED), texts);
-        content.end_row();
+        content.end_row(false);
         content.push(KindCode::Text, 1.0, title, f64::NAN, Some("Two"), None);
-        content.end_row();
+        content.end_row(false);
         data.nodes[1].content = content.into();
         data.nodes[1].width = 200.0.into();
         let nodes = graph_data::OwnedColumns::of(data.nodes.iter().map(Some));
@@ -2084,7 +3400,7 @@ mod tests {
         content.push(KindCode::Progress, 1.0, 0, f64::NAN, None, None);
         content.push_segment(0.5, 0.0);
         content.push(KindCode::Action, 1.0, 0, f64::NAN, Some("Go"), Some("go"));
-        content.end_row();
+        content.end_row(false);
         let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
         data.nodes[0].content = content.into();
         let nodes = graph_data::OwnedColumns::of(data.nodes.iter().map(Some));
@@ -2118,11 +3434,7 @@ mod tests {
         let rows = content(&[&[long], &[body], &[body], &[body], &[body]]);
         let patch = NodePatch(vec![("content".to_owned(), rows.into())]);
         let slot = 1;
-        let (checked, height) = patch_of("b", graph_data::RECTANGLE, &patch, &engine.fonts, 0)
-            .unwrap()
-            .unwrap();
-        engine.graph.resize_node(slot, height).unwrap();
-        engine.content.set(slot, checked);
+        engine.update(slot, "b", &patch).unwrap();
         assert_eq!(engine.graph.sizes()[2..], [100.0, 102.0]);
         near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
         // The long title is cut to 9 glyphs and an ellipsis within its column of 76.
@@ -2148,13 +3460,72 @@ mod tests {
             "content".to_owned(),
             content(&[&[(KindCode::Unnamed, 1.0, RoleCode::Title, None)]]).into(),
         )]);
-        assert!(patch_of("b", graph_data::RECTANGLE, &refused, &engine.fonts, 0).is_err());
+        assert!(
+            patch_of(
+                "b",
+                (graph_data::RECTANGLE.0, false),
+                None,
+                &refused,
+                &engine.fonts,
+                0
+            )
+            .is_err()
+        );
         assert_eq!(engine.graph.sizes()[2..], [100.0, 102.0]);
         // A slot that holds no node is the shell's mistake.
         assert_eq!(
             engine.graph.resize_node(7, 64.0),
             Err(comb_engine::graph::SlotError::NoNode { slot: 7 })
         );
+    }
+
+    #[test]
+    fn a_patch_of_height_and_resizable_raises_the_height_and_a_resize_stops_at_the_content() {
+        // Verifies: API-edits-report-nested-changes, REN-node-shapes-cover-uml
+        use graph_data::PatchValue;
+        use graph_data::tests::{TITLE, b_of, content, load_into, text};
+        let mut engine = fonted();
+        let nodes = b_of(&[&[TITLE]]);
+        let none = graph_data::OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &nodes, &none), Ok(2));
+        let content_height = engine.graph.sizes()[3];
+        // A height below the content's raised to it, and the node resizable.
+        let patch = NodePatch(vec![
+            ("height".to_owned(), PatchValue::Height(Field(Some(10.0)))),
+            (
+                "resizable".to_owned(),
+                PatchValue::Resizable(Field(Some(true))),
+            ),
+        ]);
+        engine.update(1, "b", &patch).unwrap();
+        assert_eq!(engine.graph.sizes()[3], content_height);
+        assert!(engine.graph.is_resizable(1));
+        // A greater one kept, through a patch of more content too.
+        let patch = NodePatch(vec![(
+            "height".to_owned(),
+            PatchValue::Height(Field(Some(300.0))),
+        )]);
+        engine.update(1, "b", &patch).unwrap();
+        assert_eq!(engine.graph.sizes()[3], 300.0);
+        let body = text(RoleCode::Body, "b");
+        let patch = NodePatch(vec![("content".to_owned(), content(&[&[body]]).into())]);
+        engine.update(1, "b", &patch).unwrap();
+        assert_eq!(engine.graph.sizes()[3], 300.0);
+        // A height not above 0 is refused, the node as it was.
+        let patch = NodePatch(vec![(
+            "height".to_owned(),
+            PatchValue::Height(Field(Some(0.0))),
+        )]);
+        assert!(engine.update(1, "b", &patch).is_err());
+        assert_eq!(engine.graph.sizes()[3], 300.0);
+        // A resize of the bottom far up stops at the height its content needs, and keeps it.
+        let [x, y] = [0, 1].map(|axis| f64::from(engine.graph.positions()[2 + axis]));
+        let from = [x, y, 100.0, 300.0];
+        engine
+            .resize(1, Handle::Bottom, &from, [0.0, -1000.0])
+            .unwrap();
+        assert_eq!(engine.graph.sizes()[3], content_height);
+        assert_eq!(engine.graph.given_height(1), Some(content_height));
     }
 
     #[test]
@@ -2174,16 +3545,12 @@ mod tests {
         near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
         assert_eq!(engine.drawn.texts, "");
         assert_eq!(engine.drawn.bounds, [0, 0, 0]);
-        // A node patched to no rows at all lays out to none, the least height high.
+        // A node patched to no rows at all lays out to none, and is as high as wide.
         let patch = NodePatch(vec![("content".to_owned(), content(&[]).into())]);
-        let (checked, height) = patch_of("b", graph_data::RECTANGLE, &patch, &engine.fonts, 0)
-            .unwrap()
-            .unwrap();
-        engine.graph.resize_node(1, height).unwrap();
-        engine.content.set(1, checked);
+        engine.update(1, "b", &patch).unwrap();
         near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
         assert_eq!(engine.content_bounds, [0, 1, 1]);
-        assert_eq!(engine.graph.sizes()[3], 64.0);
+        assert_eq!(engine.graph.sizes()[3], 100.0);
     }
 
     #[test]
@@ -2311,7 +3678,7 @@ mod tests {
         for pixel in [0.0, -0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             assert!(
                 engine
-                    .hit(200.0, 60.0, pixel, DetailLevel::Near, true)
+                    .hit(200.0, 60.0, pixel, DetailLevel::Near, true, None)
                     .is_err(),
                 "{pixel}"
             );
@@ -2327,7 +3694,7 @@ mod tests {
         let before = engine.graph.positions().to_vec();
         // Refused before anything is hit, so the native test needs no JavaScript value.
         for pixel in [0.0, -0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            let hit = engine.hit(200.0, 60.0, pixel, DetailLevel::Near, true);
+            let hit = engine.hit(200.0, 60.0, pixel, DetailLevel::Near, true, None);
             assert_eq!(
                 hit.err(),
                 Some(CallRefusal::Number(NumberError::InvalidPixel)),
@@ -2342,28 +3709,29 @@ mod tests {
         // Verifies: API-shell-mistake-refused-as-shells
         let mut engine = Engine::new();
         let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 100.0)], &[("e", "a", "b")]);
-        data.edges[0].label = Some(LabelInput {
+        data.edges[0].labels = Some(vec![Field(Some(LabelInput {
+            id: "m".to_owned().into(),
             text_length: Some(1),
-            t: 0.5.into(),
-            offset: 0.0.into(),
+            t: Some(0.5).into(),
+            offset: Some(0.0).into(),
             background: None,
-        })
+        }))])
         .into();
         engine.graph = graph_of(&data).unwrap();
-        let before = engine.label_point(0);
+        let before = engine.label_point(0, 0);
         let refusal = || CallRefusal::Number(NumberError::NonFinitePoint);
         for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             for (x, y) in [(bad, 60.0), (200.0, bad)] {
-                let moved = engine.move_label(0, x, y);
+                let moved = engine.move_label(0, 0, x, y);
                 assert_eq!(moved, Err(refusal()), "({x}, {y})");
-                assert_eq!(engine.label_point(0), before, "the label at ({x}, {y})");
+                assert_eq!(engine.label_point(0, 0), before, "the label at ({x}, {y})");
                 // Refused before anything is hit, so the native test needs no JavaScript value.
-                let hit = engine.hit(x, y, 1.0, DetailLevel::Near, true);
+                let hit = engine.hit(x, y, 1.0, DetailLevel::Near, true, None);
                 assert_eq!(hit.err(), Some(refusal()), "hit at ({x}, {y})");
             }
         }
-        assert!(engine.move_label(0, 150.0, 80.0).is_ok());
-        assert_ne!(engine.label_point(0), before);
+        assert!(engine.move_label(0, 0, 150.0, 80.0).is_ok());
+        assert_ne!(engine.label_point(0, 0), before);
     }
 
     #[test]

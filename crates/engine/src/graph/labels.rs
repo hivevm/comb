@@ -1,44 +1,56 @@
 //! The labels of the edges: the size of each label's pill as the shell measured it, the point of
-//! a label, and the placement of a dragged one (REN-node-content-in-rows, G-6).
+//! a label, and the placement of a dragged one (REN-node-content-in-rows, G-6). An edge carries a
+//! list of labels, and each is named by its edge's slot and its place in that list
+//! (API-edges-dock-nodes-or-edges, *Edge labels*).
 
 use super::{Graph, LabelPlacement, SlotError};
 use crate::geometry::{Point, WORLD_LIMIT};
 
 impl Graph {
-    /// Records the half width and half height of the pill of the label of the edge in `slot`, in
-    /// world units, as the shell draws it; sizes that are not finite and positive leave it
-    /// unmeasured. A slot that holds no edge refuses it.
+    /// Records the half width and half height of the pill of the label at `index` of the edge in
+    /// `slot`, in world units, as the shell draws it; sizes that are not finite and positive leave
+    /// it unmeasured. A slot that holds no edge with a label at `index` refuses it.
     pub fn set_label_size(
         &mut self,
         slot: u32,
+        index: u32,
         half_width: f64,
         half_height: f64,
     ) -> Result<(), SlotError> {
-        self.edges_held(&[slot])?;
+        if self.label_point(slot, index).is_none() {
+            return Err(SlotError::NoEdge { slot });
+        }
         let measured = [half_width, half_height]
             .iter()
             .all(|size| size.is_finite() && *size > 0.0);
-        self.pills[slot as usize] = measured.then_some((half_width, half_height));
+        self.pills[slot as usize][index as usize] = measured.then_some((half_width, half_height));
         if measured {
             self.widest_pill = self.widest_pill.max(half_width).max(half_height);
         }
         Ok(())
     }
 
-    /// The point of the label of the edge in `slot`, where it holds an edge with a label.
-    pub fn label_point(&self, slot: u32) -> Option<Point> {
+    /// The point of the label at `index` of the edge in `slot`, where it holds an edge with a
+    /// label there.
+    pub fn label_point(&self, slot: u32, index: u32) -> Option<Point> {
         self.labels
             .get(slot as usize)
+            .and_then(|points| points.get(index as usize))
             .copied()
-            .flatten()
             .filter(|_| self.holds_edge(slot))
     }
 
-    /// Places the label of the edge in `slot` at `point`: at the path parameter nearest it and its
-    /// distance along the normal there, which it returns, and moves it in the index (G-6). A slot
-    /// that holds no edge with a label refuses it.
-    pub fn move_label(&mut self, slot: u32, point: Point) -> Result<LabelPlacement, SlotError> {
-        if self.label_point(slot).is_none() {
+    /// Places the label at `index` of the edge in `slot` at `point`: at the path parameter nearest
+    /// it and its distance along the normal there, which it returns, and moves it in the index
+    /// (G-6); the edge's other labels stay. A slot that holds no edge with a label at `index`
+    /// refuses it.
+    pub fn move_label(
+        &mut self,
+        slot: u32,
+        index: u32,
+        point: Point,
+    ) -> Result<LabelPlacement, SlotError> {
+        if self.label_point(slot, index).is_none() {
             return Err(SlotError::NoEdge { slot });
         }
         let (t, offset) = self.paths[slot as usize].placement_at(point);
@@ -46,7 +58,7 @@ impl Graph {
         // an offset beyond it.
         let offset = offset.clamp(-WORLD_LIMIT, WORLD_LIMIT);
         let placement = LabelPlacement { t, offset };
-        self.edges[slot as usize].label = Some(placement);
+        self.edges[slot as usize].labels[index as usize] = placement;
         self.place_edge(slot);
         self.keep_index();
         Ok(placement)
@@ -59,7 +71,82 @@ mod tests {
     use super::super::{EdgeSpec, Level, Target, Visible};
     use super::*;
     use crate::geometry::{Rect, Sides};
+    use crate::graph::End;
     use crate::stroke::EdgeStyle;
+
+    #[test]
+    fn a_drag_moves_the_one_label_it_presses_and_a_query_and_a_hit_name_each_by_its_place() {
+        // Verifies: API-edges-dock-nodes-or-edges, G-6
+        // An association with a multiplicity near each end and a name in the middle: three labels
+        // at 0.1, 0.5, and 0.9, the ends' 12 to the left of the path.
+        let placed = |t, offset| LabelPlacement { t, offset };
+        let labels = vec![placed(0.1, 12.0), placed(0.5, 0.0), placed(0.9, 12.0)];
+        let edges = vec![EdgeSpec {
+            sides: Sides::default(),
+            source: End::Node(0),
+            target: End::Node(1),
+            labels: labels.clone(),
+            style: EdgeStyle::unstyled(),
+        }];
+        let sizes = vec![220.0, 64.0, 220.0, 64.0];
+        let (mut model, mut graph) = Model::of(vec![0.0, 0.0, 500.0, 100.0], sizes, edges);
+        let rect = Rect::new(-1000.0, -1000.0, 2000.0, 2000.0);
+        let mut out = Visible::default();
+        graph.query(&rect, Level::Near, 1.0, 0.0, &mut out);
+        assert_eq!(out.labels, [0, 0, 0, 1, 0, 2]);
+        for i in 0..3 {
+            let at = model.label_point(0, i).unwrap();
+            let drawn = (
+                out.label_points[2 * i as usize],
+                out.label_points[2 * i as usize + 1],
+            );
+            assert_eq!(drawn, (at.x as f32, at.y as f32), "label {i}");
+            graph.set_label_size(0, i, 10.0, 8.0).unwrap();
+            assert_eq!(
+                graph.hit_at(at, 1.0, Level::Near, false),
+                Some(Target::Label(0, i))
+            );
+        }
+        // A drag of the label at the source end moves it alone.
+        let from = model.label_point(0, 0).unwrap();
+        let moved = graph
+            .move_label(0, 0, Point::new(from.x + 30.0, from.y - 20.0))
+            .unwrap();
+        assert_eq!(graph.edge(0).unwrap().labels[1..], labels[1..]);
+        assert_eq!(graph.edge(0).unwrap().labels[0], moved);
+        model.specs[0].labels[0] = moved;
+        // Each follows its edge as a node moves (G-6).
+        graph.translate(&[1], 40.0, 200.0).unwrap();
+        model.translate(&[1], 40.0, 200.0);
+        for i in 0..3 {
+            assert_eq!(
+                graph.label_point(0, i),
+                model.label_point(0, i),
+                "label {i}"
+            );
+        }
+        // No label past the list, and none of a free slot.
+        assert_eq!(graph.label_point(0, 3), None);
+        assert_eq!(
+            graph.move_label(0, 3, from),
+            Err(SlotError::NoEdge { slot: 0 })
+        );
+        assert_eq!(
+            graph.set_label_size(0, 3, 10.0, 8.0),
+            Err(SlotError::NoEdge { slot: 0 })
+        );
+        // A new list replaces the old one whole, its pills unmeasured.
+        let one = vec![placed(0.5, 0.0)];
+        graph
+            .update_edge(0, one, EdgeStyle::unstyled(), Sides::default())
+            .unwrap();
+        assert_eq!(graph.label_point(0, 1), None);
+        let at = graph.label_point(0, 0).unwrap();
+        assert_eq!(
+            graph.hit_at(at, 1.0, Level::Near, false),
+            Some(Target::Edge(0))
+        );
+    }
 
     #[test]
     fn a_label_follows_when_a_node_moves() {
@@ -69,9 +156,9 @@ mod tests {
         };
         let edges = vec![EdgeSpec {
             sides: Sides::default(),
-            source: 0,
-            target: 1,
-            label: Some(label),
+            source: End::Node(0),
+            target: End::Node(1),
+            labels: vec![label],
             style: EdgeStyle::unstyled(),
         }];
         let sizes = vec![220.0, 64.0, 220.0, 64.0];
@@ -153,15 +240,15 @@ mod tests {
         };
         let edges = vec![EdgeSpec {
             sides: Sides::default(),
-            source: 0,
-            target: 1,
-            label: Some(label),
+            source: End::Node(0),
+            target: End::Node(1),
+            labels: vec![label],
             style: EdgeStyle::unstyled(),
         }];
         let sizes = vec![220.0, 64.0, 220.0, 64.0];
         let (model, mut graph) = Model::of(vec![0.0, 0.0, 300.0, 100.0], sizes, edges);
-        let at = model.label_point(0).unwrap();
-        let moved = graph.move_label(0, at).unwrap();
+        let at = model.label_point(0, 0).unwrap();
+        let moved = graph.move_label(0, 0, at).unwrap();
         assert!(
             (moved.t - label.t).abs() < 1e-6 && (moved.offset - label.offset).abs() < 1e-6,
             "{moved:?}"
@@ -173,24 +260,26 @@ mod tests {
         // Verifies: REN-node-content-in-rows
         let mut rng = Lcg(11);
         let (model, mut graph) = Model::random(&mut rng, 10, 10);
-        let edge = (0..10).find(|&e| model.label_point(e).is_some()).unwrap();
-        let at = model.label_point(edge).unwrap();
+        let edge = (0..10)
+            .find(|&e| model.label_point(e, 0).is_some())
+            .unwrap();
+        let at = model.label_point(edge, 0).unwrap();
         let hit = |graph: &mut Graph| graph.hit_at(at, 1.0, Level::Near, false);
-        assert_ne!(hit(&mut graph), Some(Target::Label(edge)), "unmeasured");
+        assert_ne!(hit(&mut graph), Some(Target::Label(edge, 0)), "unmeasured");
         for (w, h) in [
             (0.0, 11.0),
             (-5.0, 11.0),
             (f64::NAN, 11.0),
             (20.0, f64::INFINITY),
         ] {
-            graph.set_label_size(edge, w, h).unwrap();
-            assert_ne!(hit(&mut graph), Some(Target::Label(edge)), "{w} by {h}");
+            graph.set_label_size(edge, 0, w, h).unwrap();
+            assert_ne!(hit(&mut graph), Some(Target::Label(edge, 0)), "{w} by {h}");
         }
-        graph.set_label_size(edge, 20.0, 11.0).unwrap();
-        assert_eq!(hit(&mut graph), Some(Target::Label(edge)));
+        graph.set_label_size(edge, 0, 20.0, 11.0).unwrap();
+        assert_eq!(hit(&mut graph), Some(Target::Label(edge, 0)));
         graph.remove_edges(&[edge]).unwrap();
         assert_eq!(
-            graph.set_label_size(edge, 20.0, 11.0),
+            graph.set_label_size(edge, 0, 20.0, 11.0),
             Err(SlotError::NoEdge { slot: edge })
         );
     }
@@ -202,25 +291,25 @@ mod tests {
         let (mut model, mut graph) = Model::random(&mut rng, 10, 10);
         let edge = (0..10)
             .find(|&e| {
-                let spec = model.specs[e as usize];
-                model.label_point(e).is_some() && spec.source != spec.target
+                let spec = &model.specs[e as usize];
+                model.label_point(e, 0).is_some() && spec.nodes().0 != spec.nodes().1
             })
             .unwrap();
-        let at = model.label_point(edge).unwrap();
+        let at = model.label_point(edge, 0).unwrap();
         let placement = graph
-            .move_label(edge, Point::new(at.x + 15.0, at.y - 25.0))
+            .move_label(edge, 0, Point::new(at.x + 15.0, at.y - 25.0))
             .unwrap();
-        assert_eq!(graph.edges[edge as usize].label, Some(placement));
-        let source = model.specs[edge as usize].source;
+        assert_eq!(graph.edges[edge as usize].labels[0], placement);
+        let source = model.specs[edge as usize].nodes().0;
         graph.translate(&[source], 120.0, 40.0).unwrap();
         model.translate(&[source], 120.0, 40.0);
-        let moved = graph.label_point(edge).unwrap();
+        let moved = graph.label_point(edge, 0).unwrap();
         let expected = model
             .path(edge)
             .label_position(placement.t, placement.offset);
         assert_eq!(moved, expected);
         assert_eq!(
-            graph.move_label(5_000, at),
+            graph.move_label(5_000, 0, at),
             Err(SlotError::NoEdge { slot: 5_000 })
         );
     }

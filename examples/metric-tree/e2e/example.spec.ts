@@ -1,11 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
+import type { PlacedNodeData } from "comb";
 import { clickWorld, NODE_HEIGHT, open, POLICY, screenCentre, setViewport } from "./shared";
 
 /** Node `id` as the canvas draws it at the near level, with the viewport moved so that its
  *  top-left corner lies at (100, 100) on the canvas at scale 1. */
 async function nearNode(page: Page, id: string) {
   const { x, y } = await page.evaluate(
-    (wanted) => window.exampleGraph().nodes.find((node) => node.id === wanted)!,
+    (wanted) => window.exampleGraph().nodes.find((node) => node.id === wanted) as PlacedNodeData,
     id,
   );
   await setViewport(page, { x: 100 - x, y: 100 - y, scale: 1 });
@@ -160,11 +161,13 @@ test("picking the largest copies option shows at least 50,000 nodes and edges", 
     edges: report.edges,
     texts: 0,
   });
-  // Verifies: REN-virtualized-scene-graph
+  // Verifies: REN-virtualized-scene-graph, REN-virtualized-nested-scene,
+  // Verifies: REN-moving-layer-moves-content
   // The world, the edges layer and its mesh, the particle container, the moving layer's edges and
-  // their mesh and its particle container (REN-moving-layer-redraws-changes), and the empty layers
-  // of node views, labels, and connectors.
-  expect(await page.evaluate(() => window.inspect().displayObjects)).toBe(10);
+  // their mesh and its particle container, the empty layers of node views, labels, and
+  // connectors, and the containers layer with its empty particle container, the moving layer's
+  // particle container of containers, and its layer of node views.
+  expect(await page.evaluate(() => window.inspect().displayObjects)).toBe(14);
 });
 
 test("each type of node shows the elements of its type, as inspection reports them", async ({

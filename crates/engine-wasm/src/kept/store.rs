@@ -79,6 +79,22 @@ impl ContentStore {
         }
     }
 
+    /// Gives each region of `regions`, a slot just added and the code units of its name, no
+    /// content and those code units, which count against the budget as content's do
+    /// (ARCH-regions-are-container-slots).
+    pub(crate) fn set_regions(&mut self, regions: impl IntoIterator<Item = (u32, u64)>) {
+        for (slot, units) in regions {
+            self.units = self.units - self.units_at(slot) + units;
+            let named = Box::new((ContentData::default(), units));
+            self.edited.insert(slot, Some(named));
+        }
+    }
+
+    /// The code units of the strings of content of the node in `slot`, or of the name of a region.
+    pub(crate) fn units_of(&self, slot: u32) -> u64 {
+        self.units_at(slot)
+    }
+
     /// The code units of the strings of content of the node in `slot`.
     fn units_at(&self, slot: u32) -> u64 {
         match self.edited.get(&slot) {
@@ -135,6 +151,16 @@ mod tests {
             y: 200.0.into(),
             width: 100.0.into(),
             shape: crate::NodeShape::Rectangle.into(),
+            container: None.into(),
+            is_container: None.into(),
+            height: None.into(),
+            resizable: None.into(),
+            outline: None.into(),
+            divide: None.into(),
+            regions: None.into(),
+            attached_to: None.into(),
+            side: None.into(),
+            offset: None.into(),
             content: content.into(),
         }
     }
@@ -157,9 +183,9 @@ mod tests {
         // Verifies: REN-node-content-in-rows, API-bridge-takes-serde-and-columns, Q-7
         let mut engine = at_the_budget();
         let one = node_of("c", content(&[&[text(RoleCode::Title, "x")]]));
-        let added = engine.add(&one);
+        let added = engine.add(&one, (None, None));
         // A node whose content holds no string adds no code unit and is taken.
-        let none = engine.add(&node_of("d", content(&[])));
+        let none = engine.add(&node_of("d", content(&[])), (None, None));
         TEST_BUDGET.set(None);
         assert_eq!(added, Err(past_budget("c")));
         assert_eq!(none, Ok(2));
@@ -221,14 +247,23 @@ mod tests {
         let no_node = Err(crate::SlotError::NoNode { slot: 99 });
         assert_eq!(engine.remove_nodes(&[0, 99]), no_node);
         assert_eq!(engine.content.units(), 6);
-        // `a` named twice leaves the count once.
-        assert_eq!(engine.remove_nodes(&[0, 0]), Ok(Vec::new()));
+        // `a` named twice leaves the count once; the removal names one node, slot 0, and no edge.
+        assert_eq!(engine.remove_nodes(&[0, 0]), Ok(vec![1, 0]));
         let units = engine.content.units();
-        let three = engine.add(&node_of("c", content(&[&[text(RoleCode::Title, "xyz")]])));
-        let one = engine.add(&node_of("d", content(&[&[text(RoleCode::Title, "x")]])));
+        let three = engine.add(
+            &node_of("c", content(&[&[text(RoleCode::Title, "xyz")]])),
+            (None, None),
+        );
+        let one = engine.add(
+            &node_of("d", content(&[&[text(RoleCode::Title, "x")]])),
+            (None, None),
+        );
         // An added node deleted frees its code units too.
-        assert_eq!(engine.remove_nodes(&[0]), Ok(Vec::new()));
-        let again = engine.add(&node_of("e", content(&[&[text(RoleCode::Title, "x")]])));
+        assert_eq!(engine.remove_nodes(&[0]), Ok(vec![1, 0]));
+        let again = engine.add(
+            &node_of("e", content(&[&[text(RoleCode::Title, "x")]])),
+            (None, None),
+        );
         TEST_BUDGET.set(None);
         assert_eq!(units, 3);
         assert_eq!(three, Ok(0));

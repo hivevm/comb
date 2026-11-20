@@ -1,6 +1,7 @@
 // What more than one browser test of the UML example uses: opening it, the conventions' styles of
 // the kinds of relationship, and reading and pressing its canvas.
 import type { Page } from "@playwright/test";
+import type { NodeData, PlacedNodeData } from "comb";
 
 /** The Content Security Policy of Q-6, which the test server sends with every response. */
 export const POLICY = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'";
@@ -41,6 +42,15 @@ export const DRAWN = Object.fromEntries(
     t?: number;
   }
 >;
+
+/** `nodes`, each placed by a position, as the class and the package diagram place every node; a
+ *  border node among them fails the test that reads them so. */
+export function placedNodes(nodes: readonly NodeData[]): PlacedNodeData[] {
+  return nodes.map((node) => {
+    if (node.attachedTo !== undefined) throw new Error(`${node.id} rides a border`);
+    return node;
+  });
+}
 
 /** The page point at which the canvas shows the world point `(x, y)`. */
 export async function pagePoint(page: Page, x: number, y: number) {

@@ -18,6 +18,7 @@ import {
   attachInteraction,
   canvasPointAt,
   type ContentClick,
+  type ContainerMove,
   type Deletion,
   type Proposal,
 } from "../interaction";
@@ -52,10 +53,10 @@ export { GraphDataError } from "./editors";
 export { EngineSourceError } from "./engine";
 export { IconError } from "./icons";
 export type { IconProblem } from "./icons";
-export type { GraphChange } from "./changes";
+export type { GraphChange, RegionSize } from "./changes";
 export type { EngineSource, EngineSourceProblem } from "./engine";
 export type { GraphDataProblem } from "../bridge";
-export type { ContentClick, Deletion, Proposal } from "../interaction";
+export type { ContainerMove, ContentClick, Deletion, Proposal } from "../interaction";
 
 export interface CombOptions {
   /** The engine's WebAssembly, the file `comb/engine.wasm`, as the host application loads it:
@@ -90,6 +91,17 @@ export interface CombOptions {
    *  returns, and its identifier is neither checked nor thrown
    *  (API-edits-reported-as-typed-changes). */
   canConnect?: (proposal: Proposal) => string | false;
+  /** The veto of a move of the user's into a container (G-14): called when the user releases a
+   *  dragged node over a container other than its own, with the identifiers of the node and of
+   *  the topmost container under the pointer, never the node or one it holds, or with `null` where
+   *  the node lies in a container and is released outside every container. Comb moves the node
+   *  there, keeping where it lies on the canvas, only where it returns `true`; otherwise the whole
+   *  drag is taken back and no change is told, and an error it throws is thrown on from the
+   *  release's event. A drag released in the node's own container asks nothing. Never called for
+   *  the host application's own calls. Without it, a move into a container is allowed. One during
+   *  whose call Comb tells a change to `onChange` moves nothing, whatever it returns
+   *  (API-edits-report-nested-changes). */
+  canMoveInto?: (move: ContainerMove) => boolean;
   /** Whether the host application allows loops, edges from a node back to itself: `addEdge`
    *  then accepts one, and the user's connection counts the source's own connectors compatible,
    *  but for the one it starts from, while the source has no loop. Without it, both refuse a loop,
@@ -121,12 +133,13 @@ export interface Comb {
    *  `rectangle` where left out, lays out to in the fonts Comb draws with: the height `addNode`
    *  gives such a node, without one in the graph and changing nothing. Content whose rows hold
    *  elements of the same kinds, row by row and in the same order, has the same height in a
-   *  rectangle whatever its texts and width, so a layout asks once per shape of content; a
-   *  circle and a ringed circle are as high as wide, and a bar 8 high
-   *  (REN-closed-set-of-node-shapes). Throws a `GraphDataError` with the problem `addNode` gives
-   *  the content, the width, or the node shape, its texts counted against the budget alone, as in
-   *  an empty graph, naming the
-   *  node `""` (Q-7), and an `EngineLostError` once the engine is lost
+   *  rectangle whatever its texts and width, so a layout asks once per shape of content; content
+   *  of no rows is as high as wide, in an actor or an hourglass as high as its drawing; an actor
+   *  and an hourglass add their drawing above their content, at least 64 together; a circle, a
+   *  ringed circle, a crossed circle, and a cross are as high as wide, and a bar 8 high
+   *  (REN-node-shapes-cover-uml). Throws a `GraphDataError` with the problem `addNode` gives the
+   *  content, the width, or the node shape, its texts counted against the budget alone, as in an
+   *  empty graph, naming the node `""` (Q-7), and an `EngineLostError` once the engine is lost
    *  (API-host-asks-content-height). */
   heightOf(content: NodeContent, width: number, shape?: NodeShape): number;
   /** Adds `edge` between two nodes the graph holds, without a load, drawn with its colour, dash
@@ -246,6 +259,7 @@ function limitsOf(bridge: Bridge): Limits {
     rows: bridge.rowLimit(),
     columns: bridge.columnLimit(),
     segments: bridge.segmentLimit(),
+    labels: bridge.labelLimit(),
   };
 }
 
@@ -327,7 +341,8 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
   // frame, so that a gesture a change takes, a connection among them, is over before anything
   // reads the store after that change.
   const clicks = contentClicksOf();
-  const interaction = attachInteraction(app, store, bridge, user.connect, clicks.tell, loops);
+  const handlers = { connect: user.connect, moveInto: user.moveInto, click: clicks.tell, loops };
+  const interaction = attachInteraction(app, store, bridge, handlers);
   const frames = createFrames(() => scene.render(store.getState(), bridge, interaction.pointer));
   const unsubscribe = store.subscribe(frames.schedule);
   // A larger canvas shows more of the world, so what is culled changes with its size.

@@ -1,9 +1,9 @@
-// The moving layer (REN-moving-layer-redraws-changes): what a drag, and at the far level an edit of
-// a few slots, move or add, drawn above the query the scene keeps, and what they move or remove,
-// hidden in what that query drew. It holds the state of those decisions: the edits read from the
-// store's arrays against the kept query's, what it hides and draws, and what inspection reports of
-// it. The scene asks it each render, and queries anew where it says the kept query does not
-// survive.
+// The moving layer (REN-moving-layer-moves-content): what a drag, a dragged container with what it
+// holds, and at the far level an edit of a few slots, move or add, drawn above the query the scene
+// keeps, and what they move or remove, hidden in what that query drew. It holds the state of those
+// decisions: the edits read from the store's arrays against the kept query's, what it hides and
+// draws, and what inspection reports of it. The scene asks it each render, and queries anew where
+// it says the kept query does not survive.
 import type { Bridge, Detail, DrawnEdges, Level, Rect } from "../bridge";
 import type { GraphView } from "../store";
 import { EdgesContainer, holds, type EdgeLayer } from "./edges";
@@ -48,17 +48,25 @@ export interface QueryLayers {
   edges: EdgeLayer;
   particles: NodeParticles;
   nodes: NodesContainer;
+  containerParticles: NodeParticles;
+  containerNodes: NodesContainer;
   labels: LabelsContainer;
 }
 
-/** The moving layer: its edges directly above the query's edges, its particles directly above the
- *  query's particles. */
+/** The moving layer: its edges directly above the query's edges, its particles of containers
+ *  directly above the query's particles of containers, and its other particles directly above the
+ *  query's particles (REN-moving-layer-moves-content). */
 export class MovingLayer {
-  /** The edges at the nodes a drag moves and the added edges: a mesh on WebGL2, a fill on
-   *  Canvas 2D (REN-webgl2-or-canvas-fallback). */
+  /** The edges at the nodes a drag moves, with the edges that end on those, which the engine
+   *  names with them (API-edges-dock-nodes-or-edges), and the added edges: a mesh on WebGL2, a fill
+   *  on Canvas 2D (REN-webgl2-or-canvas-fallback). */
   readonly edges: EdgeLayer;
-  /** The particles of the nodes a drag moves and of the added nodes, at the far level. */
+  /** The particles of the nodes a drag moves and of the added nodes, at the far level, but for
+   *  containers. */
   readonly particles = new NodeParticles();
+  /** The particles of the containers a drag moves and of the added containers, at the far level,
+   *  in the containers layer below the edges. */
+  readonly containerParticles = new NodeParticles();
   /** What the moving layer leaves out of the query it keeps, by the query's count: the edges and
    *  the particles hidden so far; none while it draws nothing. */
   private hidden: { queries: number; edges: Set<number>; particles: Set<number> } | null = null;
@@ -151,15 +159,26 @@ export class MovingLayer {
     if (!this.hidden || this.hidden.queries !== queries) {
       this.hidden = { queries, edges: new Set(), particles: new Set() };
       // A query nearer than far, after a zoom across the level, draws the nodes' views instead.
-      if (!far) this.particles.sync(state, NONE, NONE_F32, NONE_F32);
+      if (!far) {
+        this.particles.sync(state, NONE, NONE_F32, NONE_F32);
+        this.containerParticles.sync(state, NONE, NONE_F32, NONE_F32);
+      }
     }
     this.hideNew(far, [...this.edgeSlots, ...removedEdges], [...dragged, ...removedNodes]);
     const { positions, sizes } = bridge.nodeBuffers();
     if (far) {
-      // The dragged nodes keep their ranks, below every added node, which the newest ranks hold.
+      // The dragged nodes keep their ranks, below every added node, which the newest ranks hold;
+      // containers in their own layer, below the edges.
       const drawnHere = [...dragged, ...addedNodes.filter((slot) => !dragged.includes(slot))];
-      this.particles.sync(state, Uint32Array.from(drawnHere), positions, sizes);
-    } else this.query.nodes.place(dragged, positions);
+      const container = (slot: number) => state.nodes[slot]?.isContainer === true;
+      const of = (containers: boolean) =>
+        Uint32Array.from(drawnHere.filter((slot) => container(slot) === containers));
+      this.particles.sync(state, of(false), positions, sizes);
+      this.containerParticles.sync(state, of(true), positions, sizes);
+    } else {
+      this.query.nodes.place(dragged, positions, sizes);
+      this.query.containerNodes.place(dragged, positions, sizes);
+    }
     if (drawn.level === "near") this.query.labels.follow(this.edgeSlots, bridge, origin);
   }
 
@@ -178,8 +197,8 @@ export class MovingLayer {
     if (newParticles.length === 0) return;
     for (const slot of newParticles) hidden.particles.add(slot);
     // Only what the query drew uploads: a node it never drew, one an edit added, needs no hiding.
-    if (newParticles.some((slot) => this.query.particles.holds(slot))) {
-      this.query.particles.hide(hidden.particles);
+    for (const layer of [this.query.particles, this.query.containerParticles]) {
+      if (newParticles.some((slot) => layer.holds(slot))) layer.hide(hidden.particles);
     }
   }
 
@@ -188,6 +207,7 @@ export class MovingLayer {
     this.edges.sync(EMPTY_MESH);
     this.detail = "complete";
     this.particles.sync(state, NONE, NONE_F32, NONE_F32);
+    this.containerParticles.sync(state, NONE, NONE_F32, NONE_F32);
     this.edgeSlots = NONE;
     this.madeFor = [];
     this.draggedAt = [];

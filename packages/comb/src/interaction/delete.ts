@@ -1,7 +1,8 @@
-// The user deletes the selection (G-4, API-edits-reported-as-typed-changes): with the canvas
-// focused, Delete or Backspace hands what would go, a selected node with every edge at it or a
-// selected edge alone, to the deletion `api` gives, which asks the host application's `canDelete`
-// and records the removal as the user's (API-edits-reported-as-typed-changes).
+// The user deletes the selection (G-4, API-edits-report-nested-changes): with the canvas focused,
+// Delete or Backspace hands what would go, a selected node with everything it holds and every edge
+// at any of them, or a selected edge, each with every edge that ends on one of those edges, to the
+// deletion `api` gives, which asks the host application's `canDelete` and records the removal as
+// the user's.
 import { refuseIfLost, type Bridge } from "../bridge";
 import type { GraphStore } from "../store";
 import { untilLost } from "./guard";
@@ -13,28 +14,34 @@ export interface Deletion {
 }
 
 /** Deletes, by the user, what `deletion` names, where the host application's veto allows it: the
- *  nodes with every edge at them, or the edges alone, as `removeNodes` and `removeEdges` remove
- *  them; `api` gives it. */
+ *  nodes with every edge at them, or the edges, each with every edge that ends on one of them, as
+ *  `removeNodes` and `removeEdges` remove them; `api` gives it. */
 export type Delete = (deletion: Deletion) => void;
 
 /** The keys that delete the selection. */
 const DELETE_KEYS = new Set(["Delete", "Backspace"]);
 
-/** What deleting the selection removes: a node with every edge at it, named by the engine
- *  before anything is removed (ARCH-engine-edits-graph-in-place), or an edge alone; none for no
- *  selection or one the
- *  graph no longer holds. */
+/** What deleting the selection removes, named by the engine before anything is removed: a node
+ *  with everything it holds and every edge at any of them (ARCH-engine-edits-nested-graph), or an
+ *  edge, each with every edge that ends on one of those edges (API-edges-dock-nodes-or-edges); none
+ *  for no selection or one the graph no longer holds. */
 function doomed(store: GraphStore, bridge: Bridge): Deletion | undefined {
-  const { selection, slots, edgeSlots, edges } = store.getState();
+  const { selection, slots, edgeSlots, nodes, edges } = store.getState();
   if (selection?.kind === "node") {
     const slot = slots.get(selection.id);
     if (slot === undefined) return undefined;
-    const at = [...bridge.edgesAt(Uint32Array.of(slot))];
-    return { nodes: [selection.id], edges: at.map((edge) => edges[edge]!.id) };
+    const removal = bridge.removalOf(Uint32Array.of(slot));
+    // A region goes with the node it divides, and is never named
+    // (ARCH-regions-are-container-slots).
+    return {
+      nodes: [...removal.nodes].flatMap((node) => (nodes[node]!.region ? [] : [nodes[node]!.id])),
+      edges: [...removal.edges].map((edge) => edges[edge]!.id),
+    };
   }
-  if (selection?.kind === "edge" && edgeSlots.has(selection.id))
-    return { nodes: [], edges: [selection.id] };
-  return undefined;
+  const slot = selection?.kind === "edge" ? edgeSlots.get(selection.id) : undefined;
+  if (slot === undefined) return undefined;
+  const removal = bridge.edgeRemovalOf(Uint32Array.of(slot));
+  return { nodes: [], edges: [...removal].map((edge) => edges[edge]!.id) };
 }
 
 /** Hands what deleting the selection would remove to `remove`, which asks the veto; an error it

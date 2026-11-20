@@ -109,14 +109,14 @@ test("a connection of two packages adds a dependency «use», which the sidebar 
   const dependency = DRAWN.dependency!;
   expect(kinds[added.id]).toBe("dependency");
   expect(added).toMatchObject({ color: dependency.color, dash: [6, 4], arrow: "end" });
-  expect(added.label?.text).toBe("«use»");
+  expect(added.labels?.[0]?.text).toBe("«use»");
   // Selected on its path, the sidebar offers «import» or «use» and no other kind.
   await clickWorld(page, (from.x + from.width + to.x) / 2, from.y + from.height / 2);
   await expect(page.locator("#dependency")).toHaveValue("«use»");
   await expect(page.locator("#kind")).toBeHidden();
   await page.locator("#dependency").selectOption("«import»");
   const edge = (await state(page)).graph.edges.find(({ id }) => id === added.id)!;
-  expect(edge.label?.text).toBe("«import»");
+  expect(edge.labels?.[0]?.text).toBe("«import»");
   expect(edge).toMatchObject({ color: dependency.color, dash: [6, 4], arrow: "end" });
 });
 

@@ -1,9 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import type { Application } from "pixi.js";
-import { attachInteraction, type Connect } from ".";
+import { attachInteraction, type Connect, type ContainerMove, type MoveInto } from ".";
+import { editorsOf } from "../api/editors";
 import type { Bridge } from "../bridge";
 import { ConnectionLine } from "../render/connectors";
-import { createGraphStore, type GraphData, type GraphStore, type NodeContent } from "../store";
+import {
+  createGraphStore,
+  type GraphData,
+  type GraphStore,
+  type KeptGraph,
+  type NodeContent,
+} from "../store";
 
 /** One row of one title, `title`. */
 const titled = (title: string): NodeContent => [[{ kind: "text", role: "title", text: title }]];
@@ -13,7 +20,7 @@ const titled = (title: string): NodeContent => [[{ kind: "text", role: "title", 
 function load(store: GraphStore, graph: GraphData): void {
   const ids = [...graph.nodes, ...graph.edges].map((item) => item.id);
   const ends = graph.edges.flatMap((edge) => [edge.source, edge.target]);
-  store.getState().load(graph, [...ids, ...ends].join("").length);
+  store.getState().load(graph as KeptGraph, [...ids, ...ends].join("").length);
 }
 
 type Handler = (event: { global: { x: number; y: number } }) => void;
@@ -45,14 +52,16 @@ function fakeApp() {
 }
 
 /** Attaches interaction to `app` over `store` and `bridge`, connections proposed to `connect`
- *  where given, loops where `loops` allows them, and no click heard. */
+ *  where given, loops where `loops` allows them, no click heard, and every move into a container
+ *  allowed. */
 const attached = (
   app: Application,
   store: GraphStore,
   bridge: Bridge,
   connect?: Connect,
   loops = false,
-) => attachInteraction(app, store, bridge, connect, () => {}, loops);
+) =>
+  attachInteraction(app, store, bridge, { connect, click: () => {}, moveInto: () => true, loops });
 
 /** A bridge with one node under every point, which records the moves it is asked for. */
 function fakeBridge(
@@ -65,6 +74,9 @@ function fakeBridge(
   const bridge = {
     hit: (x: number) => (typeof hit === "function" ? hit(x) : hit),
     edgesAt: () => new Uint32Array(0),
+    containerAt: () => undefined,
+    // What a drag drags: the node alone, which holds nothing and has no border nodes.
+    removalOf: (slots: Uint32Array) => ({ nodes: slots, edges: new Uint32Array(0) }),
     positions: () => new Float32Array(8),
     translate: (slots: Uint32Array, dx: number, dy: number) =>
       moves.push({ slots: [...slots], dx, dy }),
@@ -242,7 +254,12 @@ function pressed(element?: Hit, hit?: (x: number) => unknown) {
     hit ?? { kind: "node", slot: 0, ...(element && { element }) },
   );
   const clicks: unknown[] = [];
-  attachInteraction(app, store, bridge, undefined, (click) => clicks.push(click), false);
+  attachInteraction(app, store, bridge, {
+    connect: undefined,
+    click: (click) => clicks.push(click),
+    moveInto: () => true,
+    loops: false,
+  });
   return { store, emit, clicks, moves };
 }
 const action = { row: 1, column: 0, kind: "action", action: "details" };
@@ -400,7 +417,7 @@ describe("interaction on an edge", () => {
 describe("the hit test", () => {
   const hits = [
     ["a connector", { kind: "connector", slot: 0, side: "right" }],
-    ["a label", { kind: "label", slot: 0 }],
+    ["a label", { kind: "label", slot: 0, label: 0 }],
     ["a node", { kind: "node", slot: 0 }],
     ["an edge", { kind: "edge", slot: 0 }],
     ["nothing", { kind: "none" }],
@@ -689,4 +706,158 @@ describe("interaction connects", () => {
       expect(proposals).toEqual([]);
     });
   }
+});
+
+/** A store holding container `c` in slot 0 at (500, 500) and node `a` in slot 1 at (10, 20) on the
+ *  canvas, with interaction attached over a bridge that hits `a` everywhere and finds `c` under
+ *  every release, or what `under` names, none for `null`, and the user's move into a container
+ *  `api` gives, after `canMoveInto` where a test gives it; `calls` lists each move into a
+ *  container and each placement the bridge was asked for, and `changes` every change recorded. */
+function dropping(canMoveInto?: (move: ContainerMove) => unknown, under: number | null = 0) {
+  const store = createGraphStore();
+  load(store, {
+    nodes: [
+      { id: "c", x: 500, y: 500, width: 400, isContainer: true, content: titled("C") },
+      { id: "a", x: 10, y: 20, width: 100, content: titled("A") },
+    ],
+    edges: [],
+  });
+  const { app, emit } = fakeApp();
+  const calls: unknown[] = [];
+  const bridge = {
+    ...fakeBridge({ kind: "node", slot: 1 }).bridge,
+    positions: () => Float32Array.of(500, 500, 10, 20),
+    containerAt: () => under ?? undefined,
+    moveInto: (slot: number, container?: number) => calls.push({ moveInto: [slot, container] }),
+    place: (slot: number, x: number, y: number) => calls.push({ place: [slot, x, y] }),
+  } as unknown as Bridge;
+  const limits = {
+    text: 1,
+    id: 1,
+    idBudget: 1,
+    contentBudget: 1,
+    rows: 1,
+    columns: 1,
+    segments: 1,
+    labels: 8,
+  };
+  const asked: unknown[] = [];
+  const veto = canMoveInto && ((move: ContainerMove) => (asked.push(move), canMoveInto(move)));
+  const moveInto: MoveInto = editorsOf(store, bridge, limits, { canMoveInto: veto }, false).user
+    .moveInto;
+  attachInteraction(app, store, bridge, {
+    connect: undefined,
+    click: () => {},
+    moveInto,
+    loops: false,
+  });
+  const changes: unknown[] = [];
+  store.subscribe((state, previous) => {
+    if (state.change !== previous.change) changes.push(state.change);
+  });
+  /** Drags `a` 40 pixels right and releases it with `release`. */
+  const drag = (release = "pointerup") => {
+    emit("pointerdown", 10, 10);
+    emit("globalpointermove", 50, 10);
+    emit(release, 50, 10);
+  };
+  return { store, drag, emit, calls, changes, asked };
+}
+
+describe("interaction drops a dragged node into a container", () => {
+  const moved = { kind: "nodeMoved", by: "user", id: "a" };
+  const intoC = { moveInto: [1, 0] };
+  const back = { place: [1, 10, 20] };
+
+  for (const veto of [undefined, () => true]) {
+    test(`a drop over another container ${veto ? "asks canMoveInto and on true" : "without canMoveInto"} moves the node into it`, () => {
+      // Verifies: API-edits-report-nested-changes
+      const { store, drag, calls, changes, asked } = dropping(veto);
+      drag();
+      expect(asked).toEqual(veto ? [{ node: "a", container: "c" }] : []);
+      expect(calls).toEqual([intoC]);
+      expect(changes).toEqual([moved]);
+      expect(store.getState().nodes[1]?.container).toBe("c");
+    });
+  }
+
+  for (const [name, veto] of [
+    ["false", () => false],
+    ["undefined", () => undefined],
+    [
+      "true after updating a node",
+      (store: GraphStore) => (store.getState().updateNode("c", true), true),
+    ],
+  ] as const) {
+    test(`a veto answering ${name} places the node where it lay at the press and records no move`, () => {
+      // Verifies: API-edits-report-nested-changes
+      const holder: { store?: GraphStore } = {};
+      const { store, drag, calls, changes } = dropping(() => veto(holder.store!));
+      holder.store = store;
+      const { positionsVersion } = store.getState();
+      drag();
+      expect(calls).toEqual([back]);
+      expect(changes).not.toContainEqual(moved);
+      expect(store.getState().nodes[1]?.container).toBeUndefined();
+      expect(store.getState().positionsVersion).toBe(positionsVersion + 2);
+    });
+  }
+
+  test("a veto that throws places the node back first, and its error is thrown on from the release", () => {
+    // Verifies: API-edits-report-nested-changes
+    const { drag, calls, changes } = dropping(() => {
+      throw new Error("host veto");
+    });
+    expect(() => drag()).toThrow("host veto");
+    expect(calls).toEqual([back]);
+    expect(changes).toEqual([]);
+  });
+});
+
+describe("interaction drops a node by what the veto's call changed and where the drag ended", () => {
+  const moved = { kind: "nodeMoved", by: "user", id: "a" };
+  const intoC = { moveInto: [1, 0] };
+
+  test("a veto that removes the dragged node leaves nothing to take back", () => {
+    // Verifies: API-edits-report-nested-changes
+    const holder: { store?: GraphStore } = {};
+    const { store, drag, calls, changes } = dropping(() => {
+      holder.store!.getState().removeNodes([1], [], "host");
+      return true;
+    });
+    holder.store = store;
+    drag();
+    expect(calls).toEqual([]);
+    expect(changes).toEqual([{ kind: "nodesRemoved", by: "host", nodes: ["a"], edges: [] }]);
+  });
+
+  test("a veto that changes the selection and the viewport leaves the move to its answer", () => {
+    // Verifies: API-edits-report-nested-changes
+    const holder: { store?: GraphStore } = {};
+    const { store, drag, calls, changes } = dropping(() => {
+      holder.store!.getState().select(null);
+      holder.store!.getState().setViewport({ x: 10, y: 10, scale: 2 });
+      return true;
+    });
+    holder.store = store;
+    drag();
+    expect(calls).toEqual([intoC]);
+    expect(changes).toEqual([moved]);
+  });
+
+  for (const release of ["pointerupoutside", "pointercancel"]) {
+    test(`a drag ended by ${release} has no target: nothing is asked, and it moved within its own container`, () => {
+      // Verifies: API-edits-report-nested-changes
+      const { drag, calls, changes, asked } = dropping(() => true);
+      drag(release);
+      expect([asked, calls, changes]).toEqual([[], [], [moved]]);
+    });
+  }
+
+  test("a drop where no container lies, the node on the canvas already, asks nothing", () => {
+    // Verifies: API-edits-report-nested-changes
+    const { drag, calls, changes, asked } = dropping(() => true, null);
+    drag();
+    expect([asked, calls, changes]).toEqual([[], [], [moved]]);
+  });
 });

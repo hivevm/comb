@@ -2,7 +2,7 @@
 // (API-host-asks-content-height): the height the engine gives a node of that content and width, one
 // per shape of content, refused as `addNode` refuses the node.
 import { expect, test } from "@playwright/test";
-import type { NodeContent } from "comb";
+import type { ContentElement, NodeContent } from "comb";
 import { open } from "./shared";
 
 /** A node of each type of the metric tree, by its identifier in the first copy. */
@@ -35,7 +35,7 @@ test("content of one shape has one height, whatever its texts and its width", as
     const long = "W".repeat(1_000);
     const retexted = (content: NodeContent): NodeContent =>
       content.map((row) =>
-        row.map((element) =>
+        (row as ContentElement[]).map((element) =>
           element.kind === "metric"
             ? { ...element, caption: long, value: long, trend: { ...element.trend, text: long } }
             : "text" in element
@@ -83,4 +83,17 @@ test("heightOf refuses what addNode refuses of content and width, naming the nod
     expect(added).not.toBe("ok");
     expect(asked).toEqual(added);
   }
+});
+
+test("content without rows is as high as the width asked, however small or large", async ({
+  page,
+}) => {
+  // Verifies: REN-node-content-and-hits
+  await open(page);
+  const widths = [1, 8, 64, 120, 333.5, 2000];
+  const heights = await page.evaluate(
+    (asked) => asked.map((width) => window.comb.heightOf([], width)),
+    widths,
+  );
+  expect(heights).toEqual(widths);
 });

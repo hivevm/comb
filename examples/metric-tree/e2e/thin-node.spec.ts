@@ -61,7 +61,7 @@ for (const level of ["near", "middle"] as const) {
     expect(bar.x).toBeCloseTo(100, 0);
     expect(bar.y).toBeCloseTo(150, 0);
     expect(await told(page)).toEqual([
-      { kind: "nodeMoved", by: "user", id: "bar", x: bar.x, y: bar.y },
+      { kind: "nodeMoved", by: "user", id: "bar", x: bar.x, y: bar.y, container: null },
     ]);
   });
 

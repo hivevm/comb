@@ -15,12 +15,15 @@ pub enum Level {
     Far,
 }
 
-/// What a query found: node slots in ascending rank, edge and label slots in ascending order, per
-/// found label its
-/// point, and the mesh of the found edges with its detail; the label points and the mesh's
-/// positions relative to `origin` (API-bridge-takes-serde-and-columns).
+/// What a query found: the containers in the order they are drawn, the other node slots in
+/// ascending rank (ARCH-engine-edits-nested-graph), edge slots in ascending order, the found edge
+/// labels as pairs of their edge's slot and their place in its list of labels, in that order
+/// (API-bridge-columns-carry-nesting), per found label its point, and the mesh of the found edges
+/// with its detail; the label points and the mesh's positions relative to `origin`
+/// (API-bridge-takes-serde-and-columns).
 #[derive(Debug, Default)]
 pub struct Visible {
+    pub containers: Vec<u32>,
     pub nodes: Vec<u32>,
     pub edges: Vec<u32>,
     pub labels: Vec<u32>,
@@ -81,13 +84,20 @@ impl Graph {
         let label_rect = rect.grown(if labelled { label_reach.max(0.0) } else { 0.0 });
         self.node_grid.candidates(rect, &mut self.scratch);
         out.nodes.clear();
-        out.nodes.extend(
-            self.scratch
-                .iter()
-                .filter(|&&slot| self.node_bounds(slot).meets(rect)),
-        );
-        out.nodes
-            .sort_unstable_by_key(|&slot| self.ranks[slot as usize]);
+        out.containers.clear();
+        // Each node by its own box, also where it reaches past its container's outline.
+        for &slot in &self.scratch {
+            if self.node_bounds(slot).meets(rect) {
+                if self.is_container(slot) {
+                    out.containers.push(slot);
+                } else {
+                    out.nodes.push(slot);
+                }
+            }
+        }
+        out.containers
+            .sort_unstable_by_key(|&slot| self.container_order[slot as usize]);
+        out.nodes.sort_unstable_by_key(|&slot| self.draw_key(slot));
         self.edge_grid
             .candidates(&rect.union(&label_rect), &mut self.scratch);
         self.scratch.sort_unstable();
@@ -102,8 +112,11 @@ impl Graph {
             if !labelled {
                 continue;
             }
-            if let Some(point) = self.labels[slot as usize].filter(|p| label_rect.contains(*p)) {
-                out.labels.push(slot);
+            for (index, &point) in (0_u32..).zip(&self.labels[slot as usize]) {
+                if !label_rect.contains(point) {
+                    continue;
+                }
+                out.labels.extend([slot, index]);
                 let Point { x, y } = out.origin;
                 #[expect(
                     clippy::cast_possible_truncation,
@@ -126,8 +139,9 @@ impl Graph {
         self.mesh_edges(&out.edges, &at, budget, &mut out.mesh);
     }
 
-    /// Writes into `edges` the slots of every edge at the node slots `slots` and of the edge slots
-    /// `also`, found by a query or not, each once, in ascending order, and into `out` their mesh,
+    /// Writes into `edges` the slots of every edge at the node slots `slots`, of every edge that
+    /// ends on one of those (REN-moving-layer-moves-content), and of the edge slots `also`, found
+    /// by a query or not, each once, in ascending order, and into `out` their mesh,
     /// stroked as `query` strokes the edges it found in `rect` at `level` where a screen pixel is
     /// `pixel` world units, relative to `origin`, within the mesh budget: what a drag redraws of
     /// the nodes it moves and an edit of what it added (REN-moving-layer-redraws-changes). A slot
@@ -142,7 +156,7 @@ impl Graph {
         out: &mut Mesh,
     ) -> Result<(), SlotError> {
         self.edges_held(also)?;
-        let mut found = self.edges_at(slots)?;
+        let mut found = self.with_anchored(self.edges_at(slots)?);
         found.extend_from_slice(also);
         found.sort_unstable();
         found.dedup();
@@ -190,8 +204,40 @@ mod tests {
     use super::super::{EdgeSpec, LabelPlacement};
     use super::*;
     use crate::geometry::{Dock, EdgePath, Side, Sides, WORLD_LIMIT};
+    use crate::graph::End;
     use crate::shape::NodeShape;
     use crate::stroke::{Detail, EdgeStyle};
+
+    #[test]
+    fn a_query_and_a_hit_find_a_lightning_bolt_by_its_turns_off_the_path() {
+        // Verifies: API-edges-dock-nodes-or-edges, REN-virtualized-nested-scene
+        // The edge from (100, 20) to (400, 20), straight; its second turn lies 6 below the path.
+        let edges = vec![EdgeSpec {
+            sides: Sides::default(),
+            source: End::Node(0),
+            target: End::Node(1),
+            labels: Vec::new(),
+            style: EdgeStyle {
+                lightning: true,
+                ..EdgeStyle::unstyled()
+            },
+        }];
+        let sizes = vec![100.0, 40.0, 100.0, 40.0];
+        let mut graph = Graph::new(vec![0.0, 0.0, 400.0, 0.0], sizes, edges).unwrap();
+        let (_, [_, turn], _) = graph.paths[0].lightning();
+        assert!((turn.y - 26.0).abs() < 1e-9, "{turn:?}");
+        // A rectangle that holds the turn and none of the path.
+        let rect = Rect::new(turn.x - 15.0, 25.0, turn.x + 15.0, 76.0);
+        let mut out = Visible::default();
+        graph.query(&rect, Level::Near, 0.25, 0.0, &mut out);
+        assert_eq!(out.edges, [0]);
+        assert!(!out.mesh.indices.is_empty());
+        // A press on the turn hits the edge, at a pixel whose reach falls short of the path.
+        assert_eq!(
+            graph.hit_at(turn, 0.25, Level::Near, false),
+            Some(super::super::Target::Edge(0))
+        );
+    }
 
     #[test]
     fn a_graph_that_never_loaded_finds_nothing_at_every_level() {
@@ -224,9 +270,9 @@ mod tests {
         let sizes = vec![220.0, 64.0, 220.0, 64.0, 220.0, 64.0];
         let edge = |source, target| EdgeSpec {
             sides: Sides::default(),
-            source,
-            target,
-            label: None,
+            source: End::Node(source),
+            target: End::Node(target),
+            labels: Vec::new(),
             style: EdgeStyle::unstyled(),
         };
         let edges = vec![edge(0, 1), edge(1, 2), edge(0, 2), edge(2, 1)];
@@ -275,9 +321,9 @@ mod tests {
         let sizes = vec![220.0, 64.0, 220.0, 64.0, 220.0, 64.0];
         let edge = |source, target| EdgeSpec {
             sides: Sides::default(),
-            source,
-            target,
-            label: None,
+            source: End::Node(source),
+            target: End::Node(target),
+            labels: Vec::new(),
             style: EdgeStyle::unstyled(),
         };
         let edges = vec![edge(0, 1), edge(1, 2), edge(0, 2)];
@@ -322,9 +368,9 @@ mod tests {
         };
         let edges = vec![EdgeSpec {
             sides: Sides::default(),
-            source: 0,
-            target: 1,
-            label: Some(label),
+            source: End::Node(0),
+            target: End::Node(1),
+            labels: vec![label],
             style: EdgeStyle::unstyled(),
         }];
         let mut graph = Graph::new(positions, sizes, edges).unwrap();
@@ -404,9 +450,9 @@ mod tests {
         };
         let edges = vec![EdgeSpec {
             sides: Sides::default(),
-            source: 0,
-            target: 1,
-            label: Some(label),
+            source: End::Node(0),
+            target: End::Node(1),
+            labels: vec![label],
             style: EdgeStyle::unstyled(),
         }];
         let Point { x, y } = at;
@@ -465,9 +511,9 @@ mod tests {
         };
         let edges = vec![EdgeSpec {
             sides: Sides::default(),
-            source: 0,
-            target: 1,
-            label: Some(label),
+            source: End::Node(0),
+            target: End::Node(1),
+            labels: vec![label],
             style: EdgeStyle {
                 dash: Some((6.0, 4.0)),
                 ..EdgeStyle::unstyled()
@@ -482,7 +528,7 @@ mod tests {
         let rect = Rect::new(0.0, 0.0, 600.0, 200.0);
         let mut out = Visible::default();
         graph.query(&rect, Level::Near, 1.0, 50.0, &mut out);
-        assert_eq!(out.labels, [0]);
+        assert_eq!(out.labels, [0, 0]);
         // Near: the arrowhead adds one triangle to the two per segment.
         assert_eq!(out.mesh.indices.len() % 6, 3);
         for level in [Level::Middle, Level::Far] {
@@ -523,15 +569,15 @@ mod tests {
         // Verifies: Q-4, Q-7, ARCH-one-workspace-per-example
         // Node `a` between `b` and `c`, an edge from each to `a` with a label, which the drags
         // below carry to opposite corners of the world, and the labels beyond them.
-        let label = Some(LabelPlacement {
+        let label = LabelPlacement {
             t: 0.5,
             offset: 40.0,
-        });
+        };
         let edge = |source, sides| EdgeSpec {
             sides,
-            source,
-            target: 0,
-            label,
+            source: End::Node(source),
+            target: End::Node(0),
+            labels: vec![label],
             style: EdgeStyle::unstyled(),
         };
         let crossed = Sides {
@@ -556,7 +602,9 @@ mod tests {
         assert_eq!(at(1), [limit, limit]);
         let [x, y] = at(1);
         for slot in [0, 1] {
-            let far = graph.move_label(slot, Point::new(1e300, -1e300)).unwrap();
+            let far = graph
+                .move_label(slot, 0, Point::new(1e300, -1e300))
+                .unwrap();
             assert_eq!(far.offset.abs(), WORLD_LIMIT);
         }
         for rect in [
@@ -615,12 +663,12 @@ mod tests {
                     source: dock,
                     target: Dock::Outline,
                 },
-                source: node,
-                target: node,
-                label: Some(LabelPlacement {
+                source: End::Node(node),
+                target: End::Node(node),
+                labels: vec![LabelPlacement {
                     t: 0.5,
                     offset: 40.0,
-                }),
+                }],
                 style: EdgeStyle::unstyled(),
             })
             .collect();
@@ -646,21 +694,21 @@ mod tests {
     /// control point lies past twice the world's limit.
     fn assert_loop_held(graph: &mut Graph, slot: usize, spec: &EdgeSpec) -> bool {
         let path = graph.paths[slot];
-        let node = graph.node_bounds(spec.source);
+        let node = graph.node_bounds(spec.nodes().0);
         assert_eq!(
             path,
-            EdgePath::looped(&node, graph.shape(spec.source), spec.sides.source),
+            EdgePath::looped(&node, graph.shape(spec.nodes().0), spec.sides.source),
             "{slot}"
         );
         let points = (0..=64).map(|t| path.point_at(f64::from(t) / 64.0));
         let controls = [path.control_source, path.control_target];
         assert!(points.chain(controls).all(held), "edge {slot}: {path:?}");
-        assert!(held(graph.labels[slot].unwrap()), "edge {slot}");
+        assert!(held(graph.labels[slot][0]), "edge {slot}");
         let far = graph
-            .move_label(slot as u32, Point::new(1e300, -1e300))
+            .move_label(slot as u32, 0, Point::new(1e300, -1e300))
             .unwrap();
         assert_eq!(far.offset.abs(), WORLD_LIMIT);
-        assert!(held(graph.labels[slot].unwrap()), "edge {slot}");
+        assert!(held(graph.labels[slot][0]), "edge {slot}");
         controls
             .iter()
             .any(|p| p.x.abs().max(p.y.abs()) > 2.0 * WORLD_LIMIT)
@@ -708,7 +756,11 @@ mod tests {
         let inside = |p: Point| {
             p.x > large.min_x && p.x < large.max_x && p.y > large.min_y && p.y < large.max_y
         };
-        for (slot, _) in specs.iter().enumerate().filter(|(_, s)| s.source == 1) {
+        for (slot, _) in specs
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.source == End::Node(1))
+        {
             let path = graph.paths[slot];
             assert!(
                 inside(path.source) && inside(path.target),

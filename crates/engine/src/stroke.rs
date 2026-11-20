@@ -5,8 +5,10 @@
 //! A path is flattened by subdividing it until its control points lie within the tolerance of
 //! the chord, so the polyline stays within the tolerance of the curve (Q-4). The stroke has two
 //! vertices per polyline point, offset along the averaged normal, and carries the distance along
-//! the path, which a shader compares with the dash pattern. An arrowhead is a triangle whose tip
-//! is the path's end; the stroke stops at its base.
+//! the path, which a shader compares with the dash pattern. An arrowhead's tip is the path's end:
+//! a filled triangle, or a hollow one, its outline around a white fill, where the stroke stops at
+//! its base, or two open strokes, where the stroke runs on to the tip. A lightning bolt draws the
+//! path's middle as a zigzag (API-edges-dock-nodes-or-edges).
 //!
 //! The stroke of each level of detail is decided here: every level flattens within the same
 //! tolerance in screen pixels; the far level draws plain lines a width in screen pixels wide, the
@@ -44,13 +46,32 @@ pub enum Detail {
 }
 
 /// How an edge is drawn: its colour as `0xRRGGBB`, its dash pattern as dash and gap lengths in
-/// world units, or none for a solid line, and whether an arrowhead marks its end, as it does
-/// unless the host application says otherwise.
+/// world units, or none for a solid line, the arrowhead that marks its end, and whether its middle
+/// is a lightning bolt (API-edges-dock-nodes-or-edges).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EdgeStyle {
     pub color: u32,
     pub dash: Option<(f32, f32)>,
-    pub arrow: bool,
+    pub arrow: Arrowhead,
+    pub lightning: bool,
+}
+
+/// The arrowhead at an edge's target (API-edges-dock-nodes-or-edges, *Arrowheads*): none, a filled
+/// triangle, two open strokes meeting at the tip, or a triangle's outline around a white fill.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Arrowhead {
+    None,
+    End,
+    Open,
+    Hollow,
+}
+
+impl Arrowhead {
+    /// Whether the stroke stops at the arrowhead's base: at a triangle, filled or hollow, and not
+    /// at two open strokes, which the stroke runs on between to the tip.
+    const fn closed(self) -> bool {
+        matches!(self, Self::End | Self::Hollow)
+    }
 }
 
 #[cfg(test)]
@@ -62,7 +83,8 @@ impl EdgeStyle {
         Self {
             color: 0x9a_a1ad,
             dash: None,
-            arrow: true,
+            arrow: Arrowhead::End,
+            lightning: false,
         }
     }
 }
@@ -108,6 +130,8 @@ impl Stroke {
     }
 }
 
+/// The fill of a hollow arrowhead (API-edges-dock-nodes-or-edges, *Arrowheads*).
+const WHITE: u32 = 0xff_ffff;
 /// The length and half the base of an arrowhead, in world units.
 const ARROW_LENGTH: f64 = 10.0;
 const ARROW_HALF_WIDTH: f64 = 5.0;
@@ -128,11 +152,23 @@ struct Size {
 }
 
 impl Size {
-    /// An arrowhead: one triangle.
-    const ARROWHEAD: Self = Self {
+    /// A triangle.
+    const TRIANGLE: Self = Self {
         vertices: 3,
         indices: 3,
     };
+
+    /// An arrowhead of `kind`: a filled triangle is one triangle; two open strokes are two
+    /// polylines of two points; a hollow one is its white triangle and its outline, a polyline of
+    /// five points from the middle of its base around and back.
+    const fn arrowhead(kind: Arrowhead) -> Self {
+        match kind {
+            Arrowhead::None => Self::polyline(0),
+            Arrowhead::End => Self::TRIANGLE,
+            Arrowhead::Open => Self::polyline(2).plus(Self::polyline(2)),
+            Arrowhead::Hollow => Self::TRIANGLE.plus(Self::polyline(5)),
+        }
+    }
 
     /// A polyline of `points`: two vertices per point and two triangles per segment; a single
     /// point draws nothing.
@@ -168,9 +204,13 @@ impl Size {
 /// What an edge drawn as its chord takes: a polyline of two points, without an arrowhead.
 const CHORD: Size = Size::polyline(2);
 
-/// The floor of an edge: its chord, or its arrowhead alone where that is its full mesh.
-const fn floor_of(arrowhead: bool) -> Size {
-    if arrowhead { Size::ARROWHEAD } else { CHORD }
+/// The floor of an edge of `style`: its chord, or its arrowhead alone where that is its full mesh.
+const fn floor_of(arrowhead: bool, style: &EdgeStyle) -> Size {
+    if arrowhead {
+        Size::arrowhead(style.arrow)
+    } else {
+        CHORD
+    }
 }
 
 /// Grows `values` to hold `additional` more, by doubling where that stays within `most`, through
@@ -259,10 +299,9 @@ impl Mesh {
             )]
             self.edge_starts.push(self.indices.len() as u32);
             let arrowhead = self.arrowheads[i];
-            later = later.minus(floor_of(arrowhead));
+            later = later.minus(floor_of(arrowhead, style));
             if arrowhead {
-                let (tip, base, back) = arrow_of(path);
-                self.arrowhead(tip, base, back, rgba(style.color));
+                self.arrowhead(path, style, stroke.width);
                 continue;
             }
             if self.detail == Detail::Complete {
@@ -290,7 +329,7 @@ impl Mesh {
         for (path, style) in edges {
             let arrowhead = arrowhead_alone(path, style, within, scratch);
             self.arrowheads.push(arrowhead);
-            floors = floors.plus(floor_of(arrowhead));
+            floors = floors.plus(floor_of(arrowhead, style));
         }
         if floors.vertices > within.budget {
             return None;
@@ -386,10 +425,7 @@ impl Mesh {
             self.polyline(points, color, (0.0, 0.0), stroke.width);
             return;
         }
-        if style.arrow {
-            let (tip, base, back) = arrow_of(path);
-            self.arrowhead(tip, base, back, color);
-        }
+        self.arrowhead(path, style, stroke.width);
         self.polyline(
             points,
             color,
@@ -398,15 +434,44 @@ impl Mesh {
         );
     }
 
-    fn arrowhead(&mut self, tip: Point, base: Point, direction: Point, color: u32) {
-        let first = self.vertex_count();
+    /// The arrowhead of `path` as `style` names it, its tip at the path's end, solid in the
+    /// edge's colour: a filled triangle; two strokes `width` wide from the corners of its base to
+    /// the tip; or a white triangle with its outline `width` wide around it. None draws nothing.
+    fn arrowhead(&mut self, path: &EdgePath, style: &EdgeStyle, width: f64) {
+        let color = rgba(style.color);
+        let (tip, base, direction) = arrow_of(path);
         let (nx, ny) = (
             -direction.y * ARROW_HALF_WIDTH,
             direction.x * ARROW_HALF_WIDTH,
         );
-        self.vertex(tip, 0.0, color, (0.0, 0.0));
-        self.vertex(Point::new(base.x + nx, base.y + ny), 0.0, color, (0.0, 0.0));
-        self.vertex(Point::new(base.x - nx, base.y - ny), 0.0, color, (0.0, 0.0));
+        let left = Point::new(base.x + nx, base.y + ny);
+        let right = Point::new(base.x - nx, base.y - ny);
+        match style.arrow {
+            Arrowhead::None => {}
+            Arrowhead::End => self.triangle([tip, left, right], color),
+            Arrowhead::Open => {
+                self.polyline(&[left, tip], color, (0.0, 0.0), width);
+                self.polyline(&[right, tip], color, (0.0, 0.0), width);
+            }
+            Arrowhead::Hollow => {
+                // The outline from the middle of the base, so that its two ends meet on a straight
+                // line and leave no notch. Its vertices come first and the white fill's after
+                // them, so that the edge's vertices keep its colour until its fill, but the fill's
+                // triangle comes first among the indices, drawn below the outline.
+                let fill = self.indices.len();
+                let outline = [base, left, tip, right, base];
+                self.polyline(&outline, color, (0.0, 0.0), width);
+                self.triangle([tip, left, right], rgba(WHITE));
+                self.indices[fill..].rotate_right(3);
+            }
+        }
+    }
+
+    fn triangle(&mut self, corners: [Point; 3], color: u32) {
+        let first = self.vertex_count();
+        for corner in corners {
+            self.vertex(corner, 0.0, color, (0.0, 0.0));
+        }
         self.indices.extend([first, first + 1, first + 2]);
     }
 
@@ -465,17 +530,17 @@ fn flatten_edge(
     room: usize,
     points: &mut Vec<Point>,
 ) -> Option<Size> {
-    let arrow = !within.stroke.plain && style.arrow;
-    let head = if arrow {
-        Size::ARROWHEAD
-    } else {
+    let head = if within.stroke.plain {
         Size::polyline(0)
+    } else {
+        Size::arrowhead(style.arrow)
     };
     let fits = |_: Point, n: usize| head.plus(Size::polyline(n)).vertices <= room;
-    if !flatten(path, within.stroke.tolerance, &within.area, points, fits) {
+    let tolerance = within.stroke.tolerance;
+    if !flatten(path, style.lightning, tolerance, &within.area, points, fits) {
         return None;
     }
-    if arrow {
+    if !within.stroke.plain && style.arrow.closed() {
         trim_end(points, arrow_of(path).1);
     }
     if !split_at(points, &within.area) {
@@ -486,20 +551,24 @@ fn flatten_edge(
 }
 
 /// Whether the full mesh of `path` is its arrowhead alone: every point of its flattening lies
-/// within the arrowhead, found out within `ARROWHEAD_POINTS` points.
+/// within the arrowhead, found out within `ARROWHEAD_POINTS` points. Only a filled arrowhead, of
+/// three vertices, stands for its edge so: a hollow one takes 13 and an open one 8, more than the
+/// four of a chord that REN-virtualized-nested-scene grants each edge, so such an edge floors at
+/// its chord.
 fn arrowhead_alone(
     path: &EdgePath,
     style: &EdgeStyle,
     within: &Within,
     points: &mut Vec<Point>,
 ) -> bool {
-    if within.stroke.plain || !style.arrow {
+    if within.stroke.plain || style.arrow != Arrowhead::End {
         return false;
     }
     let (tip, base, _) = arrow_of(path);
     let inside = reach(tip, base);
     let fits = |p: Point, n: usize| inside(&p) && n <= ARROWHEAD_POINTS;
-    inside(&path.source) && flatten(path, within.stroke.tolerance, &within.area, points, fits)
+    let tolerance = within.stroke.tolerance;
+    inside(&path.source) && flatten(path, style.lightning, tolerance, &within.area, points, fits)
 }
 
 /// `0xRRGGBB` as the bytes R, G, B, 255 in memory order.
@@ -558,23 +627,46 @@ fn reach(tip: Point, base: Point) -> impl Fn(&Point) -> bool {
 /// Writes into `out`, after clearing it, the points of `path` flattened so that no point of the
 /// curve inside `area` lies farther than `tolerance` from the polyline; a part whose control
 /// points miss `area` is its chord. A tolerance that is not positive and finite gives the most
-/// points. After each point it asks `fits` with that point and how many `out` holds, and stops,
-/// returning false, at the first it refuses, or where `out` cannot grow.
+/// points. With `lightning`, the path's middle is the zigzag of `EdgePath::lightning` instead,
+/// its turns and its ends points of the polyline. After each point it asks `fits` with that point
+/// and how many `out` holds, and stops, returning false, at the first it refuses, or where `out`
+/// cannot grow.
 fn flatten(
     path: &EdgePath,
+    lightning: bool,
     tolerance: f64,
     area: &Rect,
     out: &mut Vec<Point>,
     fits: impl Fn(Point, usize) -> bool,
 ) -> bool {
     out.clear();
-    out.push(path.source);
     let tolerance = if tolerance.is_finite() {
         tolerance.max(0.0)
     } else {
         0.0
     };
-    subdivide(path, tolerance, area, 0, out, &fits)
+    if out.try_reserve(1).is_err() {
+        return false;
+    }
+    if !lightning {
+        out.push(path.source);
+        return subdivide(path, tolerance, area, 0, out, &fits);
+    }
+    let (before, turns, after) = path.lightning();
+    out.push(before.source);
+    if !subdivide(&before, tolerance, area, 0, out, &fits) {
+        return false;
+    }
+    for point in [turns[0], turns[1], after.source] {
+        if out.try_reserve(1).is_err() {
+            return false;
+        }
+        out.push(point);
+        if !fits(point, out.len()) {
+            return false;
+        }
+    }
+    subdivide(&after, tolerance, area, 0, out, &fits)
 }
 
 /// Where the segment `a`–`b` lies within `area`, edges included, as the fractions along it at
@@ -656,19 +748,20 @@ fn split_at(points: &mut Vec<Point>, area: &Rect) -> bool {
     true
 }
 
-/// Whether `p` lies within `reach` of `path` as a stroke within `tolerance` flattens it: the parts
+/// Whether `p` lies within `reach` of `path` as a stroke within `tolerance` flattens it, its middle
+/// a zigzag where it is drawn as a `lightning` bolt: the parts
 /// of the path whose control points miss the square of side `2 · reach` around `p` are their
 /// chords, which lie in those control points' hull and so no nearer than `reach`
 /// (REN-node-content-in-rows). `scratch` holds the flattened points afterwards.
 pub(crate) fn near_path(
-    path: &EdgePath,
+    (path, lightning): (&EdgePath, bool),
     tolerance: f64,
     p: Point,
     reach: f64,
     scratch: &mut Vec<Point>,
 ) -> bool {
     let area = Rect::at(p).grown(reach);
-    if !flatten(path, tolerance, &area, scratch, |_, _| true) {
+    if !flatten(path, lightning, tolerance, &area, scratch, |_, _| true) {
         return false;
     }
     scratch
@@ -720,14 +813,19 @@ fn subdivide(
         && subdivide(&right, tolerance, area, depth + 1, out, fits)
 }
 
-/// The points the mesh of a query in `rect` strokes `path` through with `stroke`, without an
-/// arrowhead and without a budget.
+/// The points the mesh of a query in `rect` strokes `path` through with `stroke`, its middle a
+/// zigzag where it is drawn as a `lightning` bolt, without an arrowhead and without a budget.
 #[cfg(test)]
-pub(crate) fn flattened(path: &EdgePath, stroke: &Stroke, rect: &Rect) -> Vec<Point> {
+pub(crate) fn flattened(
+    (path, lightning): (&EdgePath, bool),
+    stroke: &Stroke,
+    rect: &Rect,
+) -> Vec<Point> {
     let mut points = Vec::new();
     let area = rect.grown(stroke.width);
     assert!(flatten(
         path,
+        lightning,
         stroke.tolerance,
         &area,
         &mut points,
@@ -752,6 +850,14 @@ mod tests {
         }
     }
 
+    /// The four arrowheads (API-edges-dock-nodes-or-edges, *Arrowheads*).
+    const ARROWHEADS: [Arrowhead; 4] = [
+        Arrowhead::None,
+        Arrowhead::End,
+        Arrowhead::Open,
+        Arrowhead::Hollow,
+    ];
+
     /// A rectangle that holds every point: nothing is drawn as chords for lying outside it.
     const EVERYWHERE: Rect = Rect::new(
         f64::NEG_INFINITY,
@@ -762,7 +868,9 @@ mod tests {
 
     /// `path` flattened within `tolerance` everywhere, without a limit.
     fn flatten_all(path: &EdgePath, tolerance: f64, out: &mut Vec<Point>) {
-        assert!(flatten(path, tolerance, &EVERYWHERE, out, |_, _| true));
+        assert!(flatten(path, false, tolerance, &EVERYWHERE, out, |_, _| {
+            true
+        }));
     }
 
     impl Mesh {
@@ -870,7 +978,14 @@ mod tests {
         let around = Rect::at(path.source);
         let mut points = Vec::new();
         for tolerance in [0.0, f64::NAN] {
-            assert!(flatten(&path, tolerance, &around, &mut points, |_, _| true));
+            assert!(flatten(
+                &path,
+                false,
+                tolerance,
+                &around,
+                &mut points,
+                |_, _| true
+            ));
             assert_eq!(points.len(), 1 + 1 + 24, "tolerance {tolerance}");
             let deepest = path.point_at(2f64.powi(-24));
             assert!((points[1].x - deepest.x).abs() < 1e-9, "{:?}", points[1]);
@@ -879,7 +994,9 @@ mod tests {
         }
         // Around the target alone, the same from the other end.
         let around = Rect::at(path.target);
-        assert!(flatten(&path, 0.0, &around, &mut points, |_, _| true));
+        assert!(flatten(&path, false, 0.0, &around, &mut points, |_, _| {
+            true
+        }));
         assert_eq!(points.len(), 1 + 24 + 1);
         let deepest = path.point_at(1.0 - 2f64.powi(-24));
         assert!((points[24].x - deepest.x).abs() < 1e-9, "{:?}", points[24]);
@@ -909,7 +1026,8 @@ mod tests {
         let style = EdgeStyle {
             color: 0x22_a55b,
             dash: Some((6.0, 4.0)),
-            arrow: false,
+            arrow: Arrowhead::None,
+            lightning: false,
         };
         mesh.add_edge(&path, &style, &Stroke::full(0.25), &mut points);
         let n = points.len();
@@ -1132,6 +1250,197 @@ mod tests {
         assert_eq!(points[0], path.source);
     }
 
+    /// The middle of the vertices `i` and `i + 1` of a mesh: the point of a polyline they stroke.
+    fn middle_of(mesh: &Mesh, i: usize) -> (f64, f64) {
+        let (a, b) = (vertex_of(mesh, i), vertex_of(mesh, i + 1));
+        ((a.0 + b.0) / 2.0, (a.1 + b.1) / 2.0)
+    }
+
+    /// Whether `a` and `b` lie within a thousandth of a world unit, far within the 0.5 px of Q-4
+    /// at every zoom the example draws arrowheads at.
+    fn within_q4(a: (f64, f64), b: (f64, f64)) -> bool {
+        (a.0 - b.0).abs() < 1e-3 && (a.1 - b.1).abs() < 1e-3
+    }
+
+    #[test]
+    fn an_open_arrowhead_is_two_strokes_meeting_at_the_target_and_the_stroke_runs_to_it() {
+        // Verifies: API-edges-dock-nodes-or-edges
+        // Straight from (0, 0) to (60, 80), direction (0.6, 0.8): the base lies 10 back at
+        // (54, 72), its corners 5 either side along (-0.8, 0.6), at (50, 75) and (58, 69).
+        let path = straight(Point::new(0.0, 0.0), Point::new(60.0, 80.0));
+        let style = EdgeStyle {
+            arrow: Arrowhead::Open,
+            ..EdgeStyle::unstyled()
+        };
+        let mut points = Vec::new();
+        let mut mesh = Mesh::default();
+        mesh.add_edge(&path, &style, &Stroke::full(0.25), &mut points);
+        // The two strokes, each from a corner to the tip, the stroke's width wide.
+        assert!(within_q4(middle_of(&mesh, 0), (50.0, 75.0)));
+        assert!(within_q4(middle_of(&mesh, 2), (60.0, 80.0)));
+        assert!(within_q4(middle_of(&mesh, 4), (58.0, 69.0)));
+        assert!(within_q4(middle_of(&mesh, 6), (60.0, 80.0)));
+        let (a, b) = (vertex_of(&mesh, 2), vertex_of(&mesh, 3));
+        assert!(((a.0 - b.0).hypot(a.1 - b.1) - FULL_WIDTH).abs() < 1e-4);
+        // The stroke between them runs on to the tip, in the edge's colour throughout.
+        assert_eq!(points.last(), Some(&path.target));
+        assert!(mesh.colors.iter().all(|&c| c == rgba(style.color)));
+        assert_eq!(
+            mesh.distances.len(),
+            Size::arrowhead(Arrowhead::Open)
+                .plus(Size::polyline(points.len()))
+                .vertices
+        );
+    }
+
+    #[test]
+    fn a_hollow_arrowhead_is_an_outline_in_the_edges_colour_around_a_white_fill() {
+        // Verifies: API-edges-dock-nodes-or-edges
+        // The same edge as the open arrowhead's: tip (60, 80), base (54, 72), corners (50, 75)
+        // and (58, 69).
+        let path = straight(Point::new(0.0, 0.0), Point::new(60.0, 80.0));
+        let style = EdgeStyle {
+            arrow: Arrowhead::Hollow,
+            ..EdgeStyle::unstyled()
+        };
+        let mut points = Vec::new();
+        let mut mesh = Mesh::default();
+        mesh.add_edge(&path, &style, &Stroke::full(0.25), &mut points);
+        // The outline, from the middle of the base around through the tip and back.
+        let outline = [
+            (54.0, 72.0),
+            (50.0, 75.0),
+            (60.0, 80.0),
+            (58.0, 69.0),
+            (54.0, 72.0),
+        ];
+        for (k, &corner) in outline.iter().enumerate() {
+            assert!(within_q4(middle_of(&mesh, 2 * k), corner), "corner {k}");
+        }
+        // The white triangle after it, its tip at the target, drawn first, below the outline.
+        let fill = [(60.0, 80.0), (50.0, 75.0), (58.0, 69.0)];
+        for (k, &corner) in fill.iter().enumerate() {
+            assert!(within_q4(vertex_of(&mesh, 10 + k), corner), "fill {k}");
+            assert_eq!(mesh.colors[10 + k], rgba(WHITE));
+        }
+        assert_eq!(&mesh.indices[..3], [10, 11, 12]);
+        assert!(mesh.colors[..10].iter().all(|&c| c == rgba(style.color)));
+        // The stroke stops at the base, as at a filled arrowhead.
+        assert!(near(
+            (points[points.len() - 1].x, points[points.len() - 1].y),
+            (54.0, 72.0)
+        ));
+    }
+
+    #[test]
+    fn a_lightning_bolts_turns_lie_between_the_path_parameters_045_and_055() {
+        // Verifies: API-edges-dock-nodes-or-edges
+        // Every point the stroke draws through lies on the path within the tolerance, but the two
+        // turns of the zigzag, which lie 6 off it on either side, between 0.45 and 0.55.
+        let stroke = Stroke::full(0.05);
+        let style = EdgeStyle {
+            arrow: Arrowhead::None,
+            lightning: true,
+            ..EdgeStyle::unstyled()
+        };
+        // The paths that run on along their chord throughout: where one runs back over itself, a
+        // point's nearest path point may lie on the other run.
+        let onward = |path: &EdgePath| {
+            let (dx, dy) = (path.target.x - path.source.x, path.target.y - path.source.y);
+            (0..=100).all(|i| {
+                let tangent = path.tangent_at(f64::from(i) / 100.0);
+                tangent.x * dx + tangent.y * dy > 0.0
+            })
+        };
+        let measured: Vec<EdgePath> = paths().into_iter().filter(onward).collect();
+        assert!(measured.len() >= 3, "{} paths", measured.len());
+        for path in measured {
+            let mut points = Vec::new();
+            let mut mesh = Mesh::default();
+            mesh.add_edge(&path, &style, &stroke, &mut points);
+            // What the canvas draws: the middle of each pair of the mesh's vertices.
+            let drawn: Vec<Point> = (0..points.len())
+                .map(|i| {
+                    let (x, y) = middle_of(&mesh, 2 * i);
+                    Point::new(x, y)
+                })
+                .collect();
+            let turns: Vec<(f64, f64)> = drawn
+                .iter()
+                .map(|&p| path.placement_at(p))
+                .filter(|&(_, offset)| offset.abs() > 1e-3)
+                .collect();
+            assert_eq!(turns.len(), 2, "{path:?}");
+            for (t, offset) in turns
+                .iter()
+                .zip([6.0, -6.0])
+                .map(|(&(t, o), want)| (t, o - want))
+            {
+                assert!((0.45..=0.55).contains(&t), "a turn at {t} of {path:?}");
+                assert!(offset.abs() < 1e-3, "{offset} off the zigzag's width");
+            }
+        }
+        // On the straight edge from (0, 0) to (300, 0), at (145, -6) and (155, 6), between the
+        // path's points at 0.45 and 0.55, (135, 0) and (165, 0).
+        let path = straight(Point::new(0.0, 0.0), Point::new(300.0, 0.0));
+        let mut points = Vec::new();
+        flatten(&path, true, 0.05, &EVERYWHERE, &mut points, |_, _| true);
+        let at = |x: f64| points.iter().position(|p| near((p.x, p.y), (x, 0.0)));
+        let from = at(135.0).expect("the zigzag's start");
+        assert!(near(
+            (points[from + 1].x, points[from + 1].y),
+            (145.0, -6.0)
+        ));
+        assert!(near((points[from + 2].x, points[from + 2].y), (155.0, 6.0)));
+        assert_eq!(at(165.0), Some(from + 3));
+    }
+
+    #[test]
+    fn a_lightning_bolt_and_each_arrowhead_on_a_very_short_edge_mesh_without_degenerating() {
+        // Verifies: API-edges-dock-nodes-or-edges
+        // Edges of no length, of a thousandth, and of 1, each of every arrowhead with a lightning
+        // bolt, at full detail and plain: every vertex finite, every index within the mesh, and
+        // the mesh within the budget it was given.
+        let mut edges = Vec::new();
+        for length in [0.0, 1e-3, 1.0] {
+            for arrow in ARROWHEADS {
+                let path = straight(Point::new(10.0, 20.0), Point::new(10.0 + length, 20.0));
+                let style = EdgeStyle {
+                    arrow,
+                    lightning: true,
+                    ..EdgeStyle::unstyled()
+                };
+                edges.push((path, style));
+            }
+        }
+        for stroke in [Stroke::full(0.25), Stroke::at(Level::Far, 4.0)] {
+            let mut mesh = Mesh::default();
+            let mut points = Vec::new();
+            let all = edges.iter().map(|(path, style)| (path, style));
+            let budget = 1_000;
+            mesh.build(
+                all,
+                &stroke,
+                &EVERYWHERE,
+                Point::default(),
+                budget,
+                &mut points,
+            );
+            assert_eq!(mesh.detail, Detail::Complete);
+            assert!(mesh.distances.len() <= budget as usize);
+            assert!(
+                mesh.positions
+                    .iter()
+                    .chain(&mesh.distances)
+                    .all(|v| v.is_finite())
+            );
+            assert_eq!(mesh.indices.len() % 3, 0);
+            let vertices = mesh.distances.len() as u32;
+            assert!(mesh.indices.iter().all(|&i| i < vertices));
+            assert_eq!(mesh.edge_starts.len(), edges.len());
+        }
+    }
+
     #[test]
     fn an_arrowhead_on_an_edge_shorter_than_it_reaches_back_past_the_source() {
         // Verifies: REN-virtualized-scene-graph
@@ -1191,9 +1500,16 @@ mod tests {
         let path = paths()[3];
         let around = Rect::at(path.source);
         let mut most = Vec::new();
-        assert!(flatten(&path, 0.0, &around, &mut most, |_, _| true));
+        assert!(flatten(&path, false, 0.0, &around, &mut most, |_, _| true));
         for tolerance in [f64::INFINITY, f64::NEG_INFINITY] {
-            assert!(flatten(&path, tolerance, &around, &mut points, |_, _| true));
+            assert!(flatten(
+                &path,
+                false,
+                tolerance,
+                &around,
+                &mut points,
+                |_, _| true
+            ));
             assert_eq!(points, most, "tolerance {tolerance}");
         }
     }
@@ -1264,7 +1580,8 @@ mod tests {
                 let style = EdgeStyle {
                     color: i as u32 + 1,
                     dash: None,
-                    arrow: false,
+                    arrow: Arrowhead::None,
+                    lightning: false,
                 };
                 (paths[i], style)
             })
@@ -1345,7 +1662,8 @@ mod tests {
         let style = EdgeStyle {
             color: 0x10_2030,
             dash: Some((6.0, 4.0)),
-            arrow: true,
+            arrow: Arrowhead::End,
+            lightning: false,
         };
         let length = (path.target.x - path.source.x).hypot(path.target.y - path.source.y);
         for (stroke, dash) in [
@@ -1390,6 +1708,7 @@ mod tests {
         let mut points = Vec::new();
         assert!(!flatten(
             &paths()[3],
+            false,
             0.0,
             &EVERYWHERE,
             &mut points,
@@ -1413,7 +1732,7 @@ mod tests {
             area: EVERYWHERE,
             budget: room,
         };
-        let room = Size::ARROWHEAD
+        let room = Size::TRIANGLE
             .plus(Size::polyline(untrimmed.len()))
             .vertices;
         let mut points = Vec::new();
@@ -1424,13 +1743,14 @@ mod tests {
             points.len(),
             untrimmed.len()
         );
-        assert_eq!(size, Size::ARROWHEAD.plus(Size::polyline(points.len())));
+        assert_eq!(size, Size::TRIANGLE.plus(Size::polyline(points.len())));
         assert_eq!(
             flatten_edge(&path, &style, &within(room), room - 1, &mut points),
             None
         );
         let plain = EdgeStyle {
-            arrow: false,
+            arrow: Arrowhead::None,
+            lightning: false,
             ..style
         };
         let all = 2 * untrimmed.len();
@@ -1451,7 +1771,7 @@ mod tests {
         // A rectangle around the source: far from it, the path is cut into few chords.
         let near = Rect::at(path.source).grown(20.0);
         let mut points = Vec::new();
-        assert!(flatten(&path, 0.01, &near, &mut points, |_, _| true));
+        assert!(flatten(&path, false, 0.01, &near, &mut points, |_, _| true));
         assert!(
             points.len() * 4 < everywhere.len(),
             "{} of {}",
@@ -1481,7 +1801,8 @@ mod tests {
     const UNARROWED: EdgeStyle = EdgeStyle {
         color: 1,
         dash: Some((6.0, 4.0)),
-        arrow: false,
+        arrow: Arrowhead::None,
+        lightning: false,
     };
 
     /// The mesh of `path` alone in `style`, queried in `rect` at a scale of 4, its positions
@@ -1579,7 +1900,7 @@ mod tests {
         let rect = viewport_around(Point::default());
         let stroke = Stroke::at(Level::Near, 0.25);
         let area = rect.grown(stroke.width);
-        let points = flattened(&path, &stroke, &rect);
+        let points = flattened((&path, false), &stroke, &rect);
         assert_eq!(points.len(), 4, "{points:?}");
         assert_eq!((points[0], points[3]), (path.source, path.target));
         // Along y = 0.3 x it enters by the left side, at x = -214, and leaves by the right.
@@ -1598,7 +1919,7 @@ mod tests {
         let path = long_straight();
         let rect = viewport_around(Point::default());
         let mesh = queried(&path, &UNARROWED, &rect);
-        let points = flattened(&path, &Stroke::at(Level::Near, 0.25), &rect);
+        let points = flattened((&path, false), &Stroke::at(Level::Near, 0.25), &rect);
         let length = |a: Point, b: Point| (b.x - a.x).hypot(b.y - a.y);
         let mut along = 0.0;
         let mut expected = vec![0.0_f32];
@@ -1661,7 +1982,7 @@ mod tests {
             usize::MAX,
             &mut points,
         );
-        assert_eq!(size, Some(Size::ARROWHEAD.plus(Size::polyline(3))));
+        assert_eq!(size, Some(Size::TRIANGLE.plus(Size::polyline(3))));
         let p = |x| Point::new(x, 50.0);
         assert_eq!(points, [p(-1e6), p(-2.0), p(40.0)]);
     }
@@ -1767,14 +2088,24 @@ mod tests {
                 (size.vertices, size.indices)
             );
         }
-        let mut mesh = Mesh::default();
-        mesh.arrowhead(p(10.0), p(0.0), Point::new(1.0, 0.0), 1);
-        mesh.polyline(&[p(0.0), p(5.0), p(9.0)], 1, (0.0, 0.0), 2.0);
-        let size = Size::ARROWHEAD.plus(Size::polyline(3));
-        assert_eq!(
-            (mesh.distances.len(), mesh.indices.len()),
-            (size.vertices, size.indices)
-        );
+        // Each arrowhead and the stroke after it (API-edges-dock-nodes-or-edges).
+        for arrow in ARROWHEADS {
+            let style = EdgeStyle {
+                arrow,
+                ..EdgeStyle::unstyled()
+            };
+            let mut mesh = Mesh::default();
+            mesh.arrowhead(&straight(p(-20.0), p(10.0)), &style, 2.0);
+            mesh.polyline(&[p(0.0), p(5.0), p(9.0)], 1, (0.0, 0.0), 2.0);
+            let size = Size::arrowhead(arrow).plus(Size::polyline(3));
+            assert_eq!(
+                (mesh.distances.len(), mesh.indices.len()),
+                (size.vertices, size.indices),
+                "{arrow:?}"
+            );
+        }
+        let size = Size::TRIANGLE.plus(Size::polyline(3));
+        assert_eq!((3 + 6, 3 + 12), (size.vertices, size.indices));
         assert_eq!((CHORD.vertices, CHORD.indices), (4, 6));
         let most = Size {
             vertices: usize::MAX,
@@ -1832,6 +2163,25 @@ mod tests {
     }
 
     #[test]
+    fn an_open_or_a_hollow_edge_whose_mesh_is_its_arrowhead_alone_floors_at_its_chord() {
+        // Verifies: REN-virtualized-nested-scene, API-edges-dock-nodes-or-edges
+        // Ten edges 4 long of each arrowhead but the filled one, at a budget of four vertices per
+        // edge, which REN-virtualized-nested-scene grants each: every edge is drawn, as its chord.
+        for arrow in [Arrowhead::Open, Arrowhead::Hollow] {
+            let edges: Vec<(EdgePath, EdgeStyle)> = (0..10)
+                .map(|i| {
+                    let (path, style) = short(f64::from(i) * 100.0);
+                    (path, EdgeStyle { arrow, ..style })
+                })
+                .collect();
+            let mesh = built(&edges, 4 * 10);
+            assert_eq!(mesh.detail, Detail::Coarsened, "{arrow:?}");
+            assert_eq!(mesh.edge_starts.len(), 10, "{arrow:?}");
+            assert_eq!(mesh.distances.len(), 4 * 10, "{arrow:?}");
+        }
+    }
+
+    #[test]
     fn finding_an_arrowhead_alone_stops_at_the_first_point_beyond_it_or_after_64() {
         let within = |stroke| Within {
             stroke,
@@ -1850,7 +2200,8 @@ mod tests {
             &mut points
         ));
         let unarrowed = EdgeStyle {
-            arrow: false,
+            arrow: Arrowhead::None,
+            lightning: false,
             ..style
         };
         assert!(!arrowhead_alone(

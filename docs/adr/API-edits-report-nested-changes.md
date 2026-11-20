@@ -101,7 +101,7 @@ Comb told no change of the graph during the veto's call.
   | `loaded`       | host           | none: `load` replaced the graph                          |
   | `nodeAdded`    | host           | `node`, the `NodeData` as Comb took it                   |
   | `nodeUpdated`  | host           | `id`, `patch` as Comb merged it                          |
-  | `nodeMoved`    | user           | `id`, `x`, `y`, `container`: where a drag left the node  |
+  | `nodeMoved`    | user or host   | `id`, `x`, `y`, `container`: where a drag left the node  |
   | `nodeResized`  | user           | `id`, `x`, `y`, `width`, `height`, `moved`               |
   | `regionsMoved` | user           | `node`, `regions`, `moved`                               |
   | `nodesRemoved` | user or host   | `nodes`, and `edges`, every edge removed with them, ids  |
@@ -112,7 +112,10 @@ Comb told no change of the graph during the veto's call.
 
   - `nodeMoved`: `x` and `y` relative to `container`, the identifier of the container or the
     region the node lies in after the drag, or `null` on the canvas. For a border node, `side` and
-    `offset` instead of `x`, `y`, and `container`.
+    `offset` instead of `x`, `y`, and `container`. Where `updateNode` divides a region the patch
+    keeps into regions of its own, each node that region held moves, at its world position, into
+    the first of its new inner regions. Comb delivers a `nodeMoved` by the host for each, after the
+    `nodeUpdated`.
   - `nodeResized`: the node's new position, relative to its container, and size; `moved` lists
     `{ id, x, y }` for each node the node holds whose position relative to it changed, since a
     resize at the left or the top keeps the content's world position; `regions` lists
@@ -150,6 +153,9 @@ Comb told no change of the graph during the veto's call.
   - `attachedTo`, the identifier of the node a border node sits on, with `side` and `offset`, in
     place of `x`, `y`, and `container`;
   - `resizable`, `true` where the user may resize the node by its resize handles.
+
+  A node carries `x` and `y` or `attachedTo`, never both. The TypeScript type of `NodeData` is a
+  union of a node and a border node.
 
   Identifiers of nodes and regions share one space.
 - **New methods of `Comb`:** `addNode(node: NodeData)`; `removeNodes(ids: readonly string[])`, which
@@ -224,8 +230,9 @@ Comb told no change of the graph during the veto's call.
   `by: "host"`; a host that persists only `by: "user"` persists a drop in its own drop handler.
 - **Resizing:** a selected node whose `resizable` is `true` shows eight resize handles, at its four
   corners and the middles of its four sides, in the overlay. A drag of one resizes the node from
-  that side or corner, never smaller than its content and the boxes of the nodes it holds, and
-  keeps the world positions of the nodes it holds.
+  that side or corner and keeps the world positions of the nodes it holds. The node never grows
+  smaller than its content or than the boxes of the nodes that lie directly in it. It never grows
+  smaller than 8 world units a side. A resize keeps a node shape that is as high as wide so.
 - **Deleting:** with the canvas focused, Delete or Backspace deletes the selection, a node with
   every edge at it or an edge alone, after `canDelete`, and clears the selection. The canvas
   takes focus when pressed.
@@ -398,12 +405,18 @@ Each test below cites this ADR with `Verifies: API-edits-report-nested-changes`.
   and a value of the wrong type, and assert a `GraphDataError` of the generated kind and a graph
   as it was; they also `Verifies: Q-7`. A test asserts that every kind `api` builds is one of the
   generated `GraphDataProblem`.
-- **Nesting:** browser tests of the UML example drop a node into a partition with `canMoveInto`
-  returning `true`, `false`, and throwing, and assert the one `nodeMoved` with its container, or
-  the node back where it stood and no change; resize an activity at its left edge and assert
-  `nodeResized` with the moved content; drag the line between two partitions and assert
-  `regionsMoved`; drag a pin and assert `nodeMoved` with its side and offset; and delete a
-  composite state and assert that `nodesRemoved` names its content and the edges at it. Browser
+- **Nesting:** browser tests of `examples/metric-tree/` do the following.
+  - They drop a node into a container with `canMoveInto` returning `true`, `false`, and throwing.
+    They assert the one `nodeMoved` with its container, or the node back where it stood and no
+    change.
+  - They resize a container at its left edge and assert `nodeResized` with the moved content.
+  - They drag the line between two regions and assert `regionsMoved`.
+  - They drag a border node and assert `nodeMoved` with its side and offset.
+  - They delete a container and assert that `nodesRemoved` names its content and the edges at it.
+
+  Browser tests of the UML example move an action into another partition and out of the
+  activity's frame, which the example's `canMoveInto` allows and refuses. They assert the one
+  `nodeMoved` with the partition, or the action back where it stood and no change. Browser
   tests release a drop with a `canMoveInto` that removes the target container and returns `true`,
   and assert that the drag is taken back and no change of the user's is told, and drag a
   container over a container it holds and assert that `canMoveInto` is not asked for it.

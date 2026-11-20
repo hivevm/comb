@@ -120,7 +120,7 @@ test("a connection adds an association, which the sidebar changes to a generaliz
   expect(changed.kinds[added.id]).toBe("generalization");
   expect(edge).toMatchObject({ color: generalization.color, arrow: generalization.arrow });
   expect(edge.dash).toBeUndefined();
-  expect(edge.label).toBeUndefined();
+  expect(edge.labels).toBeUndefined();
 });
 
 test("no edge joins a class with itself: Comb offers the loop, and the rules refuse it", async ({
@@ -284,7 +284,8 @@ async function connectAndSelect(page: Page): Promise<string> {
 /** The label of edge `id` in the example's copy, its text and its background. */
 async function labelOf(page: Page, id: string) {
   const edge = (await edges(page)).edges.find((each) => each.id === id)!;
-  return edge.label && { text: edge.label.text, background: edge.label.background };
+  const [label] = edge.labels ?? [];
+  return label && { text: label.text, background: label.background };
 }
 
 test("a member Comb refuses stays in its field, which is marked invalid and says why until an edit of it is taken", async ({

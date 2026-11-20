@@ -31,6 +31,7 @@ function editing(around: (bridge: Bridge) => Bridge = (bridge) => bridge) {
     rows: bridge.rowLimit(),
     columns: bridge.columnLimit(),
     segments: bridge.segmentLimit(),
+    labels: bridge.labelLimit(),
   };
   const editors = editorsOf(store, bridge, limits, {}, false);
   editors.host.load({
@@ -264,7 +265,8 @@ describe("the user's deletion", () => {
       userCalls.length = 0;
       deleteSelection(byUser.store, byUser.bridge, byUser.user.delete);
       // The deletion names what would go before the veto; from there it is the host's removal.
-      expect(userCalls.filter((name) => name !== "edgesAt")).toEqual(hostCalls);
+      const naming = ["removalOf", "edgeRemovalOf"];
+      expect(userCalls.filter((name) => !naming.includes(name))).toEqual(hostCalls);
       const told = byHost.store.getState().change;
       expect(byUser.store.getState().change as unknown).toEqual({ ...told, by: "user" });
       expect(told?.by).toBe("host");
@@ -339,7 +341,10 @@ describe("a node's node shape", () => {
       index: 0,
       id,
       field: "shape",
-      expected: `"rectangle", "rounded-rectangle", "ellipse", "circle", "ringed-circle", "diamond", or "bar"`,
+      expected:
+        '"rectangle", "rounded-rectangle", "ellipse", "circle", "ringed-circle", "diamond", ' +
+        '"bar", "pentagon", "notched-rectangle", "note", "frame", "crossed-circle", "cross", ' +
+        '"actor", or "hourglass"',
     });
     for (const shape of ["hexagon", 5]) {
       const shaped = { ...node("c"), shape } as unknown as NodeData;

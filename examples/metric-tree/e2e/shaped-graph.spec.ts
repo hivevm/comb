@@ -5,7 +5,10 @@
 // the outline; and of whose nodes one in a hundred has a loop. Without the query the example loads
 // the metric tree as before. Both on the production build the benchmark serves.
 import { expect, test, type Page } from "@playwright/test";
-import type { GraphData, NodeData } from "comb";
+import type { GraphData, PlacedNodeData } from "comb";
+
+/** A graph whose nodes all have a position, as the example lays the shaped graph out. */
+type Placed = { nodes: PlacedNodeData[]; edges: GraphData["edges"] };
 import { open } from "./shared";
 
 /** The node shapes in the order the nodes take them, written here rather than read from the
@@ -38,7 +41,7 @@ async function loadedGraph(page: Page, query: string) {
       if (!asked.has(key)) asked.set(key, window.comb.heightOf(content, width, shape));
       return asked.get(key)!;
     });
-    return { report: await window.loadReport, graph, heights };
+    return { report: await window.loadReport, graph: graph as Placed, heights };
   });
 }
 
@@ -48,7 +51,7 @@ const endsOf = (graph: Pick<GraphData, "edges">) =>
 
 /** The pairs of `nodes`, each as high as `heights` says, whose rectangles overlap, by a sweep from
  *  top to bottom; rectangles that only touch do not. */
-function overlapping(nodes: readonly NodeData[], heights: readonly number[]) {
+function overlapping(nodes: readonly PlacedNodeData[], heights: readonly number[]) {
   const order = nodes.map((_, i) => i).sort((one, other) => nodes[one]!.y - nodes[other]!.y);
   const pairs: [string, string][] = [];
   order.forEach((i, at) => {
@@ -82,7 +85,7 @@ function expectLaidOut(tree: Loaded, shaped: Loaded) {
   expect(misfits(nodes, (node, i) => node.id !== tree.graph.nodes[i]!.id)).toEqual(NONE);
   // A circle and a ringed circle 64 wide, every other node as wide as in the metric tree, each
   // centred on its column.
-  const centreX = ({ x, width }: NodeData) => x + width / 2;
+  const centreX = ({ x, width }: PlacedNodeData) => x + width / 2;
   const unplaced = misfits(nodes, (node, i) => {
     const before = tree.graph.nodes[i]!;
     const circle = node.shape === "circle" || node.shape === "ringed-circle";
@@ -92,7 +95,7 @@ function expectLaidOut(tree: Loaded, shaped: Loaded) {
   // Each node centred on the metric tree's row, the rows spaced for the tallest node of the
   // shaped graph by the gap the metric tree leaves under its own tallest node.
   const pitch = Math.max(...shaped.heights) + ROW - Math.max(...tree.heights);
-  const centreY = (graph: GraphData, heights: number[], i: number) =>
+  const centreY = (graph: Placed, heights: number[], i: number) =>
     graph.nodes[i]!.y + heights[i]! / 2;
   const offRow = misfits(nodes, (_, i) => {
     const want =

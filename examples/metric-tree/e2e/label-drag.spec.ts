@@ -19,7 +19,9 @@ import {
  *  label in the middle at (410, 32). */
 const PAIR: GraphData = {
   nodes: [node("a"), node("b", 600)],
-  edges: [{ id: "a-b", source: "a", target: "b", label: { text: "+0.8", t: 0.5, offset: 0 } }],
+  edges: [
+    { id: "a-b", source: "a", target: "b", labels: [{ id: "m", text: "+0.8", t: 0.5, offset: 0 }] },
+  ],
 };
 
 async function labels(page: Page) {
@@ -28,6 +30,117 @@ async function labels(page: Page) {
     return window.inspect().edgeLabels.map(({ edge, x, y }) => ({ edge, x, y }));
   });
 }
+
+/** An association from `a` at (0, 0) to `b` at (600, 200): a multiplicity near each end, 12 to the
+ *  left of the path, and its name in the middle, which names no place
+ *  (API-edges-dock-nodes-or-edges). */
+const ASSOCIATION: GraphData = {
+  nodes: [node("a"), node("b", 600, 200)],
+  edges: [
+    {
+      id: "owns",
+      source: "a",
+      target: "b",
+      arrow: "none",
+      labels: [
+        { id: "source", text: "1", t: 0.1, offset: 12 },
+        { id: "name", text: "owns" },
+        { id: "target", text: "0..*", t: 0.9, offset: 12 },
+      ],
+    },
+  ],
+};
+
+/** The cubic from (220, 32) to (600, 232 + `dy`), control points (410, 32) and (410, 232 + `dy`),
+ *  as `b` at (600, 200 + `dy`) docks it: its point at `t`, `offset` along its normal, which points
+ *  left of the direction of travel, worked out apart from the engine. */
+function placed(t: number, offset: number, dy = 0) {
+  const p = [
+    [220, 32],
+    [410, 32],
+    [410, 232 + dy],
+    [600, 232 + dy],
+  ] as const;
+  const u = 1 - t;
+  const at = (i: 0 | 1) =>
+    u ** 3 * p[0][i] + 3 * u * u * t * p[1][i] + 3 * u * t * t * p[2][i] + t ** 3 * p[3][i];
+  const d = (i: 0 | 1) =>
+    3 * u * u * (p[1][i] - p[0][i]) +
+    6 * u * t * (p[2][i] - p[1][i]) +
+    3 * t * t * (p[3][i] - p[2][i]);
+  const length = Math.hypot(d(0), d(1));
+  return { x: at(0) + (d(1) / length) * offset, y: at(1) - (d(0) / length) * offset };
+}
+
+test("an association's three labels are drawn at their path parameters and follow as a node moves", async ({
+  page,
+}) => {
+  // Verifies: G-6, G-19, API-edges-dock-nodes-or-edges
+  await open(page);
+  await loaded(page, ASSOCIATION);
+  const drawn = async () =>
+    page.evaluate(async () => {
+      await window.comb.whenRendered();
+      return window
+        .inspect()
+        .edgeLabels.map(({ edge, label, x, y, text }) => ({ edge, label, x, y, text }));
+    });
+  const expected = (dy: number) => [
+    { edge: "owns", label: "source", ...placed(0.1, 12, dy), text: "1" },
+    { edge: "owns", label: "name", ...placed(0.5, 0, dy), text: "owns" },
+    { edge: "owns", label: "target", ...placed(0.9, 12, dy), text: "0..*" },
+  ];
+  const close = (got: Awaited<ReturnType<typeof drawn>>, want: ReturnType<typeof expected>) => {
+    expect(got.map(({ edge, label, text }) => ({ edge, label, text }))).toEqual(
+      want.map(({ edge, label, text }) => ({ edge, label, text })),
+    );
+    // Within the half pixel of Q-4 at a scale of 1.
+    for (const [i, { x, y }] of want.entries()) {
+      expect(Math.abs(got[i]!.x - x)).toBeLessThan(0.5);
+      expect(Math.abs(got[i]!.y - y)).toBeLessThan(0.5);
+    }
+  };
+  close(await drawn(), expected(0));
+  // `b` moves down 100: every label keeps its path parameter and offset (G-6).
+  const from = await screenCentre(page, "b");
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x, from.y + 100, { steps: 5 });
+  await page.mouse.up();
+  close(await drawn(), expected(100));
+});
+
+test("dragging the label at the source end moves it alone and tells labelMoved naming it", async ({
+  page,
+}) => {
+  // Verifies: G-6, API-edges-dock-nodes-or-edges, API-edits-report-nested-changes
+  await open(page);
+  await loaded(page, ASSOCIATION);
+  const before = await labels(page);
+  const source = placed(0.1, 12);
+  // Grabbed at its point, dropped 60 higher.
+  await dragWorld(page, [source.x, source.y], [source.x, source.y - 60]);
+  const after = await labels(page);
+  expect(after[0]!.x).toBeCloseTo(source.x, 1);
+  expect(after[0]!.y).toBeCloseTo(source.y - 60, 1);
+  expect(after.slice(1)).toEqual(before.slice(1));
+  const changes = await told<{ kind: string; edge: string; label: string }>(page);
+  expect(changes).toHaveLength(1);
+  expect(changes[0]).toMatchObject({
+    kind: "labelMoved",
+    by: "user",
+    edge: "owns",
+    label: "source",
+  });
+  // The example's copy of the graph moved that label alone.
+  const held = await page.evaluate(() =>
+    window.exampleGraph().edges[0]!.labels!.map(({ id, t, offset }) => ({ id, t, offset })),
+  );
+  // As the host gave them, the name without a place.
+  expect(held.slice(1)).toEqual([{ id: "name" }, { id: "target", t: 0.9, offset: 12 }]);
+  expect(held[0]!.id).toBe("source");
+  expect(held[0]!.offset).not.toBe(12);
+});
 
 test("a label dragged off its edge is drawn where it was dropped, and tells one labelMoved", async ({
   page,
@@ -46,10 +159,11 @@ test("a label dragged off its edge is drawn where it was dropped, and tells one 
     kind: string;
     by: string;
     edge: string;
+    label: string;
     t: number;
     offset: number;
   };
-  expect(moved).toMatchObject({ kind: "labelMoved", by: "user", edge: "a-b" });
+  expect(moved).toMatchObject({ kind: "labelMoved", by: "user", edge: "a-b", label: "m" });
   // At the middle of the straight edge, 92 above it: the normal of a rightward edge points up.
   expect(moved.t).toBeCloseTo(0.5, 6);
   expect(moved.offset).toBeCloseTo(92, 6);
@@ -79,12 +193,17 @@ test("a press just beside a short label, beyond its pill, grabs neither it nor a
   const graph: GraphData = {
     nodes: [node("a"), node("b", 600), node("c", 0, 200), node("d", 600, 200)],
     edges: [
-      { id: "short", source: "a", target: "b", label: { text: "1", t: 0.5, offset: 0 } },
+      {
+        id: "short",
+        source: "a",
+        target: "b",
+        labels: [{ id: "m", text: "1", t: 0.5, offset: 0 }],
+      },
       {
         id: "long",
         source: "c",
         target: "d",
-        label: { text: "a label of many characters", t: 0.5, offset: 0 },
+        labels: [{ id: "m", text: "a label of many characters", t: 0.5, offset: 0 }],
       },
     ],
   };
@@ -118,7 +237,7 @@ test("a label the host clears mid-drag ends the drag: no error, and no labelMove
   await page.mouse.move(a.x, a.y);
   await page.mouse.down();
   await page.mouse.move(a.x, a.y - 20, { steps: 3 });
-  await page.evaluate(() => window.comb.updateEdge("a-b", { label: null }));
+  await page.evaluate(() => window.comb.updateEdge("a-b", { labels: null }));
   await page.mouse.move(b.x, b.y, { steps: 4 });
   await page.mouse.up();
   expect((await told<{ kind: string }>(page)).map(({ kind }) => kind)).toEqual(["edgeUpdated"]);

@@ -17,13 +17,15 @@ import {
   PIECE_BOUND,
   type NodeColumnWriter,
   type EdgeSnapshot,
+  type EndValues,
   type GraphSnapshot,
   type NodeSnapshot,
   type PlainEdgePatch,
   type PlainPatch,
+  type RegionRead,
 } from "../bridge";
 import { EDGE_ARROW, edgeColor } from "../render/edges";
-import type { GraphData, KeptGraph } from "../store";
+import { regionViewsOf, type GraphData, type KeptGraph, type NodeView } from "../store";
 
 /** The errors this module throws, told from what the host application throws without reading
  *  the thrown value, which may run its code. */
@@ -59,6 +61,8 @@ export interface Limits {
   rows: number;
   columns: number;
   segments: number;
+  /** The most edge labels of one edge (API-edges-dock-nodes-or-edges). */
+  labels: number;
 }
 
 /** What a field expects: a number, a text, an identifier, or a node's content, each of its type
@@ -67,9 +71,16 @@ interface Reader {
   number(value: unknown): unknown;
   text(value: unknown): unknown;
   id(value: unknown): unknown;
+  /** An identifier a node names its container by, cut as `id` cuts one but not counted against
+   *  the budget of identifiers, which counts a node's and an edge's own and their ends alone
+   *  (ARCH-one-workspace-per-example): one past the limit names no node the bridge accepts, and is
+   *  refused as naming no node of the graph. */
+  reference(value: unknown): unknown;
   content(value: unknown): unknown;
   /** The most code units of a text. */
   textLimit: number;
+  /** The most labels of one edge. */
+  labelLimit: number;
   /** The code units of the identifiers read so far. */
   idUnits: number;
   /** The code units of the texts of content of a load read so far, and the identifier of the
@@ -103,8 +114,11 @@ function readerOf(limits: Limits): Reader {
       if (id !== false) reader.idUnits += id.length;
       return id;
     },
+    reference: (value) =>
+      typeof value === "string" ? cut(value, limits.id) : absent(value) ? value : false,
     content: (value) => plainContentOf(reader, value, limits),
     textLimit: limits.text,
+    labelLimit: limits.labels,
     idUnits: 0,
     contentUnits: 0,
     contentPast: undefined,
@@ -134,6 +148,9 @@ interface ContentSink {
   noContent(value: unknown): void;
   /** The row is no list. */
   noRow(): void;
+  /** The row is the string `"separator"`, a separator, which holds no element
+   *  (REN-node-content-and-hits, *Separator*). */
+  separator(): void;
   /** Ends a row of no elements, or one whose last element was handed over without ending it. */
   endRow(): void;
   /** The next element is no object, a list among them. */
@@ -179,7 +196,8 @@ function walkContent(read: Reader, content: unknown, sink: ContentSink, limits: 
   const rows = Math.min(content.length, limits.rows + 1);
   for (let r = 0; r < rows; r++) {
     const row: unknown = content[r];
-    if (!Array.isArray(row)) sink.noRow();
+    if (row === "separator") sink.separator();
+    else if (!Array.isArray(row)) sink.noRow();
     else walkRow(read, row, sink, limits);
   }
 }
@@ -267,10 +285,11 @@ function nameOf(value: unknown, read: Reader): unknown {
 }
 
 /** A node's content as plain data for serde, walked once by `read`: its rows, each a list of its
- *  elements or `false` where it is no list, each element an object of its kind and the fields of
- *  its kind, a name of a kind, a role, or a direction as `nameOf` hands it over, a weight only
- *  where one is given, or `false` where it is no object; or the content as given where it is null
- *  or undefined, and `false` where it is any other value but a list. */
+ *  elements, `"separator"` for a separator, or `false` where it is no list, each element an object
+ *  of its kind and the fields of its kind, a name of a kind, a role, or a direction as `nameOf`
+ *  hands it over, a weight only where one is given, or `false` where it is no object; or the
+ *  content as given where it is null or undefined, and `false` where it is any other value but a
+ *  list. */
 function plainContentOf(read: Reader, content: unknown, limits: Limits): unknown {
   const rows: unknown[] = [];
   let row: unknown[] | undefined;
@@ -296,6 +315,7 @@ function plainContentOf(read: Reader, content: unknown, limits: Limits): unknown
     {
       noContent: (value) => (result = falseOr(value)),
       noRow: () => rows.push(false),
+      separator: () => rows.push("separator"),
       endRow: () => end(true),
       noElement: (last) => add(false, last),
       element(kind, role, weight, color, text, id, last) {
@@ -378,34 +398,238 @@ function copied<T>(
   return items;
 }
 
+/** The most regions the snapshot reads of one node, at every depth, past which its regions are
+ *  refused by their field: more than a load holds of nodes, which the bridge refuses anyway. */
+const MOST_REGIONS = 1_000_001;
+
+/** The regions `value` of a node read once, each field of the type it expects, its identifier
+ *  counted as a node's is, into one list, each region after the region it lies in, which `of`
+ *  names by its index, and before the regions after it in that region, as a walk that does not
+ *  recurse reads a tree of any depth: none where it is null or undefined, `false` where it or a
+ *  value anywhere in it is of another type, or it holds itself, or more than `MOST_REGIONS`
+ *  (ARCH-regions-are-container-slots). */
+function regionsRead(read: Reader, value: unknown): RegionRead[] | false | undefined {
+  if (absent(value)) return undefined;
+  const seen = new Set<unknown>();
+  const regions: RegionRead[] = [];
+  // The lists still being read, each with the next index to read and the region it lies in.
+  const lists: { items: unknown; next: number; of: number | undefined }[] = [];
+  const open = (items: unknown, of: number | undefined) => {
+    if (!Array.isArray(items) || seen.has(items)) return false;
+    seen.add(items);
+    lists.push({ items, next: 0, of });
+    return true;
+  };
+  if (!open(value, undefined)) return false;
+  while (lists.length > 0) {
+    const top = lists.at(-1)!;
+    const items = top.items as unknown[];
+    if (top.next >= items.length) {
+      lists.pop();
+      continue;
+    }
+    const fields = itemOf(items, top.next++, seen);
+    if (!fields) return false;
+    const region = regionFields(read, fields, top.of);
+    if (!region) return false;
+    regions.push(region);
+    if (!absent(fields.regions) && !open(fields.regions, regions.length - 1)) return false;
+  }
+  return regions;
+}
+
+/** The item at `i` of `items` as an object not read before, `seen` taking it, or none where it is
+ *  none, is read already, or passes `MOST_REGIONS`. */
+function itemOf(items: unknown[], i: number, seen: Set<unknown>): Fields | undefined {
+  const fields = i in items ? objectOf(items[i]) : undefined;
+  if (!fields || seen.has(fields) || seen.size > MOST_REGIONS) return undefined;
+  seen.add(fields);
+  return fields;
+}
+
+/** The fields of a region read, in the region at `of` of its list, or `false` where one is of
+ *  another type. */
+function regionFields(read: Reader, fields: Fields, of: number | undefined): RegionRead | false {
+  const { id, name, size, line, divide } = fields;
+  const [readId, readName, readSize] = [read.id(id), read.text(name), read.number(size)];
+  const readLine = lineOf(read, line);
+  const named = absent(readName) || typeof readName === "string";
+  const divided = divideOf(divide);
+  if (typeof readId !== "string" || typeof readSize !== "number" || !readLine) return false;
+  if (!named || divided === false) return false;
+  const text = readName as string | null | undefined;
+  return {
+    id: readId,
+    name: text ?? undefined,
+    size: readSize,
+    line: readLine,
+    divide: divided,
+    of,
+  };
+}
+
+/** A division read: `across` or `down`, none for null or undefined, `false` for another value. */
+function divideOf(divide: unknown): RegionRead["divide"] | false {
+  if (absent(divide)) return undefined;
+  return divide === "across" || divide === "down" ? divide : false;
+}
+
+/** A region's line read: `solid`, or a dash and a gap; none for any other value. */
+function lineOf(read: Reader, line: unknown): RegionRead["line"] | undefined {
+  if (line === "solid") return "solid";
+  if (!Array.isArray(line) || line.length !== 2) return undefined;
+  const [dash, gap] = [read.number(line[0]), read.number(line[1])];
+  return typeof dash === "number" && typeof gap === "number" ? [dash, gap] : undefined;
+}
+
+/** `regions`, read into one list, as the bridge takes them: no key for a field left out. */
+function regionInputs(regions: readonly RegionRead[]) {
+  return regions.map(({ id, name, size, line, divide, of }) => ({
+    id,
+    size,
+    line,
+    ...(name === undefined ? {} : { name }),
+    ...(divide === undefined ? {} : { divide }),
+    ...(of === undefined ? {} : { of }),
+  }));
+}
+
 /** The node shape of a node, `rectangle` where it is left out (REN-closed-set-of-node-shapes). */
 const NODE_SHAPE = "rectangle";
 
+/** The outline `api` fills in where the host application leaves it out
+ *  (REN-node-shapes-cover-uml, *Outline*). */
+const NODE_OUTLINE = "solid";
+
+/** Whether `value` stands for a field left out: null or undefined. */
+const absent = (value: unknown) => value === undefined || value === null;
+
+/** Where the node of `addNode` lies, read once: its position and its container, or as a border
+ *  node the node it rides, its side, and its offset, each with no key where it is left out, since
+ *  a border node has no position (ARCH-border-nodes-ride-sides). */
+function placeRead(read: Reader, fields: Fields) {
+  const { x, y, container, attachedTo, side, offset } = fields;
+  const place: Fields = {};
+  if (!absent(x)) place.x = read.number(x);
+  if (!absent(y)) place.y = read.number(y);
+  if (!absent(container)) place.container = read.reference(container);
+  if (!absent(attachedTo)) place.attachedTo = read.reference(attachedTo);
+  if (!absent(side)) place.side = read.text(side);
+  if (!absent(offset)) place.offset = read.number(offset);
+  return place;
+}
+
+/** The node of `addNode` read once, its container's identifier cut as a reference and its mark,
+ *  its height, and whether it is resizable as given, each with no key where it is left out, so
+ *  that the node as Comb took it holds none. */
 function nodeOf(read: Reader, node: Fields) {
-  const { id, x, y, width, shape, content } = node;
-  return {
+  const { id, x, y, width, shape, outline, container, isContainer, content } = node;
+  const { height, resizable, divide, regions, attachedTo, side, offset } = node;
+  const snapshot: {
+    id: unknown;
+    x?: unknown;
+    y?: unknown;
+    width: unknown;
+    shape: unknown;
+    outline?: unknown;
+    container?: unknown;
+    isContainer?: unknown;
+    height?: unknown;
+    resizable?: unknown;
+    divide?: unknown;
+    regions?: unknown;
+    attachedTo?: unknown;
+    side?: unknown;
+    offset?: unknown;
+    content: unknown;
+  } = {
     id: read.id(id),
-    x: read.number(x),
-    y: read.number(y),
     width: read.number(width),
     shape: read.text(shape) ?? NODE_SHAPE,
     content: read.content(content),
   };
+  Object.assign(snapshot, placeRead(read, { x, y, container, attachedTo, side, offset }));
+  snapshot.outline = absent(outline) ? NODE_OUTLINE : outlineOf(read, outline);
+  if (!absent(isContainer)) snapshot.isContainer = isContainer;
+  if (!absent(height)) snapshot.height = read.number(height);
+  if (!absent(resizable)) snapshot.resizable = resizable;
+  if (!absent(divide)) snapshot.divide = divide;
+  const regionList = regionsRead(read, regions);
+  if (regionList !== undefined) snapshot.regions = regionList && regionInputs(regionList);
+  return snapshot;
 }
 
 /** Writes the node `node` into `columns`, read once by `read`, its content walked straight into
- *  its columns, and returns what the store keeps of it: its identifier, its width, and its node
- *  shape, no copy of its content (REN-node-content-in-rows). */
-function written(read: Reader, node: Fields, columns: NodeColumnWriter, limits: Limits) {
-  const { id, x, y, width, shape, content } = node;
-  const kept: { id: unknown; width: unknown; shape: unknown } = {
+ *  its columns, and returns what the store keeps of it: its identifier, its width, its node shape,
+ *  and its container, its mark, its height, whether it is resizable, and its division where it
+ *  has them, no copy of its content (REN-node-content-in-rows, API-edits-report-nested-changes);
+ *  and the views of its regions, which take the slots after the nodes. */
+function written(
+  read: Reader,
+  node: Fields,
+  columns: NodeColumnWriter,
+  limits: Limits,
+  regionViews: NodeView[],
+) {
+  const { id, x, y, width, shape, container, isContainer, content } = node;
+  const kept: {
+    id: unknown;
+    width: unknown;
+    shape: unknown;
+    outline?: unknown;
+    container?: unknown;
+    isContainer?: unknown;
+    height?: unknown;
+    resizable?: unknown;
+    divide?: unknown;
+    attachedTo?: unknown;
+  } = {
     id: read.id(id),
     width: read.number(width),
     shape: read.text(shape) ?? NODE_SHAPE,
   };
-  columns.node(kept.id, read.number(x), read.number(y), kept.width, kept.shape);
+  const [left, top, inside] = [read.number(x), read.number(y), read.reference(container)];
+  const [height, resizable] = [read.number(node.height), node.resizable];
+  const on = read.reference(node.attachedTo);
+  const outline = absent(node.outline) ? undefined : outlineOf(read, node.outline);
+  // The mark is handed over as given; the writer looks at it by equality with `true` and `false`.
+  const args = [inside, isContainer, height, resizable, on, outline] as const;
+  columns.node(kept.id, left, top, kept.width, kept.shape, ...args);
+  kept.outline = outline ?? NODE_OUTLINE;
+  // Set where present, as an edge's label is, so that a load of no containers spreads no keys.
+  if (!absent(inside)) kept.container = inside;
+  if (!absent(isContainer)) kept.isContainer = isContainer;
+  if (!absent(height)) kept.height = height;
+  if (!absent(resizable)) kept.resizable = resizable;
+  const divide = writtenRegions(read, node, columns, limits, kept.id);
+  // A border node's side and offset are the engine's, which `api` reads as it delivers them
+  // (ARCH-border-nodes-ride-sides).
+  columns.border(on, read.text(node.side), read.number(node.offset));
+  if (typeof on === "string") kept.attachedTo = on;
+  if (divide) {
+    kept.divide = divide.divide;
+    regionViews.push(...regionViewsOf(kept.id as string, divide.divide, divide.regions));
+  }
   walkContent(read, content, columnSink(read, columns, limits, kept.id), limits);
   return kept;
+}
+
+/** Writes the division and the regions of `node`, of the identifier `id`, into `columns`, read
+ *  once by `read`, their names counted against the budget of content as texts are; returns its
+ *  division and its regions where it is divided into some. */
+function writtenRegions(
+  read: Reader,
+  node: Fields,
+  columns: NodeColumnWriter,
+  limits: Limits,
+  id: unknown,
+) {
+  const { divide } = node;
+  const regions = regionsRead(read, node.regions);
+  columns.regions(divide, regions);
+  for (const { name } of regions || []) if (name) counted(read, name.length, id, limits);
+  const divided = regions && regions.length > 0 && (divide === "across" || divide === "down");
+  return divided ? { divide: divide as "across" | "down", regions } : undefined;
 }
 
 /** Counts `units` more code units of the texts of content of a load, of the node `node`, and
@@ -433,6 +657,7 @@ function columnSink(
   return {
     noContent: () => columns.noContent(),
     noRow: () => columns.noRow(),
+    separator: () => columns.separatorRow(),
     endRow: () => columns.endRow(),
     noElement: (last) => columns.noElement(last),
     element(kind, role, weight, color, text, id, last) {
@@ -450,21 +675,54 @@ function columnSink(
   };
 }
 
-/** A label: absent where null or undefined, `false` where no object. */
+/** The path parameter and label offset of a label that gives none: today's one label's
+ *  (API-edges-dock-nodes-or-edges, *Edge labels*). */
+export const LABEL_T = 0.5;
+export const LABEL_OFFSET = 0;
+
+/** The labels of an edge (API-edges-dock-nodes-or-edges): absent where null or undefined, `false`
+ *  where no list, else each read by `labelOf`, at most one past the bridge's limit, so that a list
+ *  of any length costs at most that much to check. */
+function labelsOf(read: Reader, labels: unknown) {
+  if (labels === undefined || labels === null) return undefined;
+  if (!Array.isArray(labels)) return false;
+  const count = Math.min(labels.length, read.labelLimit + 1);
+  const list: unknown[] = [];
+  for (let i = 0; i < count; i++) list.push(labelOf(read, labels[i]));
+  return list;
+}
+
+/** A label, its identifier counted against the budget of identifiers, its path parameter and
+ *  offset filled where it gives none; `false` where it is no object. A background it gives none of
+ *  is left out, so that the label follows its edge's colour as the labels layer draws it. */
 function labelOf(read: Reader, label: unknown) {
-  if (label === undefined || label === null) return undefined;
   const fields = objectOf(label);
   if (!fields) return false;
-  const { text, t, offset, background } = fields;
+  const { id, text, t, offset, background } = fields;
   const placed = {
+    id: read.id(id),
     text: read.text(text),
-    t: read.number(t),
-    offset: read.number(offset),
+    t: read.number(t) ?? LABEL_T,
+    offset: read.number(offset) ?? LABEL_OFFSET,
     background: read.number(background),
   };
-  // No key for a background left out, so that the edge as Comb keeps it holds none.
+  // No key for a background left out, so that the label as Comb keeps it holds none.
   if (placed.background === undefined) delete (placed as { background?: unknown }).background;
   return placed;
+}
+
+/** An outline read once (REN-node-shapes-cover-uml, *Outline*): a string as `Reader.text` reads
+ *  it, which the bridge names or refuses, a dash pattern as `dashOf` reads one, and any other value
+ *  `false`. */
+function outlineOf(read: Reader, outline: unknown) {
+  if (typeof outline === "string") return read.text(outline);
+  return Array.isArray(outline) ? dashOf(read, outline) : false;
+}
+
+/** A flag as given where it is `true` or `false`, else 0, a number, which the bridge refuses by its
+ *  type as `false` would not be. */
+function flagOf(value: unknown) {
+  return typeof value === "boolean" ? value : 0;
 }
 
 /** A dash pattern: absent where null or undefined, `false` where no list of two. */
@@ -474,38 +732,95 @@ function dashOf(read: Reader, dash: unknown) {
   return [read.number(dash[0]), read.number(dash[1])];
 }
 
-/** An edge read once, its defaults filled: the right side to the left, and the top for both of a
- *  loop the host names no side of, so that it is drawn above its node
- *  (API-edges-dock-side-or-outline). */
+/** One end of an edge as the host application handed it: the node it names, the edge, the path
+ *  parameter on that edge, and the side (API-edges-dock-nodes-or-edges, *Ends*), each read once. */
+interface GivenEnd {
+  node: unknown;
+  edge: unknown;
+  t: unknown;
+  side: unknown;
+}
+
+/** The end `given` read into `snapshot` under the names `names`, as given
+ *  (API-edges-dock-nodes-or-edges, *Ends*): an end that names an edge, given at all, its edge and
+ *  path parameter, its side only where it gives one and its node only where it gives one, which
+ *  the bridge refuses; any other end its node and its side, `fallback` where it names none. */
+function endOf(
+  read: Reader,
+  given: GivenEnd,
+  names: readonly [string, string, string, string],
+  fallback: string,
+  snapshot: Record<string, unknown>,
+): EndValues {
+  const [node, onEdge, t, side] = names;
+  const present = (value: unknown) => value !== undefined && value !== null;
+  if (!present(given.edge)) {
+    snapshot[node] = read.id(given.node);
+    snapshot[side] = read.text(given.side) ?? fallback;
+    return { node: snapshot[node], edge: undefined, t: undefined, side: snapshot[side] };
+  }
+  if (present(given.node)) snapshot[node] = read.id(given.node);
+  snapshot[onEdge] = read.id(given.edge);
+  snapshot[t] = read.number(given.t);
+  if (present(given.side)) snapshot[side] = read.text(given.side);
+  const at = { node: snapshot[node], edge: snapshot[onEdge], t: snapshot[t] };
+  return { ...at, side: snapshot[side] };
+}
+
+/** An edge read once, each field once, its defaults filled: the right side to the left, and the
+ *  top for both of a loop the host names no side of, so that it is drawn above its node, no side
+ *  at an end on an edge (API-edges-dock-nodes-or-edges); and its labels'. `label`, which
+ *  `labels` replaced, is kept as `false` where it is given, which the bridge refuses. With the
+ *  edge, what its ends cross as. */
 function edgeOf(read: Reader, edge: Fields) {
-  const { id, source, target, label, color, dash, arrow, sourceSide, targetSide } = edge;
-  const [readId, from, to] = [read.id(id), read.id(source), read.id(target)];
-  const loop = typeof from === "string" && from === to;
+  const { id, source, target, label, labels, color, dash, arrow, lightning } = edge;
+  const { sourceSide, targetSide, sourceEdge, sourceT, targetEdge, targetT } = edge;
+  const onNodes = absent(sourceEdge) && absent(targetEdge);
+  const looped = onNodes && typeof source === "string" && source === target;
   const snapshot: {
     id: unknown;
-    source: unknown;
-    target: unknown;
     color: number;
     arrow: unknown;
-    sourceSide: unknown;
-    targetSide: unknown;
-    label?: ReturnType<typeof labelOf>;
+    label?: false;
+    labels?: ReturnType<typeof labelsOf>;
     dash?: ReturnType<typeof dashOf>;
-  } = {
-    id: readId,
-    source: from,
-    target: to,
+    lightning?: unknown;
+  } & Record<string, unknown> = {
+    id: read.id(id),
     color: edgeColor({ color: read.number(color) as number | undefined }),
     arrow: read.text(arrow) ?? EDGE_ARROW,
-    sourceSide: read.text(sourceSide) ?? (loop ? "top" : "right"),
-    targetSide: read.text(targetSide) ?? (loop ? "top" : "left"),
   };
-  // No key for a label or a dash left out: each set where present, since spreading an object of
-  // one key per edge costs a large load milliseconds.
-  const placed = labelOf(read, label);
-  if (placed !== undefined) snapshot.label = placed;
+  const from = { node: source, edge: sourceEdge, t: sourceT, side: sourceSide };
+  const to = { node: target, edge: targetEdge, t: targetT, side: targetSide };
+  const ends = {
+    source: endOf(read, from, SOURCE, looped ? "top" : "right", snapshot),
+    target: endOf(read, to, TARGET, looped ? "top" : "left", snapshot),
+  };
+  return { edge: withOptional(read, snapshot, { label, labels, dash, lightning }), ends };
+}
+
+/** The names of the fields of the source of an edge, and of its target: the node, the edge, the
+ *  path parameter on that edge, and the side. */
+const SOURCE = ["source", "sourceEdge", "sourceT", "sourceSide"] as const;
+const TARGET = ["target", "targetEdge", "targetT", "targetSide"] as const;
+
+/** `snapshot` with the fields an edge may leave out read, each set where present, since spreading
+ *  an object of one key per edge costs a large load milliseconds: `label`, which `labels`
+ *  replaced, as `false`, its labels, its dash, and its lightning bolt. */
+function withOptional<
+  S extends { color: number; label?: false; labels?: unknown; dash?: unknown; lightning?: unknown },
+>(
+  read: Reader,
+  snapshot: S,
+  { label, labels, dash, lightning }: Record<"label" | "labels" | "dash" | "lightning", unknown>,
+): S {
+  const given = (value: unknown) => value !== undefined && value !== null;
+  if (given(label)) snapshot.label = false;
+  const placed = labelsOf(read, labels);
+  if (placed !== undefined) snapshot.labels = placed;
   const pattern = dashOf(read, dash);
   if (pattern !== undefined) snapshot.dash = pattern;
+  if (given(lightning)) snapshot.lightning = flagOf(lightning);
   return snapshot;
 }
 
@@ -520,6 +835,7 @@ export function snapshotOf(lists: Lists, limits: Limits) {
   // bridge then refuses, so that a load of shared long strings builds no more than that.
   const done = () => read.idUnits > limits.idBudget || read.contentPast !== undefined;
   const columns = nodeColumns(lists.nodeCount, PIECE_BOUND);
+  const regionViews: NodeView[] = [];
   const nodes = copied(
     lists.nodes,
     lists.nodeCount,
@@ -529,7 +845,7 @@ export function snapshotOf(lists: Lists, limits: Limits) {
         columns.noObject();
         return false;
       }
-      return written(read, item, columns, limits);
+      return written(read, item, columns, limits, regionViews);
     },
     done,
   );
@@ -543,14 +859,15 @@ export function snapshotOf(lists: Lists, limits: Limits) {
         edgeWriter.noObject();
         return false;
       }
-      const e = edgeOf(read, item);
-      const { id, source, target, label, color, dash, arrow, sourceSide, targetSide } = e;
-      edgeWriter.edge(id, source, target, label, color, dash, arrow, sourceSide, targetSide);
+      const { edge: e, ends } = edgeOf(read, item);
+      const { id, label, labels, color, dash, arrow, lightning } = e;
+      edgeWriter.edge(id, ends.source, ends.target, label, labels, color, dash, arrow, lightning);
       return e;
     },
     done,
   );
-  const kept = { nodes, edges } as KeptGraph;
+  // The regions take the slots after the nodes, in the order the columns write them.
+  const kept = { nodes: [...nodes, ...regionViews], edges } as unknown as KeptGraph;
   const snapshot = { nodes: columns.columns(), edges: edgeWriter.columns() } as GraphSnapshot;
   const content = { units: read.contentUnits, past: read.contentPast };
   return { kept, snapshot, idUnits: read.idUnits, content };
@@ -571,19 +888,20 @@ export function nodeSnapshotOf(node: unknown, limits: Limits) {
 export function edgeSnapshotOf(edge: unknown, limits: Limits) {
   const read = readerOf(limits);
   const fields = objectOf(edge);
-  const snapshot = (fields ? edgeOf(read, fields) : false) as EdgeSnapshot;
+  const snapshot = (fields ? edgeOf(read, fields).edge : false) as unknown as EdgeSnapshot;
   return { snapshot, idUnits: read.idUnits };
 }
 
 /** The fields a patch of `updateEdge` may set, each read as a load reads it; `null` clears a dash
- *  or a label. */
+ *  or the labels. */
 const EDGE_PATCH: Record<string, (read: Reader, value: unknown) => unknown> = {
   color: (read, value) => read.number(value),
   arrow: (read, value) => read.text(value),
+  lightning: (_, value) => (value === null ? value : flagOf(value)),
   sourceSide: (read, value) => read.text(value),
   targetSide: (read, value) => read.text(value),
   dash: (read, value) => (value === null ? null : dashOf(read, value)),
-  label: (read, value) => (value === null ? null : labelOf(read, value)),
+  labels: (read, value) => (value === null ? null : labelsOf(read, value)),
 };
 
 /** The patch of `updateEdge` as plain data, read as `patchOf` reads one of `updateNode`: the own
@@ -608,8 +926,30 @@ export function edgePatchOf(patch: unknown, limits: Limits): PlainEdgePatch {
   return plain as PlainEdgePatch;
 }
 
+/** The fields a patch of `updateNode` may set besides its content, each read as a load reads it:
+ *  its height as a number, whether it is resizable and its division as given, which the bridge
+ *  reads or refuses by name, and its regions, none for null. */
+const NODE_PATCH: Record<string, (read: Reader, value: unknown) => unknown> = {
+  height: (read, value) => read.number(value),
+  resizable: (_, value) => value,
+  divide: (_, value) => value,
+  regions: (read, value) => {
+    const regions = regionsRead(read, value);
+    return regions === undefined ? [] : regions && regionInputs(regions);
+  },
+  // A border node's place (ARCH-border-nodes-ride-sides).
+  side: (read, value) => read.text(value),
+  offset: (read, value) => read.number(value),
+  // How its outline is drawn (REN-node-shapes-cover-uml).
+  outline: (read, value) => outlineOf(read, value),
+};
+
 /** The patch of `updateNode` as plain data: the own fields of a plain object, enumerable or not,
- *  up to the first other than `content`, its content read as a load reads a node's, and the name
+ *  up to the first other than `content`, `height`, `resizable`, `divide`, `regions`, `side`,
+ *  `offset`, and `outline`, its
+ *  content read as a load reads a node's, its height as a number, whether it is resizable and its
+ *  division as given, its regions as a load reads a node's, `false` where it cannot read them and
+ *  none for null, and the name
  *  of that other field no longer than one code unit beyond the limit for texts. A patch that is
  *  no plain object, a `Map` or an array among them, or that has a key that is no string, cannot
  *  be read. */
@@ -621,6 +961,11 @@ export function patchOf(patch: unknown, limits: Limits): PlainPatch {
   const plain: Record<string, unknown> = Object.create(null);
   for (const key of Reflect.ownKeys(fields)) {
     if (typeof key !== "string") throw new UnreadableError("the patch has a key that is no string");
+    const field = Object.hasOwn(NODE_PATCH, key) ? NODE_PATCH[key] : undefined;
+    if (field) {
+      plain[key] = field(read, fields[key]);
+      continue;
+    }
     if (key !== "content") {
       // The first other field, which the bridge refuses by name: its name cut like a text but
       // otherwise as written, a lone surrogate too, which the bridge names as U+FFFD; its value

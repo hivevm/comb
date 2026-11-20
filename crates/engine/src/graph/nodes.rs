@@ -2,10 +2,20 @@
 //! rank, so that it is drawn and hit above every other node; a removal, which takes the edges at
 //! the nodes along; and a move, which takes them along too (ARCH-engine-edits-graph-in-place).
 
+use std::collections::HashSet;
+
 use super::slots::put;
-use super::{Graph, MoveError, SlotError, TooManySlots};
+use super::{AddNodeError, CANVAS, Graph, MoveError, SlotError, TooManySlots};
 use crate::geometry::{Rect, WORLD_LIMIT};
-use crate::shape::NodeShape;
+use crate::shape::{NodeShape, Outline};
+
+/// Where `shift` moves the nodes named to it: by a delta, as `translate` moves them, or to a
+/// world position, as `place` puts one.
+#[derive(Clone, Copy)]
+enum Shift {
+    By([f64; 2]),
+    To([f64; 2]),
+}
 
 /// Why the positions refused a move: a delta that is NaN or infinite.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -34,16 +44,43 @@ impl Graph {
         }
     }
 
-    /// Adds the node at `(x, y)` of size `(width, height)` and returns its slot: the free slot
-    /// freed last, or a new one after the highest. It takes the next rank, so that it is drawn and
-    /// hit above every other node, and goes into the index in place, which the rule of
-    /// ARCH-engine-edits-graph-in-place then builds again where it asks for it.
+    /// Adds the node at `(x, y)` of size `(width, height)` on the canvas and returns its slot, as
+    /// `add_node_in` adds one.
     pub fn add_node(
         &mut self,
         x: f32,
         y: f32,
         width: f32,
         height: f32,
+    ) -> Result<u32, TooManySlots> {
+        self.add_nested(CANVAS, false, [x, y, width, height])
+    }
+
+    /// Adds the node at the world position `(x, y)` of size `(width, height)` into the container
+    /// in `container`, or onto the canvas for `CANVAS`, a container itself where `is_container`,
+    /// and returns its slot: the free slot freed last, or a new one after the highest. It takes
+    /// the next rank, so that it is drawn and hit above every other node of its kind, and goes into
+    /// the index in place, which the rule of ARCH-engine-edits-graph-in-place then builds again
+    /// where it asks for it. A container that holds no container refuses the node, and the graph
+    /// stays as it was (ARCH-engine-edits-nested-graph).
+    pub fn add_node_in(
+        &mut self,
+        container: u32,
+        is_container: bool,
+        [x, y, width, height]: [f32; 4],
+    ) -> Result<u32, AddNodeError> {
+        if container != CANVAS && !(self.holds_node(container) && self.is_container(container)) {
+            return Err(AddNodeError::NoContainer { slot: container });
+        }
+        Ok(self.add_nested(container, is_container, [x, y, width, height])?)
+    }
+
+    /// `add_node_in` past its check of `container`, which is `CANVAS` or holds a container.
+    fn add_nested(
+        &mut self,
+        container: u32,
+        is_container: bool,
+        [x, y, width, height]: [f32; 4],
     ) -> Result<u32, TooManySlots> {
         let rank = self.take_rank();
         let slot = self.node_slots.take()?;
@@ -58,9 +95,22 @@ impl Graph {
         if let Some(shape) = self.shapes.get_mut(i) {
             *shape = NodeShape::default();
         }
-        // A node added has no edges yet.
+        if let Some(outline) = self.outlines.get_mut(i) {
+            *outline = Outline::default();
+        }
+        // Nor does it keep that node's height or whether it was resizable.
+        if let Some(given) = self.given.get_mut(i) {
+            *given = None;
+            self.resizable[i] = false;
+        }
+        // A node added has no edges yet; a freed slot taken again forgets the nesting of the node
+        // it held before it takes the new node's.
         put(&mut self.incident, i, Vec::new());
+        self.forget_nesting(slot);
+        self.forget_division(slot);
+        self.forget_borders(slot);
         self.next_rank += 1;
+        self.nest_added(slot, container, is_container);
         let bounds = self.node_bounds(slot);
         self.node_grid.set(slot, &bounds);
         self.keep_index();
@@ -69,7 +119,7 @@ impl Graph {
 
     /// The rank the next node added takes, after the ranks in use are numbered again from 0 in
     /// their order where it would pass `u32::MAX`.
-    fn take_rank(&mut self) -> u32 {
+    pub(super) fn take_rank(&mut self) -> u32 {
         if let Ok(rank) = u32::try_from(self.next_rank) {
             return rank;
         }
@@ -95,42 +145,134 @@ impl Graph {
         )
     }
 
-    /// Removes the nodes in `slots` and every edge at them, and returns the slots of those edges
-    /// in ascending order. Their slots go onto the free lists, the one named last freed last, and
-    /// they leave the index; nothing else moves (ARCH-engine-edits-graph-in-place). A slot that
-    /// holds no node refuses the call, which then changes nothing.
-    pub fn remove_nodes(&mut self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
-        let edges = self.edges_at(slots)?;
+    /// Removes the nodes in `slots`, everything they hold at every depth, and every edge at any of
+    /// them, and returns the slots of those nodes, as `with_held` names them, and of those edges,
+    /// in ascending order. Their slots go onto the free lists, the node named last freed last, and
+    /// they leave the index; nothing else moves (ARCH-engine-edits-nested-graph). A slot that holds
+    /// no node refuses the call, which then changes nothing.
+    pub fn remove_nodes(&mut self, slots: &[u32]) -> Result<(Vec<u32>, Vec<u32>), SlotError> {
+        let (nodes, edges) = self.removal(slots)?;
         // The nodes go first, so that the edges leave only the lists of the nodes that stay.
-        for &slot in slots {
+        let mut containers = false;
+        for &slot in &nodes {
             if self.node_slots.free(slot) {
                 self.incident[slot as usize].clear();
+                containers |= self.is_container(slot);
+                self.forget_nesting(slot);
+                self.forget_borders(slot);
             }
         }
-        self.node_grid.take(slots);
+        if containers {
+            self.order_containers();
+        }
+        self.node_grid.take(&nodes);
         // A removal builds nothing: the index is built again after growth and moves
         // (ARCH-engine-edits-graph-in-place).
         self.free_edges_at(&edges);
-        Ok(edges)
+        Ok((nodes, edges))
     }
 
-    /// Moves the nodes in `slots` by `(dx, dy)` and their edges with them. A refused move changes
-    /// nothing. Once more than an eighth of the nodes or edges, and at least 16, reach beyond the
-    /// extent the index was built for, the index is built again over the current extent.
+    /// Moves the nodes in `slots` by `(dx, dy)`, everything they hold with them, at every depth,
+    /// and their edges, in time linear in what they hold (ARCH-engine-edits-nested-graph,
+    /// *Positions*). A refused move changes nothing. Once more than an eighth of the nodes or
+    /// edges, and at least 16, reach beyond the extent the index was built for, the index is built
+    /// again over the current extent.
     pub fn translate(&mut self, slots: &[u32], dx: f32, dy: f32) -> Result<(), MoveError> {
+        self.shift(slots, Shift::By([f64::from(dx), f64::from(dy)]))
+    }
+
+    /// The nodes in `slots` that lie in no other of them, each once, in the order named: what a
+    /// move of them moves by its own delta, each taking what it holds along. Linear in the slots
+    /// named and the depth they lie at.
+    fn roots_of(&self, slots: &[u32]) -> Vec<u32> {
+        let named: HashSet<u32> = slots.iter().copied().collect();
+        let mut seen = HashSet::with_capacity(named.len());
+        slots
+            .iter()
+            .copied()
+            .filter(|&s| seen.insert(s) && !self.is_border(s))
+            .filter(|&s| {
+                let mut at = self.container(s);
+                while at != CANVAS {
+                    if named.contains(&at) {
+                        return false;
+                    }
+                    at = self.container(at);
+                }
+                true
+            })
+            .collect()
+    }
+
+    /// Moves the nodes in `slots` as `how` says, by a delta for `translate` or to a world position
+    /// for `place`: the nodes named that lie in no other named node, each once, and what they
+    /// hold, at every depth, to the sum of its container's new world position and its own
+    /// relative to it, which the move keeps, so that no rounding of a delta builds up within a
+    /// container, each node cut where it meets the world's limit.
+    fn shift(&mut self, slots: &[u32], how: Shift) -> Result<(), MoveError> {
         self.nodes_held(slots)?;
+        let (Shift::By(numbers) | Shift::To(numbers)) = how;
+        if !numbers.iter().all(|n| n.is_finite()) {
+            return Err(PositionError::NonFinite.into());
+        }
+        let named;
+        // A border node follows its node and is moved by nothing else
+        // (ARCH-border-nodes-ride-sides, *Moves and resizes*).
+        let roots = if slots.len() > 1 || slots.iter().any(|&s| self.is_border(s)) {
+            named = self.roots_of(slots);
+            named.as_slice()
+        } else {
+            slots
+        };
         // Each node stops where it meets the world's limit, so that nothing derived from it turns
         // infinite.
-        translate_positions(
-            &mut self.positions,
-            &self.sizes,
-            slots,
-            [dx, dy],
-            WORLD_LIMIT,
-        )?;
+        match how {
+            Shift::By(delta) => {
+                translate_positions(&mut self.positions, &self.sizes, roots, delta, WORLD_LIMIT)?;
+            }
+            Shift::To(at) => {
+                for &root in roots {
+                    let i = root as usize * 2;
+                    for axis in 0..2 {
+                        let size = f64::from(self.sizes[i + axis]);
+                        self.positions[i + axis] = within_world(at[axis], size, WORLD_LIMIT);
+                    }
+                }
+            }
+        }
+        for &root in roots {
+            if self.container(root) != CANVAS {
+                self.keep_relative(root);
+            }
+        }
+        let held;
+        let slots = if roots.iter().any(|&s| !self.held(s).is_empty()) {
+            // Each container before what it holds, so that each is summed from where it now is.
+            held = self.with_held(roots)?;
+            let root_set: HashSet<u32> = roots.iter().copied().collect();
+            for &slot in held.iter().filter(|s| !root_set.contains(s)) {
+                let summed = self.summed(slot);
+                let i = slot as usize * 2;
+                for axis in 0..2 {
+                    let size = f64::from(self.sizes[i + axis]);
+                    self.positions[i + axis] = within_world(summed[axis], size, WORLD_LIMIT);
+                }
+            }
+            held.as_slice()
+        } else {
+            roots
+        };
+        // The border nodes of every node moved ride along in the same call.
+        let mut riders = Vec::new();
+        for &slot in slots {
+            riders.extend_from_slice(self.borders(slot));
+        }
+        for &rider in &riders {
+            self.position_border(rider);
+        }
         let mut edges = std::mem::take(&mut self.scratch);
         edges.clear();
-        for &slot in slots {
+        for &slot in slots.iter().chain(&riders) {
             let bounds = self.node_bounds(slot);
             self.node_grid.set(slot, &bounds);
             edges.extend_from_slice(&self.incident[slot as usize]);
@@ -145,12 +287,30 @@ impl Graph {
         Ok(())
     }
 
+    /// Puts the node in `slot` at the world position `(x, y)`, and what it holds, at every depth,
+    /// at the sum along its chain, as `translate` moves them, so that a drag taken back puts the
+    /// node and its content where they were and not where a sum of the drag's `f32` deltas would
+    /// (API-edits-report-nested-changes, *Vetoes*). A slot that holds no node, or a point that is
+    /// not finite, refuses the call, which then changes nothing.
+    pub fn place(&mut self, slot: u32, x: f64, y: f64) -> Result<(), MoveError> {
+        self.shift(&[slot], Shift::To([x, y]))
+    }
+
     /// Gives the node in `slot` the height `height`, which its content lays out to
     /// (REN-node-content-in-rows), and re-places its edges and its place in the index. A slot that
     /// holds no node refuses the call, which then changes nothing.
     pub fn resize_node(&mut self, slot: u32, height: f32) -> Result<(), SlotError> {
         self.nodes_held(&[slot])?;
         self.sizes[slot as usize * 2 + 1] = height;
+        self.reboxed(slot);
+        Ok(())
+    }
+
+    /// Takes the box the node in `slot` now has into the index, and places its edges and its border
+    /// nodes again (ARCH-border-nodes-ride-sides).
+    pub(super) fn reboxed(&mut self, slot: u32) {
+        // A border node of another size stays centred on its node's outline.
+        self.position_border(slot);
         let bounds = self.node_bounds(slot);
         self.node_grid.set(slot, &bounds);
         let edges = std::mem::take(&mut self.incident[slot as usize]);
@@ -158,8 +318,8 @@ impl Graph {
             self.place_edge(edge);
         }
         self.incident[slot as usize] = edges;
+        self.ride(slot);
         self.keep_index();
-        Ok(())
     }
 
     /// The node sizes, `width, height` per slot.
@@ -171,6 +331,27 @@ impl Graph {
     /// (REN-closed-set-of-node-shapes).
     pub fn shape(&self, slot: u32) -> NodeShape {
         self.shapes.get(slot as usize).copied().unwrap_or_default()
+    }
+
+    /// How the outline of the node in `slot` is drawn, solid where none was given
+    /// (REN-node-shapes-cover-uml, *Outline*).
+    pub fn outline(&self, slot: u32) -> Outline {
+        self.outlines
+            .get(slot as usize)
+            .copied()
+            .unwrap_or_default()
+    }
+
+    /// Draws the outline of the node in `slot` as `outline` says. A slot that holds no node
+    /// refuses the call, which then changes nothing.
+    pub fn set_outline(&mut self, slot: u32, outline: Outline) -> Result<(), SlotError> {
+        self.nodes_held(&[slot])?;
+        let i = slot as usize;
+        if self.outlines.len() <= i {
+            self.outlines.resize(i + 1, Outline::default());
+        }
+        self.outlines[i] = outline;
+        Ok(())
     }
 
     /// Gives the node in `slot` the node shape `shape`, and places its edges again, whose ends
@@ -189,6 +370,7 @@ impl Graph {
             self.place_edge(edge);
         }
         self.incident[i] = edges;
+        self.ride(slot);
         self.keep_index();
         Ok(())
     }
@@ -202,7 +384,7 @@ fn translate_positions(
     positions: &mut [f32],
     sizes: &[f32],
     slots: &[u32],
-    [dx, dy]: [f32; 2],
+    [dx, dy]: [f64; 2],
     limit: f64,
 ) -> Result<(), PositionError> {
     if !dx.is_finite() || !dy.is_finite() {
@@ -212,17 +394,22 @@ fn translate_positions(
         let i = slot as usize * 2;
         for (axis, delta) in [(i, dx), (i + 1, dy)] {
             // In `f64`, so that a move past `f32` is cut rather than turned infinite.
-            let moved = f64::from(positions[axis]) + f64::from(delta);
-            let size = f64::from(sizes[axis]);
-            #[expect(
-                clippy::cast_possible_truncation,
-                reason = "cut to within `limit`, far within f32, before it is rounded"
-            )]
-            let cut = moved.clamp(-limit, (limit - size).max(-limit)) as f32;
-            positions[axis] = cut;
+            let moved = f64::from(positions[axis]) + delta;
+            positions[axis] = within_world(moved, f64::from(sizes[axis]), limit);
         }
     }
     Ok(())
+}
+
+/// `at`, on one axis, of a node of `size` there, cut to keep the node within `limit` of the origin,
+/// as `f32` rounds it.
+fn within_world(at: f64, size: f64, limit: f64) -> f32 {
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "cut to within `limit`, far within f32, before it is rounded"
+    )]
+    let cut = at.clamp(-limit, (limit - size).max(-limit)) as f32;
+    cut
 }
 
 #[cfg(test)]
@@ -232,6 +419,7 @@ mod tests {
     use super::*;
     use crate::geometry::tests::on_the_outline_towards;
     use crate::geometry::{Dock, Point, Sides};
+    use crate::graph::End;
     use crate::stroke::EdgeStyle;
 
     /// The centre of the node in `slot`.
@@ -264,9 +452,9 @@ mod tests {
             let (source, target) = if i % 2 == 0 { (0, i + 1) } else { (i + 1, 0) };
             specs.push(EdgeSpec {
                 sides: OUTLINE,
-                source,
-                target,
-                label: None,
+                source: End::Node(source),
+                target: End::Node(target),
+                labels: Vec::new(),
                 style: EdgeStyle::unstyled(),
             });
         }
@@ -336,9 +524,9 @@ mod tests {
             vec![100.0, 60.0, 100.0, 60.0],
             vec![EdgeSpec {
                 sides: OUTLINE,
-                source: 0,
-                target: 1,
-                label: None,
+                source: End::Node(0),
+                target: End::Node(1),
+                labels: Vec::new(),
                 style: EdgeStyle::unstyled(),
             }],
         )
@@ -391,9 +579,9 @@ mod tests {
                 .filter(|(a, b)| a != b)
                 .map(|(source, target)| EdgeSpec {
                     sides: OUTLINE,
-                    source,
-                    target,
-                    label: None,
+                    source: End::Node(source),
+                    target: End::Node(target),
+                    labels: Vec::new(),
                     style: EdgeStyle::unstyled(),
                 })
                 .collect();
@@ -405,17 +593,18 @@ mod tests {
                 shapes.push(shape);
             }
             for edge in 0..graph.edges_in_use() {
-                let spec = graph.edges[edge as usize];
+                let spec = &graph.edges[edge as usize];
                 let (a, b) = (
-                    centre_of(&graph, spec.source),
-                    centre_of(&graph, spec.target),
+                    centre_of(&graph, spec.nodes().0),
+                    centre_of(&graph, spec.nodes().1),
                 );
                 assert_ne!(a, b, "case {case}: two nodes on one centre");
                 let path = graph.paths[edge as usize];
                 let tolerance = 1e-9 * 500.0 + 8.0 * f64::EPSILON * far;
-                for (end, slot, other) in
-                    [(path.source, spec.source, b), (path.target, spec.target, a)]
-                {
+                for (end, slot, other) in [
+                    (path.source, spec.nodes().0, b),
+                    (path.target, spec.nodes().1, a),
+                ] {
                     on_the_outline_towards(
                         end,
                         &graph.node_bounds(slot),
@@ -445,16 +634,16 @@ mod tests {
             vec![
                 EdgeSpec {
                     sides: Sides::default(),
-                    source: 0,
-                    target: 1,
-                    label: None,
+                    source: End::Node(0),
+                    target: End::Node(1),
+                    labels: Vec::new(),
                     style: EdgeStyle::unstyled(),
                 },
                 EdgeSpec {
                     sides: Sides::default(),
-                    source: 1,
-                    target: 2,
-                    label: None,
+                    source: End::Node(1),
+                    target: End::Node(2),
+                    labels: Vec::new(),
                     style: EdgeStyle::unstyled(),
                 },
             ],
@@ -486,9 +675,9 @@ mod tests {
             vec![100.0, 50.0, 100.0, 50.0],
             vec![EdgeSpec {
                 sides: Sides::default(),
-                source: 0,
-                target: 1,
-                label: None,
+                source: End::Node(0),
+                target: End::Node(1),
+                labels: Vec::new(),
                 style: EdgeStyle::unstyled(),
             }],
         )
@@ -526,15 +715,15 @@ mod tests {
             .flat_map(|i| [(0, i), (i, 0)])
             .map(|(source, target)| EdgeSpec {
                 sides: Sides::default(),
-                source,
-                target,
-                label: None,
+                source: End::Node(source),
+                target: End::Node(target),
+                labels: Vec::new(),
                 style: EdgeStyle::unstyled(),
             })
             .collect();
         let mut graph = Graph::new(positions, vec![1.0; count as usize * 2], edges).unwrap();
         let start = std::time::Instant::now();
-        assert_eq!(graph.remove_nodes(&[0]).unwrap().len(), 200_000);
+        assert_eq!(graph.remove_nodes(&[0]).unwrap().1.len(), 200_000);
         let hub = start.elapsed();
         let mut graph2 = paired(1_000);
         let all: Vec<u32> = (0..1_000).collect();
@@ -643,11 +832,11 @@ mod tests {
     fn a_non_finite_delta_is_refused() {
         let mut positions = [0.0, 0.0];
         assert_eq!(
-            translate_positions(&mut positions, &[0.0; 2], &[0], [f32::NAN, 0.0], 1e9),
+            translate_positions(&mut positions, &[0.0; 2], &[0], [f64::NAN, 0.0], 1e9),
             Err(PositionError::NonFinite)
         );
         assert_eq!(
-            translate_positions(&mut positions, &[0.0; 2], &[0], [0.0, f32::INFINITY], 1e9),
+            translate_positions(&mut positions, &[0.0; 2], &[0], [0.0, f64::INFINITY], 1e9),
             Err(PositionError::NonFinite)
         );
         assert_eq!(positions, [0.0, 0.0]);
@@ -663,7 +852,7 @@ mod tests {
             &mut positions,
             &[20.0, 10.0],
             &[0],
-            [f32::MAX, f32::MAX],
+            [f64::from(f32::MAX), f64::from(f32::MAX)],
             100.0,
         )
         .unwrap();

@@ -8,10 +8,12 @@
 //! lenient reading of a field, `input` the types the host application hands over, `strings` the
 //! decoding of the string columns, `node_columns` and `edge_columns` the columns of a load's nodes
 //! and edges, `problem` the refusals, `item` the reading of a node or an edge, `checks` the rules
-//! of each, `load` a load and `addNode`, `edit` `addEdge` and the patches, and `content` the node
-//! content; `snapshot` builds, for the tests, the columns the shell builds. This root keeps what
-//! the columns of both lists share: the first value a load's first pass refuses.
+//! of each, `load` a load and `addNode`, `edit` `addEdge` and the patches, `regions` the regions
+//! a node is divided into, and `content` the node content; `snapshot` builds, for the tests, the
+//! columns the shell builds. This root keeps what the columns of both lists share: the first value
+//! a load's first pass refuses.
 
+mod borders;
 mod checks;
 mod content;
 mod edge_columns;
@@ -23,18 +25,19 @@ mod limits;
 mod load;
 mod node_columns;
 mod problem;
+mod regions;
 #[cfg(test)]
 mod snapshot;
 mod strings;
 
 use checks::rgb;
-pub(crate) use checks::{shaped_height, within_by_height};
+pub(crate) use checks::{content_top, node_height, within_by_height};
 use content::Cursor;
 #[cfg(test)]
 pub(crate) use content::TEST_BUDGET;
 pub(crate) use content::{
     COLUMN_LIMIT, Checked, ROW_LIMIT, SEGMENT_LIMIT, check_content_budget, direction_of, rgb_of,
-    role_of,
+    role_of, within_budget,
 };
 pub use content::{
     ContentColumns, ContentData, ContentInput, DirectionCode, ElementHit, ElementKind, KindCode,
@@ -42,22 +45,26 @@ pub use content::{
 };
 pub(crate) use edge_columns::edge_refused_of;
 pub use edge_columns::{ArrowCode, EdgeColumns, EdgeField, SideCode};
+#[cfg(test)]
+pub(crate) use edit::PatchValue;
 pub use edit::{EdgePatch, EdgeRefusal, NodePatch};
 pub(crate) use edit::{add_edge_to, patch_of, update_edge_in};
 pub use field::Field;
 pub use input::{
-    Arrow, ContentElement, Dock, EdgeInput, LabelInput, NodeContent, NodeInput, NodeShape, Pair,
-    Segment, Side, TextRole, Trend, TrendDirection,
+    Arrow, ContentElement, Dock, EdgeInput, LabelInput, NodeContent, NodeInput, NodeShape, Outline,
+    Pair, Segment, Side, TextRole, Trend, TrendDirection,
 };
-pub(crate) use limits::{ID_LIMIT, TEXT_LIMIT, check_graph_size, check_id_budget};
-pub use limits::{MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_TEXT};
+pub(crate) use limits::{ID_LIMIT, LABEL_LIMIT, TEXT_LIMIT, check_graph_size, check_id_budget};
+pub use limits::{MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_LABELS, MAX_TEXT};
 #[cfg(test)]
 pub(crate) use load::graph_of;
-pub(crate) use load::{add_node_to, height_of, load_of};
+pub(crate) use load::{Loaded, add_node_to, height_of, load_of};
 pub(crate) use node_columns::refused_of;
-pub use node_columns::{NodeColumns, NodeField, NodeShapeCode};
+pub use node_columns::{NodeColumns, NodeField, NodeShapeCode, OutlineCode};
 pub use problem::{GraphDataProblem, GraphList};
 pub(crate) use problem::{malformed, slot, unshaped};
+pub use regions::{Divide, Line, RegionColumns, RegionInput};
+pub(crate) use regions::{Region, add_regions, check_regions, divide_of, holding, regions_of};
 #[cfg(test)]
 pub(crate) use snapshot::{EdgeCells, GraphBatch, OwnedColumns, OwnedEdgeColumns};
 use strings::{bounds_fit, lengths, runs_fit, string_at, value_at, values};

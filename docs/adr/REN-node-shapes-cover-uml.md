@@ -70,8 +70,8 @@ node shape from the engine's numbers.
 - **Content and node shape:**
   - The *content node shapes* are `rectangle`, `rounded-rectangle`, `ellipse`, and `diamond`.
     Each lays its content out in its inner rectangle:
-    - `rectangle`: today's node, its corners rounded by 6 as the shell draws them now (read in
-      `packages/comb/src/render/nodes.ts`); the node less today's padding.
+    - `rectangle`: today's node, its corners rounded by 6 (`RECTANGLE_RADIUS` in
+      `crates/engine/src/shape.rs`); the node less today's padding.
     - `rounded-rectangle`: the same, its corners rounded by 10. That radius lies within the
       padding of 10 above and below and 12 at the sides (`crates/engine/src/content.rs`), so
       content lays out as in a rectangle.
@@ -79,10 +79,12 @@ node shape from the engine's numbers.
       padding.
     - `diamond`: the rectangle half its width and half its height, centred, less the padding.
     - `pentagon`: a rectangle whose right side is a point, the point as deep as half the node's
-      height; the rectangle left of the point, less the padding.
+      height and at most a quarter of its width; the rectangle left of the point, less the padding.
     - `notched-rectangle`: a rectangle whose left side is notched inwards by a point as deep as
-      half the node's height; the rectangle right of the notch's depth, less the padding.
-    - `note`: a rectangle whose top right corner is folded down by 12; the node less the padding.
+      half the node's height and at most a quarter of its width; the rectangle right of the
+      notch's depth, less the padding.
+    - `note`: a rectangle whose top right corner is folded down by 12, at most a quarter of the
+      node's width and of its height; the node less the padding.
     - `frame`: a rectangle with a tab at its top left, as wide as its content and as high as its
       content, less the padding, its lower right corner cut by 8; the content is laid out in the
       tab, and what the frame holds lies below and beside it.
@@ -96,18 +98,21 @@ node shape from the engine's numbers.
   - The *captioned node shapes* are `actor` and `hourglass`: a drawing of fixed proportions at
     the top of the node, as wide as the node, of height 2 for `actor` and 1.5 for `hourglass`
     times the drawing's width, capped at 48 world units; the content is laid out below the
-    drawing, to the node's width.
+    drawing, to the node's width. A drawing capped at 48 keeps its proportions and stands centred
+    across the node. An outline the data gives changes nothing on a captioned node shape.
 - **Height:**
   - A content node shape is as high as its inner rectangle needs to hold its content laid out to
     the inner rectangle's width. For a rectangle that is today's height.
-  - A circle and a ringed circle are as high as wide.
+  - A circle and a ringed circle are as high as wide, whatever height their data gives.
   - A bar is 8 world units high where its data gives no height; with a height it is that high, so
     that a bar 8 wide and given a height stands upright, as a vertical fork or join.
   - A crossed circle and a cross are as high as wide.
-  - A captioned node shape is as high as its drawing and its content.
-  - A node whose data gives a height is that high, never less than its content needs; a height
-    below that is raised to it. A frame is at least as high as its tab. Without a height a node
-    is as high as above.
+  - A captioned node shape is as high as its drawing and its content, and with content at least
+    the least height of [REN-node-content-and-hits](REN-node-content-and-hits.md) as a whole, its
+    drawing counted in.
+  - Any other node whose data gives a height is that high, never less than its content needs; a
+    height below that is raised to it. A frame is at least as high as its tab. Without a height a
+    node is as high as above.
   - `heightOf` takes the node shape as an optional third argument, `rectangle` where it is left
     out, so that every existing call answers as before.
 - **Hit test:** a node is hit within its outline, exactly: the ellipse by its equation, the
@@ -119,12 +124,15 @@ node shape from the engine's numbers.
   the empty canvas does.
 - **Crossing:** the engine gives, for a node and a point outside it, the point where the line
   from the node's centre towards that point crosses the outline. Docking an edge's end on the
-  outline, a decision of its own, uses it.
+  outline, a decision of its own, uses it. A captioned node shape is crossed as its bounding
+  rectangle, as it is hit, and its border nodes ride that rectangle.
 - **Outline:** `NodeData` gains an optional `outline`: `"solid"`, which `api` fills in where the
   host leaves it out, `"none"`, or a dash pattern in the form an edge takes
-  ([REN-virtualized-nested-scene](REN-virtualized-nested-scene.md)). A dashed outline is drawn in
-  dashes that the engine lays along the outline from its top left, in world units; an outline of
-  `"none"` draws the fill alone. A filled node shape keeps its fill whatever its outline.
+  ([REN-virtualized-nested-scene](REN-virtualized-nested-scene.md)). The engine lays a dashed
+  outline's dashes along the outline in world units. They run clockwise from the point of the
+  outline nearest the top left corner of the node's box. An unselected node with an outline of
+  `"none"` draws its fill alone. A filled node shape keeps its fill whatever its outline. A
+  selected node's outline is drawn solid in the selection colour, whatever its outline.
 - **Drawing:**
   - The content node shapes are drawn as a node is today: the white fill and the border, its
     width and colour following the selection, in the node shape's outline.

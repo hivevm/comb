@@ -4,7 +4,7 @@
 
 use comb_engine::content::{self as layout, Cell, Element, Fonts, Placed, Role};
 use comb_engine::graph::Level;
-use comb_engine::shape::NodeShape;
+use comb_engine::shape::{Inner, NodeShape};
 use serde::Serialize;
 use tsify::Tsify;
 
@@ -82,36 +82,66 @@ impl ContentData {
         &self.fractions[self.view().segments(element)]
     }
 
-    /// Lays out the content of the node at `node`, of node shape `shape` and `[width, height]`,
-    /// in `fonts`, within its node shape's inner rectangle (REN-closed-set-of-node-shapes), and
-    /// pushes where its elements lie onto `out`, relative to the node's top-left corner; `cells`
-    /// and `rows` are the caller's to reuse.
-    pub(crate) fn lay_out<'a>(
+    /// The inner rectangle of the node at `node`, of node shape `shape` and `[width, height]`,
+    /// that its content is laid out in, in `fonts` (REN-node-shapes-cover-uml): a frame's tab as
+    /// large as its content uncut. It fills `cells` and `rows`, the caller's to reuse, with the
+    /// node's content as the layout reads it, each separator a row of one cell of its own.
+    pub(crate) fn inner<'a>(
         &'a self,
         node: usize,
         (shape, [width, height]): (NodeShape, [f32; 2]),
         fonts: &Fonts,
         cells: &mut Vec<Cell<'a>>,
         rows: &mut Vec<u32>,
-        out: &mut Vec<Placed>,
-    ) {
+    ) -> Inner {
         cells.clear();
         rows.clear();
         // A slot of a graph built without content, as only the tests build one, holds none.
-        if node + 1 >= self.row_bounds.len() {
-            return;
+        if node + 1 < self.row_bounds.len() {
+            let view = self.view();
+            let mut elements = self.elements_of(node);
+            for row in view.rows(node) {
+                // A separator holds no element in the columns: a row of one cell of its own.
+                if view.separator(row) {
+                    rows.push(1);
+                    cells.push(Cell {
+                        weight: 1.0,
+                        element: Element::Separator,
+                    });
+                    continue;
+                }
+                let count = view.elements(row).len();
+                rows.push(numbered(count));
+                for (_, _, element, at) in elements.by_ref().take(count) {
+                    cells.push(Cell {
+                        weight: self.weights[element],
+                        element: self.element(element, at.text),
+                    });
+                }
+            }
         }
-        let view = self.view();
-        for row in view.rows(node) {
-            rows.push(numbered(view.elements(row).len()));
-        }
-        for (_, _, element, at) in self.elements_of(node) {
-            cells.push(Cell {
-                weight: self.weights[element],
-                element: self.element(element, at.text),
-            });
-        }
-        let inner = shape.inner(f64::from(width), f64::from(height));
+        let tab = if shape == NodeShape::Frame {
+            layout::natural(cells, rows, fonts)
+        } else {
+            [0.0; 2]
+        };
+        shape.inner(f64::from(width), f64::from(height), tab)
+    }
+
+    /// Lays out the content of the node at `node`, of the node shape and size of `frame`, in
+    /// `fonts`, within its inner rectangle (`inner`), and pushes where its elements lie onto `out`,
+    /// relative to the node's top-left corner, a separator's line among them; `cells` and `rows`
+    /// are the caller's to reuse, each separator a row of one cell.
+    pub(crate) fn lay_out<'a>(
+        &'a self,
+        node: usize,
+        frame: (NodeShape, [f32; 2]),
+        fonts: &Fonts,
+        cells: &mut Vec<Cell<'a>>,
+        rows: &mut Vec<u32>,
+        out: &mut Vec<Placed>,
+    ) {
+        let inner = self.inner(node, frame, fonts, cells, rows);
         let start = out.len();
         // The inner rectangle moved left and up to whole world units, still within the node, so
         // that the layout's sums stay as exact in `f32` as they are at the node's corner.
@@ -151,14 +181,19 @@ impl ContentData {
         placed.clear();
         self.lay_out(node, frame, fonts, cells, rows, placed);
         let hit = layout::element_at(cells, placed, x, y, level)?;
-        let (row, column, element, at) = self.elements_of(node).nth(hit)?;
+        // Of the elements of the columns, which hold none for a separator before it.
+        let separators = cells[..hit]
+            .iter()
+            .filter(|cell| matches!(cell.element, Element::Separator))
+            .count();
+        let (row, column, element, at) = self.elements_of(node).nth(hit - separators)?;
         let (kind, action) = match self.element(element, at.text) {
             Element::Action { .. } => (ElementKind::Action, Some(self.name(at.name).to_owned())),
             Element::Badge { .. } => (ElementKind::Badge, None),
             Element::Progress => (ElementKind::Progress, None),
             Element::Metric { .. } => (ElementKind::Metric, None),
             Element::Icon => (ElementKind::Icon, None),
-            Element::Text { .. } => (ElementKind::Text, None),
+            Element::Text { .. } | Element::Separator => (ElementKind::Text, None),
         };
         Some(ElementHit {
             row,
@@ -168,8 +203,9 @@ impl ContentData {
         })
     }
 
-    /// The height the content of the node at `node` lays out to in `fonts`, before its node shape
-    /// (`shaped_height`); that of no rows for a node without content, as only the tests build one.
+    /// The height of the rows of the node at `node` and their padding in `fonts`, before the least
+    /// height of a node and its node shape (`node_height`); that of no rows for a node without
+    /// content, as only the tests build one.
     pub(crate) fn height(&self, node: usize, fonts: &Fonts) -> f64 {
         let view = self.view();
         let rows = if node + 1 < self.row_bounds.len() {
@@ -178,5 +214,15 @@ impl ContentData {
             0..0
         };
         view.height(rows, fonts)
+    }
+
+    /// The height `height` gives of the node at `node`, and its number of rows.
+    pub(crate) fn laid(&self, node: usize, fonts: &Fonts) -> (f64, usize) {
+        let rows = if node + 1 < self.row_bounds.len() {
+            self.view().rows(node).len()
+        } else {
+            0
+        };
+        (self.height(node, fonts), rows)
     }
 }

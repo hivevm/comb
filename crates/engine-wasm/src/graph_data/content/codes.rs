@@ -32,7 +32,8 @@ pub(crate) const SEGMENT_LIMIT: u32 = 8;
 
 /// The code of an element's kind in its column (API-bridge-takes-serde-and-columns): `Unnamed` for
 /// an element whose kind names none the snapshot codes, or that is no object, which its rule
-/// refuses.
+/// refuses; and `Separator` for a separator's line among the elements a query placed, which no
+/// element of a load holds (REN-node-content-and-hits, *Separator*).
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum KindCode {
@@ -43,6 +44,7 @@ pub enum KindCode {
     Metric,
     Icon,
     Unnamed,
+    Separator,
 }
 
 /// The code of a text's role in its column: `Unnamed` for a role that names none, which its rule

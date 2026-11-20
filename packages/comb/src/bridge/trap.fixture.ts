@@ -18,7 +18,7 @@ const bridge = createBridgeSync(await Bun.file(url).arrayBuffer());
 // (ARCH-one-workspace-per-example), its node and its edges, none, written into columns
 // (API-bridge-takes-serde-and-columns).
 const columns = nodeColumns(1, PIECE_BOUND);
-columns.node("a", 0, 0, 100, "rectangle");
+columns.node("a", 0, 0, 100, "rectangle", null, null);
 columns.element("text", "title", 1, undefined, "a", undefined, true);
 const edges = edgeColumns(0, PIECE_BOUND).columns();
 const graph = { nodes: columns.columns(), edges } as GraphSnapshot;

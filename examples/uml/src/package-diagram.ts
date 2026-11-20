@@ -66,7 +66,7 @@ function edgeOf([source, target, label]: (typeof DEPENDENCIES)[number]): EdgeDat
     target,
     ...(within ? {} : { sourceSide: "bottom", targetSide: "top" }),
     ...styleOf("dependency"),
-    label: labelOf("dependency", label),
+    labels: [labelOf("dependency", label)],
   };
 }
 
@@ -82,6 +82,10 @@ export function packageDiagram(heightOf: Comb["heightOf"]): DiagramData {
     graph: { nodes: PACKAGES.map((name) => byId.get(name)!), edges },
     classifiers,
     states: new Map(),
+    activities: new Map(),
+    useCases: new Map(),
+    transitions: new Map(),
+    flows: new Map(),
     kinds: new Map(edges.map(({ id }) => [id, "dependency"])),
   };
 }

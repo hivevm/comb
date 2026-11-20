@@ -1,7 +1,9 @@
 //! The hit test (REN-node-content-in-rows): what a press at a point hits, a connector before an
-//! edge label, a node, and an edge.
+//! edge label, a node that is no container, an edge, and a container
+//! (ARCH-engine-edits-nested-graph).
 
-use super::{Graph, Level};
+use super::regions::LINE_REACH;
+use super::{Graph, Handle, Level};
 use crate::geometry::{Point, Rect, Side, bounded_pixel, length};
 use crate::stroke::{Stroke, near_path};
 
@@ -12,31 +14,45 @@ const SIDES: [Side; 4] = [Side::Top, Side::Right, Side::Bottom, Side::Left];
 /// (REN-node-content-in-rows).
 const EDGE_REACH: f64 = 4.0;
 
+/// How near a press has to come to a resize handle's middle to hit it, on each axis, in screen
+/// pixels (REN-node-content-and-hits).
+const HANDLE_REACH: f64 = 6.0;
+
 /// How near a press has to come to a connector to hit it, in screen pixels
 /// (REN-node-content-in-rows).
 const CONNECTOR_REACH: f64 = 8.0;
 
 /// What a press hits (REN-node-content-in-rows): a connector by its node's slot and side, a label
-/// by its edge's slot, a node, or an edge, by its slot.
+/// by its edge's slot and its place in that edge's list of labels, a node, or an edge, by its
+/// slot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Target {
     /// The connector of a side of the node in a slot (API-edges-dock-side-or-outline).
     Connector(u32, Side),
-    /// The label of the edge in a slot (REN-node-content-in-rows).
-    Label(u32),
+    /// The line after the region in a slot, between it and the next region
+    /// (REN-node-content-and-hits, *Line between regions*).
+    Line(u32),
+    /// The label at a place of the list of labels of the edge in a slot
+    /// (REN-node-content-in-rows, API-edges-dock-nodes-or-edges).
+    Label(u32, u32),
     Node(u32),
     Edge(u32),
 }
 
 impl Graph {
-    /// What a press at `point` hits where a screen pixel is `pixel` world units, at `level`: where
+    /// What a press at `point` hits where a screen pixel is `pixel` world units, at `level`: at the
+    /// near and middle level a line between two regions within `LINE_REACH` screen pixels, the
+    /// innermost; else where
     /// `connectors` asks for them, at the near and middle level, a connector within
     /// `CONNECTOR_REACH` screen pixels, and inside its node's outline within a quarter of the
     /// node's extent as well (`connector_at`), of the node of the highest rank; else at the near
-    /// level a label whose measured pill holds it, of the highest edge slot; else a node whose
-    /// outline holds it, the one of the highest rank; else an edge within `EDGE_REACH` screen
-    /// pixels of its path as the stroke of `level` flattens it, the one in the highest slot; else
-    /// nothing (REN-node-content-in-rows).
+    /// level a label whose measured pill holds it, of the highest edge slot and of its labels the
+    /// last, drawn on top; else a node that is
+    /// no container whose outline holds it, the one of the highest rank; else an edge within
+    /// `EDGE_REACH` screen pixels of its path as the stroke of `level` flattens it, the one in the
+    /// highest slot; else a container whose outline holds it, the last in the order of containers;
+    /// else nothing (REN-node-content-in-rows, ARCH-engine-edits-nested-graph). A region hit is
+    /// named as the node it divides.
     /// A pixel beyond any zoom hits as the largest a query strokes for.
     pub fn hit_at(
         &mut self,
@@ -46,6 +62,11 @@ impl Graph {
         connectors: bool,
     ) -> Option<Target> {
         let pixel = bounded_pixel(pixel);
+        if level != Level::Far
+            && let Some(slot) = self.line_at(point, LINE_REACH * pixel)
+        {
+            return Some(Target::Line(slot));
+        }
         if connectors
             && level != Level::Far
             && let Some((slot, side)) = self.connector_at(point, CONNECTOR_REACH * pixel)
@@ -53,11 +74,14 @@ impl Graph {
             return Some(Target::Connector(slot, side));
         }
         if level == Level::Near
-            && let Some(slot) = self.label_at(point)
+            && let Some((slot, index)) = self.label_at(point)
         {
-            return Some(Target::Label(slot));
+            return Some(Target::Label(slot, index));
         }
-        if let Some(slot) = self.node_at(point) {
+        // A node that is no container lies above the edges, a container below them
+        // (ARCH-engine-edits-nested-graph).
+        let node = self.node_at(point);
+        if let Some(slot) = node.filter(|&s| !self.is_container(s)) {
             return Some(Target::Node(slot));
         }
         let reach = EDGE_REACH * pixel;
@@ -69,34 +93,71 @@ impl Graph {
         let found = candidates.iter().copied().find(|&slot| {
             let i = slot as usize;
             self.bounds[i].grown(reach).contains(point)
-                && near_path(&self.paths[i], tolerance, point, reach, &mut self.points)
+                && near_path(
+                    (&self.paths[i], self.edges[i].style.lightning),
+                    tolerance,
+                    point,
+                    reach,
+                    &mut self.points,
+                )
         });
         self.scratch = candidates;
-        found.map(Target::Edge)
+        // A press on a region is one on the node it divides (ARCH-regions-are-container-slots,
+        // *Drawing and hitting*).
+        found
+            .map(Target::Edge)
+            .or(node.map(|slot| Target::Node(self.divided_node(slot))))
     }
 
-    /// The label whose measured pill holds `point`, of the edge in the highest slot
+    /// The resize handle of the selected node in `selected` within `HANDLE_REACH` screen pixels
+    /// of `point` on each axis, the nearest of them, where a screen pixel is `pixel` world units;
+    /// none at the far level, for a node that is not resizable, or for a slot that holds none
+    /// (REN-node-content-and-hits, *Resize handle*). A press there comes before every other hit.
+    pub fn handle_at(
+        &self,
+        point: Point,
+        pixel: f64,
+        level: Level,
+        selected: u32,
+    ) -> Option<Handle> {
+        if level == Level::Far || !self.holds_node(selected) || !self.is_resizable(selected) {
+            return None;
+        }
+        let reach = HANDLE_REACH * bounded_pixel(pixel);
+        let bounds = self.node_bounds(selected);
+        Handle::ALL
+            .into_iter()
+            .map(|handle| {
+                let [x, y] = handle.at(&bounds);
+                (handle, (x - point.x).abs().max((y - point.y).abs()))
+            })
+            .filter(|&(_, d)| d <= reach)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(handle, _)| handle)
+    }
+
+    /// The label whose measured pill holds `point`, of the edge in the highest slot, and of its
+    /// labels the last in its list, as its edge slot and its place there
     /// (REN-node-content-in-rows).
-    fn label_at(&mut self, point: Point) -> Option<u32> {
+    fn label_at(&mut self, point: Point) -> Option<(u32, u32)> {
         if self.widest_pill <= 0.0 {
             return None;
         }
         self.edge_grid
             .candidates(&Rect::at(point).grown(self.widest_pill), &mut self.scratch);
-        self.scratch
-            .iter()
-            .copied()
-            .filter(|&slot| {
-                let i = slot as usize;
-                match (self.labels[i], self.pills[i]) {
-                    (Some(at), Some((half_width, half_height))) => {
-                        (point.x - at.x).abs() <= half_width
-                            && (point.y - at.y).abs() <= half_height
-                    }
-                    _ => false,
+        let mut found = None;
+        for &slot in &self.scratch {
+            let i = slot as usize;
+            for (index, (at, pill)) in (0_u32..).zip(self.labels[i].iter().zip(&self.pills[i])) {
+                let Some((half_width, half_height)) = *pill else {
+                    continue;
+                };
+                if (point.x - at.x).abs() <= half_width && (point.y - at.y).abs() <= half_height {
+                    found = found.max(Some((slot, index)));
                 }
-            })
-            .max()
+            }
+        }
+        found
     }
 
     /// The connector within `reach` of `point`: of the nodes with one there, the one drawn on top,
@@ -110,6 +171,10 @@ impl Graph {
             .candidates(&Rect::at(point).grown(reach), &mut self.scratch);
         let mut best: Option<(u32, Side, f64)> = None;
         for &slot in &self.scratch {
+            // A region has no connectors: no edge ends on it.
+            if self.is_region(slot) {
+                continue;
+            }
             let bounds = self.node_bounds(slot);
             if !bounds.grown(reach).contains(point) {
                 continue;
@@ -134,9 +199,8 @@ impl Graph {
                 })
                 .min_by(|a, b| a.1.total_cmp(&b.1));
             if let Some((side, d)) = near {
-                let above = best.is_none_or(|(other, _, _)| {
-                    self.ranks[slot as usize] > self.ranks[other as usize]
-                });
+                let above =
+                    best.is_none_or(|(other, _, _)| self.draw_key(slot) > self.draw_key(other));
                 if above {
                     best = Some((slot, side, d));
                 }
@@ -145,9 +209,9 @@ impl Graph {
         best.map(|(slot, side, _)| (slot, side))
     }
 
-    /// The node at `point`: of the nodes whose outline holds it, the one drawn on top, which is
-    /// the one of the highest rank (ARCH-engine-edits-graph-in-place,
-    /// REN-closed-set-of-node-shapes).
+    /// The node at `point`: of the nodes whose outline holds it, the one drawn on top, a node
+    /// that is no container before every container, the others by rank and containers by their
+    /// order (ARCH-engine-edits-nested-graph, REN-closed-set-of-node-shapes).
     pub(super) fn node_at(&mut self, point: Point) -> Option<u32> {
         self.node_grid
             .candidates(&Rect::at(point), &mut self.scratch);
@@ -155,14 +219,14 @@ impl Graph {
             .iter()
             .copied()
             .filter(|&slot| self.within_outline(slot, point))
-            .max_by_key(|&slot| self.ranks[slot as usize])
+            .max_by_key(|&slot| self.draw_key(slot))
     }
 }
 
 impl Graph {
     /// Whether `point` lies within the outline of the node in `slot`: within its rectangle, and
     /// within its node shape there.
-    fn within_outline(&self, slot: u32, point: Point) -> bool {
+    pub(super) fn within_outline(&self, slot: u32, point: Point) -> bool {
         let bounds = self.node_bounds(slot);
         bounds.contains(point)
             && self.shape(slot).contains(
@@ -180,6 +244,7 @@ mod tests {
     use super::super::tests::{Lcg, Model, random_inputs};
     use super::*;
     use crate::geometry::{EdgePath, PIXEL_LIMIT};
+    use crate::graph::{Axis, End};
 
     #[test]
     fn a_pixel_beyond_any_zoom_hits_as_the_largest_a_query_strokes_for() {
@@ -188,9 +253,9 @@ mod tests {
         // that far away: an unbounded pixel would reach everything from anywhere.
         let edges = vec![super::super::EdgeSpec {
             sides: crate::geometry::Sides::default(),
-            source: 0,
-            target: 1,
-            label: None,
+            source: End::Node(0),
+            target: End::Node(1),
+            labels: Vec::new(),
             style: crate::stroke::EdgeStyle::unstyled(),
         }];
         let positions = vec![1e36, 0.0, 1e36, 1e35];
@@ -214,6 +279,62 @@ mod tests {
         ));
         assert_eq!(graph.hit_at(far, 1e308, Level::Middle, false), None);
         assert!(bounded_pixel(1e308) * CONNECTOR_REACH < f64::MAX);
+    }
+
+    #[test]
+    fn a_resize_handle_of_the_selected_resizable_node_is_hit_near_and_middle_and_no_other() {
+        // Verifies: REN-node-content-and-hits
+        // A node at the origin, 100 × 8, the thinnest a resize leaves, and one beside it.
+        let positions = vec![0.0, 0.0, 300.0, 0.0];
+        let sizes = vec![100.0, 8.0, 100.0, 60.0];
+        let mut graph = Graph::new(positions, sizes, Vec::new()).unwrap();
+        let at = |graph: &Graph, x: f64, y: f64, level: Level, selected: u32| {
+            graph.handle_at(Point::new(x, y), 2.0, level, selected)
+        };
+        // Not resizable: no handle, whatever is pressed.
+        assert_eq!(at(&graph, 0.0, 0.0, Level::Near, 0), None);
+        graph.set_sizing(0, None, true).unwrap();
+        // Each handle at its point and within 6 screen pixels, 12 world units at a pixel of 2.
+        let corners = [
+            (0.0, 0.0, Handle::TopLeft),
+            (50.0, 0.0, Handle::Top),
+            (100.0, 0.0, Handle::TopRight),
+            (100.0, 8.0, Handle::BottomRight),
+            (50.0, 8.0, Handle::Bottom),
+            (0.0, 8.0, Handle::BottomLeft),
+        ];
+        for level in [Level::Near, Level::Middle] {
+            for (x, y, handle) in corners {
+                assert_eq!(at(&graph, x, y, level, 0), Some(handle), "{handle:?}");
+            }
+            assert_eq!(at(&graph, -11.0, -11.0, level, 0), Some(Handle::TopLeft));
+            assert_eq!(at(&graph, -13.0, 0.0, level, 0), None);
+            // In the middle of a side of a node so thin, the nearest handle wins: the bottom's.
+            assert_eq!(at(&graph, 50.0, 5.0, level, 0), Some(Handle::Bottom));
+            assert_eq!(at(&graph, 101.0, 4.0, level, 0), Some(Handle::Right));
+        }
+        // None at the far level, of another node, or of a slot that holds none.
+        assert_eq!(at(&graph, 0.0, 0.0, Level::Far, 0), None);
+        assert_eq!(at(&graph, 300.0, 0.0, Level::Near, 1), None);
+        assert_eq!(at(&graph, 0.0, 0.0, Level::Near, 9), None);
+    }
+
+    #[test]
+    fn the_side_handles_of_a_taller_node_stand_at_its_sides_middles_and_a_slot_taken_again_has_none()
+     {
+        // Verifies: REN-node-content-and-hits
+        let positions = vec![0.0, 0.0, 300.0, 0.0];
+        let sizes = vec![100.0, 8.0, 100.0, 60.0];
+        let mut graph = Graph::new(positions, sizes, Vec::new()).unwrap();
+        let at =
+            |graph: &Graph, x: f64, y: f64| graph.handle_at(Point::new(x, y), 2.0, Level::Near, 1);
+        graph.set_sizing(1, None, true).unwrap();
+        assert_eq!(at(&graph, 300.0, 30.0), Some(Handle::Left));
+        assert_eq!(at(&graph, 400.0, 30.0), Some(Handle::Right));
+        // A slot freed and taken again is no longer resizable.
+        graph.remove_nodes(&[1]).unwrap();
+        assert_eq!(graph.add_node(300.0, 0.0, 100.0, 60.0), Ok(1));
+        assert!(!graph.is_resizable(1));
     }
 
     #[test]
@@ -251,6 +372,37 @@ mod tests {
         let slot = graph.add_node(0.0, 0.0, 100.0, 60.0).unwrap();
         assert_eq!(slot, 1);
         assert_eq!(graph.shape(1), crate::shape::NodeShape::Rectangle);
+    }
+
+    #[test]
+    fn a_pentagon_without_an_outline_is_hit_within_its_outline_and_beyond_its_point_finds_what_lies_below()
+     {
+        // Verifies: REN-node-shapes-cover-uml
+        // A rectangle below and a pentagon above it, both 220 × 64 and far from the origin, the
+        // pentagon's outline left out; at the near and the middle level, without connectors.
+        use crate::shape::{NodeShape, Outline};
+        let positions = vec![5e6, 5e6, 5e6, 5e6];
+        let sizes = vec![220.0, 64.0, 220.0, 64.0];
+        let mut graph = Graph::new(positions, sizes, Vec::new()).unwrap();
+        graph.set_shape(1, NodeShape::Pentagon).unwrap();
+        graph.set_outline(1, Outline::None).unwrap();
+        assert_eq!(graph.outline(1), Outline::None);
+        for level in [Level::Near, Level::Middle] {
+            let mut at =
+                |x: f64, y: f64| graph.hit_at(Point::new(5e6 + x, 5e6 + y), 1.0, level, false);
+            // Within the outline it leaves out: the pentagon, which lies above.
+            assert_eq!(at(100.0, 32.0), Some(Target::Node(1)));
+            assert_eq!(at(215.0, 32.0), Some(Target::Node(1)));
+            // Beyond its point, inside its bounding rectangle: the rectangle below.
+            assert_eq!(at(215.0, 4.0), Some(Target::Node(0)));
+            assert_eq!(at(215.0, 60.0), Some(Target::Node(0)));
+        }
+        // An outline set on a slot that holds no node is refused, and a slot taken again forgets
+        // the outline of the node it held.
+        assert!(graph.set_outline(7, Outline::Dashed([6.0, 4.0])).is_err());
+        graph.remove_nodes(&[1]).unwrap();
+        assert_eq!(graph.add_node(0.0, 0.0, 100.0, 60.0), Ok(1));
+        assert_eq!(graph.outline(1), Outline::Solid);
     }
 
     #[test]
@@ -314,6 +466,25 @@ mod tests {
         (lower.min(upper), upper)
     }
 
+    /// `distance_to_curve` of the edge `e` of `model` as it is drawn: a lightning bolt's middle
+    /// is its zigzag, whose segments' distance is exact (API-edges-dock-nodes-or-edges).
+    fn distance_to_drawn(model: &Model, e: u32, p: Point) -> (f64, f64) {
+        let path = model.path(e);
+        if !model.specs[e as usize].style.lightning {
+            return distance_to_curve(&path, p);
+        }
+        let (before, [a, b], after) = path.lightning();
+        let zigzag = [before.target, a, b, after.source]
+            .windows(2)
+            .map(|s| crate::stroke::distance_to_segment(p, s[0], s[1]))
+            .fold(f64::INFINITY, f64::min);
+        let (one, other) = (distance_to_curve(&before, p), distance_to_curve(&after, p));
+        (
+            one.0.min(other.0).min(zigzag),
+            one.1.min(other.1).min(zigzag),
+        )
+    }
+
     #[test]
     fn a_hit_finds_a_node_before_an_edge_and_an_edge_only_near_its_flattened_path() {
         // Verifies: REN-node-content-in-rows
@@ -346,7 +517,7 @@ mod tests {
                 // plus the tolerance surely not; between, either is right.
                 let (reach, tolerance) = (EDGE_REACH * pixel, Stroke::at(level, pixel).tolerance);
                 let d: Vec<(f64, f64)> = (0..model.specs.len() as u32)
-                    .map(|e| distance_to_curve(&model.path(e), p))
+                    .map(|e| distance_to_drawn(&model, e, p))
                     .collect();
                 // Surely hit by its upper bound, surely too far by its lower one.
                 let sure = model
@@ -362,7 +533,12 @@ mod tests {
                         assert!(sure.is_none_or(|s| e >= s), "edge {e} below {sure:?}");
                     }
                     None => assert_eq!(sure, None, "missed at {p:?}"),
-                    Some(Target::Node(_) | Target::Connector(..) | Target::Label(_)) => {
+                    Some(
+                        Target::Node(_)
+                        | Target::Connector(..)
+                        | Target::Label(_, _)
+                        | Target::Line(_),
+                    ) => {
                         panic!("{hit:?} where a scan finds none")
                     }
                 }
@@ -514,6 +690,7 @@ mod tests {
     #[test]
     fn a_small_shaped_node_pressed_beside_its_outline_within_its_rectangle_hits_its_connector() {
         // Verifies: REN-node-content-in-rows, REN-closed-set-of-node-shapes
+        // Verifies: REN-node-shapes-cover-uml
         // Nodes under 32 screen pixels whose outline leaves corners of their rectangle, alone, so
         // that a press beside the outline finds nothing below: there a connector reaches its 8
         // pixels, unclipped by the rectangle, and beyond them nothing is hit.
@@ -522,6 +699,8 @@ mod tests {
             (NodeShape::Circle, 20.0, 20.0),
             (NodeShape::Circle, 31.0, 31.0),
             (NodeShape::RingedCircle, 24.0, 24.0),
+            (NodeShape::CrossedCircle, 12.0, 12.0),
+            (NodeShape::CrossedCircle, 24.0, 24.0),
             (NodeShape::Ellipse, 28.0, 16.0),
             (NodeShape::Ellipse, 12.0, 30.0),
             (NodeShape::Diamond, 24.0, 24.0),
@@ -653,12 +832,14 @@ mod tests {
     /// What a scan of every kind finds at `p`, in the order of REN-node-content-in-rows, from the
     /// model alone: a connector where they are asked for, at the near and middle level; a measured
     /// label at the near level; a node; and an edge, which the flattening's tolerance blurs, given
-    /// as the edge surely hit and the distance bounds of each.
+    /// as the edge surely hit and the distance bounds of each, with what lies below the edges
+    /// where none is hit, a container.
     enum Scan {
         Exactly(Target),
         Edge {
             sure: Option<u32>,
             bounds: Vec<(f64, f64)>,
+            below: Option<Target>,
         },
     }
 
@@ -667,39 +848,42 @@ mod tests {
         if let Some((n, side, _)) = connector.filter(|_| connectors && level != Level::Far) {
             return Scan::Exactly(Target::Connector(n, side));
         }
-        let label = model.edges().filter(|&e| {
-            let (Some(at), Some((w, h))) = (model.label_point(e), model.pills[e as usize]) else {
-                return false;
-            };
-            (p.x - at.x).abs() <= w && (p.y - at.y).abs() <= h
-        });
-        if let Some(e) = label.max().filter(|_| level == Level::Near) {
-            return Scan::Exactly(Target::Label(e));
+        if let Some((e, i)) = model.label_at(p).filter(|_| level == Level::Near) {
+            return Scan::Exactly(Target::Label(e, i));
         }
         if let Some(n) = model.nodes().filter(|&n| model.bounds(n).contains(p)).max() {
             return Scan::Exactly(Target::Node(n));
         }
         let (reach, tolerance) = (EDGE_REACH * pixel, Stroke::at(level, pixel).tolerance);
         let bounds: Vec<(f64, f64)> = (0..model.specs.len() as u32)
-            .map(|e| distance_to_curve(&model.path(e), p))
+            .map(|e| distance_to_drawn(model, e, p))
             .collect();
         let sure = model
             .edges()
             .filter(|&e| bounds[e as usize].1 < reach - tolerance)
             .max();
-        Scan::Edge { sure, bounds }
+        Scan::Edge {
+            sure,
+            bounds,
+            below: None,
+        }
     }
 
-    /// A random graph and its model with a node and an edge removed, two labels of three measured,
-    /// and a few nodes moved after. Every fifth edge's label sits where the edge leaves its source,
-    /// on the connector there, so that a press there finds a connector and a label both.
+    /// A random graph and its model with a node and an edge removed, the labels of two edges of
+    /// three measured, and a few nodes moved after. Every fifth edge's first label sits where the
+    /// edge leaves its source, on the connector there, so that a press there finds a connector and
+    /// a label both.
     fn scanned_graph(rng: &mut Lcg) -> (Model, Graph) {
         let (positions, sizes, mut specs) = random_inputs(rng, 30, 40);
         for spec in specs.iter_mut().step_by(5) {
-            spec.label = Some(LabelPlacement {
+            let first = LabelPlacement {
                 t: 0.0,
                 offset: 0.0,
-            });
+            };
+            match spec.labels.first_mut() {
+                Some(label) => *label = first,
+                None => spec.labels.push(first),
+            }
         }
         let (mut model, mut graph) = Model::of(positions, sizes, specs);
         graph.remove_nodes(&[4]).unwrap();
@@ -708,9 +892,11 @@ mod tests {
         graph.remove_edges(&[gone]).unwrap();
         model.remove_edges(&[gone]);
         for e in model.edges().filter(|e| e % 3 != 0).collect::<Vec<_>>() {
-            let size = (15.0 + f64::from(e % 4) * 10.0, 10.0);
-            graph.set_label_size(e, size.0, size.1).unwrap();
-            model.pills[e as usize] = Some(size);
+            for i in 0..model.specs[e as usize].labels.len() as u32 {
+                let size = (15.0 + f64::from((e + i) % 4) * 10.0, 10.0);
+                graph.set_label_size(e, i, size.0, size.1).unwrap();
+                model.pills[e as usize][i as usize] = Some(size);
+            }
         }
         for _ in 0..6 {
             let moved: Vec<u32> = model.nodes().filter(|_| rng.next() < 0.2).collect();
@@ -734,8 +920,13 @@ mod tests {
             4 => {
                 let on: Vec<u32> = model
                     .edges()
-                    .filter(|&e| model.pills[e as usize].is_some())
-                    .filter(|&e| model.specs[e as usize].label.is_some_and(|l| l.t == 0.0))
+                    .filter(|&e| model.pills[e as usize].first().is_some_and(Option::is_some))
+                    .filter(|&e| {
+                        model.specs[e as usize]
+                            .labels
+                            .first()
+                            .is_some_and(|l| l.t == 0.0)
+                    })
                     .collect();
                 match on.is_empty() {
                     true => anywhere(rng),
@@ -751,7 +942,7 @@ mod tests {
                 let c = side.connector(&model.bounds(rng.below(nodes)));
                 around(c, (12.0 * pixel, 12.0 * pixel), rng)
             }
-            1 => match model.label_point(rng.below(edges)) {
+            1 => match model.label_point(rng.below(edges), rng.below(3)) {
                 Some(at) => around(at, (50.0, 12.0), rng),
                 None => anywhere(rng),
             },
@@ -764,7 +955,7 @@ mod tests {
     }
 
     /// Asserts that `hit` is what the scan `found` allows, and returns the kind it found:
-    /// connector, label, node, or edge, as 0 to 3, or none.
+    /// connector or line, label, node, edge, or what lies below the edges, as 0 to 4, or none.
     fn judged(
         model: &Model,
         hit: Option<Target>,
@@ -773,8 +964,8 @@ mod tests {
         at: &str,
     ) -> Option<usize> {
         let kind = |target: Target| match target {
-            Target::Connector(..) => 0,
-            Target::Label(_) => 1,
+            Target::Connector(..) | Target::Line(_) => 0,
+            Target::Label(_, _) => 1,
             Target::Node(_) => 2,
             Target::Edge(_) => 3,
         };
@@ -783,7 +974,11 @@ mod tests {
                 assert_eq!(hit, Some(target), "{at}");
                 Some(kind(target))
             }
-            Scan::Edge { sure, bounds } => {
+            Scan::Edge {
+                sure,
+                bounds,
+                below,
+            } => {
                 let (reach, tolerance) = (EDGE_REACH * stroke.0, stroke.1.tolerance);
                 match hit {
                     Some(Target::Edge(e)) => {
@@ -792,11 +987,11 @@ mod tests {
                         assert!(sure.is_none_or(|s| e >= s), "{e} below {sure:?}, {at}");
                         Some(3)
                     }
-                    None => {
+                    _ => {
                         assert_eq!(sure, None, "missed, {at}");
-                        None
+                        assert_eq!(hit, below, "{hit:?} where a scan finds {below:?}, {at}");
+                        below.map(|_| 4)
                     }
-                    _ => panic!("{hit:?} where a scan finds none, {at}"),
                 }
             }
         }
@@ -825,7 +1020,7 @@ mod tests {
                     )
                     && matches!(
                         scan(&model, p, pixel, level, false),
-                        Scan::Exactly(Target::Label(_))
+                        Scan::Exactly(Target::Label(_, _))
                     )
                 {
                     both += 1;
@@ -855,15 +1050,17 @@ mod tests {
         let (mut model, mut graph) = Model::random(&mut rng, 30, 60);
         let measured: Vec<u32> = (0..60).filter(|e| e % 3 != 0).collect();
         for &edge in &measured {
-            let size = (20.0 + f64::from(edge % 5) * 10.0, 11.0);
-            graph.set_label_size(edge, size.0, size.1).unwrap();
-            model.pills[edge as usize] = Some(size);
+            for i in 0..model.specs[edge as usize].labels.len() as u32 {
+                let size = (20.0 + f64::from((edge + i) % 5) * 10.0, 11.0);
+                graph.set_label_size(edge, i, size.0, size.1).unwrap();
+                model.pills[edge as usize][i as usize] = Some(size);
+            }
         }
         for _ in 0..2_000 {
             let p = Point::new(rng.range(-2500.0, 2500.0), rng.range(-2500.0, 2500.0));
             let p = if rng.next() < 0.7 {
                 let edge = rng.below(model.specs.len());
-                match model.label_point(edge) {
+                match model.label_point(edge, rng.below(3)) {
                     Some(at) => {
                         Point::new(at.x + rng.range(-70.0, 70.0), at.y + rng.range(-15.0, 15.0))
                     }
@@ -872,26 +1069,300 @@ mod tests {
             } else {
                 p
             };
-            let scan = measured.iter().copied().rev().find(|&e| {
-                let (Some(at), Some((w, h))) = (model.label_point(e), model.pills[e as usize])
-                else {
-                    return false;
-                };
-                (p.x - at.x).abs() <= w && (p.y - at.y).abs() <= h
-            });
+            let scan = model.label_at(p);
             let near = graph.hit_at(p, 1.0, Level::Near, false);
             match scan {
-                Some(e) => assert_eq!(near, Some(Target::Label(e)), "at {p:?}"),
-                None => assert!(!matches!(near, Some(Target::Label(_))), "at {p:?}"),
+                Some((e, i)) => assert_eq!(near, Some(Target::Label(e, i)), "at {p:?}"),
+                None => assert!(!matches!(near, Some(Target::Label(_, _))), "at {p:?}"),
             }
             assert!(!matches!(
                 graph.hit_at(p, 1.0, Level::Middle, false),
-                Some(Target::Label(_))
+                Some(Target::Label(_, _))
             ));
         }
         // An edge removed takes its label's measure along; a new edge in its slot is unmeasured.
         let edge = measured[0];
         graph.remove_edges(&[edge]).unwrap();
-        assert_eq!(graph.pills[edge as usize], None);
+        assert!(graph.pills[edge as usize].is_empty());
+    }
+
+    /// A node divided across into three regions of no name, the middle one divided down into
+    /// two: its slot and its box, and its regions in the order of the containers, each its slot,
+    /// its box, and where a line follows it the direction of the division the line parts, the
+    /// boxes written from the sizes alone (ARCH-regions-are-container-slots).
+    struct Divided {
+        node: u32,
+        bounds: Rect,
+        regions: Vec<(u32, Rect, Option<Axis>)>,
+    }
+
+    /// Adds a resizable divided node to `graph` at a random place right of `from` and below
+    /// -1,500, at most 1,500 wide and 300 high, in whole world units, so that `f32` holds every
+    /// side; asserts that the graph gives its regions the boxes the model writes.
+    fn divided(graph: &mut Graph, rng: &mut Lcg, from: f64) -> Divided {
+        let mut whole = |a: f64, b: f64| rng.range(a, b).round();
+        let (x, y) = (whole(from, from + 1000.0), whole(-1500.0, 1200.0));
+        let (w, h) = (whole(300.0, 500.0), whole(150.0, 300.0));
+        let (first, middle, upper) = (whole(40.0, 120.0), whole(40.0, 120.0), whole(30.0, 100.0));
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "whole numbers within 2,000, which f32 holds exactly"
+        )]
+        let kept = |v: f64| v as f32;
+        let node = graph.add_node(kept(x), kept(y), kept(w), kept(h)).unwrap();
+        graph.divide(node, Some(Axis::Across), 0.0).unwrap();
+        graph.set_sizing(node, None, true).unwrap();
+        let mut region = |within: u32, [across, down]: [f64; 2], divide: Option<Axis>| {
+            let slot = graph
+                .add_node_in(within, true, [0.0, 0.0, kept(across), kept(down)])
+                .unwrap();
+            graph.mark_region(slot, false, divide).unwrap();
+            slot
+        };
+        let slots = [
+            region(node, [first, 0.0], None),
+            region(node, [middle, 0.0], Some(Axis::Down)),
+        ];
+        let inner = [
+            region(slots[1], [0.0, upper], None),
+            region(slots[1], [0.0, 0.0], None),
+        ];
+        let last = region(node, [0.0, 0.0], None);
+        graph.arrange(node);
+        let (x1, x2) = (x + first, x + first + middle);
+        let regions = vec![
+            (slots[0], Rect::new(x, y, x1, y + h), Some(Axis::Across)),
+            (slots[1], Rect::new(x1, y, x2, y + h), Some(Axis::Across)),
+            (inner[0], Rect::new(x1, y, x2, y + upper), Some(Axis::Down)),
+            (inner[1], Rect::new(x1, y + upper, x2, y + h), None),
+            (last, Rect::new(x2, y, x + w, y + h), None),
+        ];
+        for &(slot, bounds, _) in &regions {
+            assert_eq!(graph.node_bounds(slot), bounds, "region {slot}");
+        }
+        Divided {
+            node,
+            bounds: Rect::new(x, y, x + w, y + h),
+            regions,
+        }
+    }
+
+    /// The resize handle of a node of `bounds` within `reach` of `p` on each axis, the nearest,
+    /// the first of `Handle::ALL` where two are as near (REN-node-content-and-hits, *Resize
+    /// handle*): at the corners and the middles of the sides.
+    fn handle_near(bounds: &Rect, p: Point, reach: f64) -> Option<Handle> {
+        let (xs, ys) = (
+            [
+                bounds.min_x,
+                f64::midpoint(bounds.min_x, bounds.max_x),
+                bounds.max_x,
+            ],
+            [
+                bounds.min_y,
+                f64::midpoint(bounds.min_y, bounds.max_y),
+                bounds.max_y,
+            ],
+        );
+        let points = [
+            (xs[0], ys[0]),
+            (xs[1], ys[0]),
+            (xs[2], ys[0]),
+            (xs[2], ys[1]),
+            (xs[2], ys[2]),
+            (xs[1], ys[2]),
+            (xs[0], ys[2]),
+            (xs[0], ys[1]),
+        ];
+        Handle::ALL
+            .into_iter()
+            .zip(points)
+            .map(|(handle, (x, y))| (handle, (x - p.x).abs().max((y - p.y).abs())))
+            .filter(|&(_, d)| d <= reach)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(handle, _)| handle)
+    }
+
+    /// The connector of a rectangle of `bounds` a press at `p` hits where a connector reaches
+    /// `reach`, as `Model::connector_at` finds it of one node.
+    fn connector_near(bounds: &Rect, p: Point, reach: f64) -> Option<Side> {
+        let (width, height) = (bounds.max_x - bounds.min_x, bounds.max_y - bounds.min_y);
+        SIDES
+            .into_iter()
+            .map(|side| {
+                let c = side.connector(bounds);
+                let across = match side {
+                    Side::Top | Side::Bottom => height,
+                    Side::Right | Side::Left => width,
+                };
+                let reach = if bounds.contains(p) {
+                    reach.min(across / 4.0)
+                } else {
+                    reach
+                };
+                (side, (c.x - p.x).hypot(c.y - p.y), reach)
+            })
+            .filter(|&(_, d, reach)| d <= reach)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(side, _, _)| side)
+    }
+
+    /// What a scan finds at `p` in the order of REN-node-content-and-hits on the model and the
+    /// divided nodes `divided`, which lie apart, the later drawn above: a line between regions
+    /// within `LINE_REACH` screen pixels, at the near and middle level, the region before it, of
+    /// the lines there the last in the order of the containers, which puts the innermost last;
+    /// else the scan of `scan`, a connector of a divided node below those of the nodes that are
+    /// no container and its edges, and below the edges the divided node whose box holds `p`, a
+    /// press on a region being one on the node it divides.
+    fn scan_divided(
+        model: &Model,
+        divided: &[Divided],
+        p: Point,
+        (pixel, level, connectors): (f64, Level, bool),
+    ) -> Scan {
+        let line = |reach: f64| {
+            divided
+                .iter()
+                .flat_map(|d| d.regions.iter())
+                .filter(|&&(_, r, line)| match line {
+                    Some(Axis::Across) => {
+                        (p.x - r.max_x).abs() <= reach && r.min_y <= p.y && p.y <= r.max_y
+                    }
+                    Some(Axis::Down) => {
+                        (p.y - r.max_y).abs() <= reach && r.min_x <= p.x && p.x <= r.max_x
+                    }
+                    None => false,
+                })
+                .map(|&(slot, _, _)| slot)
+                .next_back()
+        };
+        if level != Level::Far
+            && let Some(slot) = line(LINE_REACH * pixel)
+        {
+            return Scan::Exactly(Target::Line(slot));
+        }
+        let reach = CONNECTOR_REACH * pixel;
+        let asked = connectors && level != Level::Far;
+        if asked && model.connector_at(p, reach).is_none() {
+            let found = divided
+                .iter()
+                .rev()
+                .find_map(|d| connector_near(&d.bounds, p, reach).map(|side| (d.node, side)));
+            if let Some((node, side)) = found {
+                return Scan::Exactly(Target::Connector(node, side));
+            }
+        }
+        match scan(model, p, pixel, level, connectors) {
+            Scan::Edge { sure, bounds, .. } => Scan::Edge {
+                sure,
+                bounds,
+                below: divided
+                    .iter()
+                    .rev()
+                    .find(|d| d.bounds.contains(p))
+                    .map(|d| Target::Node(d.node)),
+            },
+            exactly => exactly,
+        }
+    }
+
+    /// A press near a resize handle of `selected`, a line between regions, a junction of two
+    /// lines, or inside a divided node, else one of `press_near`.
+    fn press_near_divided(
+        model: &Model,
+        divided: &[Divided],
+        selected: Option<Rect>,
+        pixel: f64,
+        rng: &mut Lcg,
+    ) -> Point {
+        let around = |x: f64, y: f64, reach: f64, rng: &mut Lcg| {
+            Point::new(x + rng.range(-reach, reach), y + rng.range(-reach, reach))
+        };
+        let d = &divided[rng.below(divided.len()) as usize];
+        match (rng.below(5), selected) {
+            (0, Some(b)) => {
+                let x = [b.min_x, f64::midpoint(b.min_x, b.max_x), b.max_x][rng.below(3) as usize];
+                let y = [b.min_y, f64::midpoint(b.min_y, b.max_y), b.max_y][rng.below(3) as usize];
+                around(x, y, 8.0 * pixel, rng)
+            }
+            (1, _) => {
+                let (_, r, line) = d.regions[rng.below(3) as usize];
+                let at = match line {
+                    Some(Axis::Across) => (r.max_x, rng.range(r.min_y, r.max_y)),
+                    _ => (rng.range(r.min_x, r.max_x), r.max_y),
+                };
+                around(at.0, at.1, 6.0 * pixel, rng)
+            }
+            // Where the line inside the middle region meets the line on either side of it.
+            (2, _) => {
+                let upper = d.regions[2].1;
+                let x = [upper.min_x, upper.max_x][rng.below(2) as usize];
+                around(x, upper.max_y, 5.0 * pixel, rng)
+            }
+            (3, _) => Point::new(
+                rng.range(d.bounds.min_x, d.bounds.max_x),
+                rng.range(d.bounds.min_y, d.bounds.max_y),
+            ),
+            _ => press_near(model, pixel, rng),
+        }
+    }
+
+    #[test]
+    fn a_hit_finds_what_a_scan_finds_with_resize_handles_and_lines_between_regions_first() {
+        // Verifies: REN-node-content-and-hits
+        // How often each kind was found: handle, line, connector, label, node, edge, and the
+        // divided node below the edges.
+        let mut found = [0; 7];
+        for seed in 1..=3 {
+            let mut rng = Lcg(200 + seed);
+            let (model, mut graph) = scanned_graph(&mut rng);
+            // Every third node in use resizable, and two divided nodes apart, the first taking
+            // the slot of the removed node.
+            let resizable: Vec<u32> = model.nodes().filter(|n| n % 3 == 0).collect();
+            for &n in &resizable {
+                graph.set_sizing(n, None, true).unwrap();
+            }
+            let divided = [
+                divided(&mut graph, &mut rng, -2000.0),
+                divided(&mut graph, &mut rng, 0.0),
+            ];
+            assert_eq!(divided[0].node, 4);
+            let (plain, fixed) = (resizable[rng.below(resizable.len()) as usize], 1);
+            for _ in 0..400 {
+                // The selected node: none, a divided node, a resizable node, or one that is not,
+                // with its box, and whether it is resizable.
+                let (selected, bounds, resizes) = match rng.below(5) {
+                    0 => (None, None, false),
+                    1 => (Some(divided[0].node), Some(divided[0].bounds), true),
+                    2 => (Some(divided[1].node), Some(divided[1].bounds), true),
+                    3 => (Some(plain), Some(model.bounds(plain)), true),
+                    _ => (Some(fixed), Some(model.bounds(fixed)), false),
+                };
+                let level = [Level::Near, Level::Middle, Level::Far][rng.below(3) as usize];
+                let pixel = [0.25, 1.0, 4.0][rng.below(3) as usize];
+                let p = press_near_divided(&model, &divided, bounds, pixel, &mut rng);
+                let at = format!("{p:?}, {pixel}, {level:?}, selected {selected:?}");
+                // A resize handle comes before every other hit.
+                let handle = bounds
+                    .filter(|_| resizes && level != Level::Far)
+                    .and_then(|b| handle_near(&b, p, HANDLE_REACH * pixel));
+                let hit = selected.and_then(|s| graph.handle_at(p, pixel, level, s));
+                assert_eq!(hit, handle, "handle, {at}");
+                if handle.is_some() {
+                    found[0] += 1;
+                    continue;
+                }
+                for connectors in [false, true] {
+                    let hit = graph.hit_at(p, pixel, level, connectors);
+                    let at = format!("{at}, connectors {connectors}");
+                    let scanned = scan_divided(&model, &divided, p, (pixel, level, connectors));
+                    let stroke = (pixel, Stroke::at(level, pixel));
+                    let line = matches!(hit, Some(Target::Line(_)));
+                    if let Some(kind) = judged(&model, hit, scanned, stroke, &at) {
+                        found[if line { 1 } else { kind + 2 }] += 1;
+                    }
+                }
+            }
+        }
+        assert!(found.iter().all(|&n| n > 20), "{found:?}");
     }
 }

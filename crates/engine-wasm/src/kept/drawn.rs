@@ -6,7 +6,9 @@
 use comb_engine::content::{self as layout, Cell, Direction, Element, Fonts, Placed};
 use comb_engine::graph::Level;
 
-use crate::graph_data::{ContentData, RoleCode, direction_of, numbered, rgb_of, utf16_length};
+use crate::graph_data::{
+    ContentData, KindCode, RoleCode, direction_of, numbered, rgb_of, utf16_length,
+};
 
 /// The texts of the elements a query placed, as the shell draws them (REN-node-content-in-rows):
 /// per element its kind's code, the code of the role whose font draws it, its colour as `0xRRGGBB`,
@@ -111,16 +113,23 @@ impl Drawn {
         level: Level,
         fonts: &Fonts,
     ) {
-        let laid = content.elements_of(node).zip(cells).zip(placed);
-        for ((_, _, element, strings), at) in laid
-            .filter(|((_, cell), _)| layout::drawn_at(&cell.element, level))
-            .map(|((element, _), at)| (element, at))
-        {
+        // The elements of the columns, which hold none for a separator.
+        let mut elements = content.elements_of(node);
+        for (cell, at) in cells.iter().zip(placed) {
+            let separator = matches!(cell.element, Element::Separator);
+            let item = if separator { None } else { elements.next() };
+            if !layout::drawn_at(&cell.element, level) {
+                continue;
+            }
+            let Some((_, _, element, strings)) = item else {
+                self.draw_separator(at);
+                continue;
+            };
             let kind = content.kinds[element];
             self.kinds.push(kind);
             let shown = content.element(element, strings.text);
             let (role, color) = match shown {
-                Element::Action { .. } | Element::Progress | Element::Icon => {
+                Element::Action { .. } | Element::Progress | Element::Icon | Element::Separator => {
                     (RoleCode::Body as u8, 0)
                 }
                 Element::Badge { .. } | Element::Metric { .. } => {
@@ -163,6 +172,21 @@ impl Drawn {
             self.arrow_bounds.push(numbered(self.arrows.len() / 6));
             self.bounds.push(self.units);
         }
+    }
+
+    /// Pushes a separator placed at `at`: of the kind `Separator` and the role body, of no colour
+    /// and no text, and one piece, its line, of 0, whose colour, the border's, is the shell's
+    /// (REN-node-content-and-hits, *Separator*).
+    fn draw_separator(&mut self, at: &Placed) {
+        self.kinds.push(KindCode::Separator as u8);
+        self.roles.push(RoleCode::Body as u8);
+        self.colors.push(0);
+        self.bars.extend([at.x, at.y, at.width, at.height]);
+        self.bar_colors.push(0);
+        self.bar_bounds.push(numbered(self.bar_colors.len()));
+        self.part_bounds.push(numbered(self.part_ends.len()));
+        self.arrow_bounds.push(numbered(self.arrows.len() / 6));
+        self.bounds.push(self.units);
     }
 
     /// Pushes the pieces of the bar of the progress bar at `element` of `content`, placed at `at`:

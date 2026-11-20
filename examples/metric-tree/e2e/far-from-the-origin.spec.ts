@@ -29,7 +29,9 @@ async function drawnAt(page: Page, at: number, pan = 0) {
   const { width, height } = await canvasSize(page);
   await loaded(page, {
     nodes: [node("a", at, 0), node("b", at + 300, 200)],
-    edges: [{ id: "e", source: "a", target: "b", label: { text: "far", t: 0.5, offset: 0 } }],
+    edges: [
+      { id: "e", source: "a", target: "b", labels: [{ id: "m", text: "far", t: 0.5, offset: 0 }] },
+    ],
   });
   // The edge runs from a's right middle to b's left middle, around its middle.
   const middle = { x: at + (NODE_WIDTH + 300) / 2, y: 100 + NODE_HEIGHT / 2 };
@@ -189,7 +191,14 @@ test("a viewport around 1e300 draws nothing infinite, loses no engine, and draws
   // the far side past it, which a load refuses.
   await loaded(page, {
     nodes: [node("a"), node("b", 2 ** 120 - NODE_WIDTH, 2 ** 120 - 2 ** 96)],
-    edges: [{ id: "a-b", source: "a", target: "b", label: { text: "far", t: 0.5, offset: 0 } }],
+    edges: [
+      {
+        id: "a-b",
+        source: "a",
+        target: "b",
+        labels: [{ id: "m", text: "far", t: 0.5, offset: 0 }],
+      },
+    ],
   });
   const finite = (snapshot: ReturnType<typeof window.inspect>) =>
     [

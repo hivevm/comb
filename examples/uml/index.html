@@ -22,11 +22,91 @@
       </section>
       <section id="node-form" hidden>
         <h2 id="node-heading">Selected node</h2>
-        <label>
+        <label id="name-field">
           Name
           <input id="name" aria-describedby="name-refusal" type="text" />
         </label>
         <p id="name-refusal" class="refusal" role="alert"></p>
+        <label id="value-field">
+          Value
+          <input id="value" aria-describedby="value-refusal" type="text" />
+        </label>
+        <p id="value-refusal" class="refusal" role="alert"></p>
+        <label id="stream-field">
+          <input id="stream" aria-describedby="stream-refusal" type="checkbox" />
+          {stream}
+        </label>
+        <p id="stream-refusal" class="refusal" role="alert"></p>
+        <label id="clauses-field">
+          Clauses, one name per line
+          <textarea id="clauses" aria-describedby="clauses-refusal" rows="3"></textarea>
+        </label>
+        <p id="clauses-refusal" class="refusal" role="alert"></p>
+        <label id="partitions-field">
+          Partitions, one name per line
+          <textarea id="partitions" aria-describedby="partitions-refusal" rows="4"></textarea>
+        </label>
+        <p id="partitions-refusal" class="refusal" role="alert"></p>
+        <label id="machine-field">
+          State machine
+          <input id="machine" aria-describedby="machine-refusal" type="text" />
+        </label>
+        <p id="machine-refusal" class="refusal" role="alert"></p>
+        <label id="entry-field">
+          Entry
+          <input id="entry" aria-describedby="entry-refusal" type="text" />
+        </label>
+        <p id="entry-refusal" class="refusal" role="alert"></p>
+        <label id="do-activity-field">
+          Do
+          <input id="do-activity" aria-describedby="do-activity-refusal" type="text" />
+        </label>
+        <p id="do-activity-refusal" class="refusal" role="alert"></p>
+        <label id="exit-field">
+          Exit
+          <input id="exit" aria-describedby="exit-refusal" type="text" />
+        </label>
+        <p id="exit-refusal" class="refusal" role="alert"></p>
+        <label id="internal-field">
+          Internal transitions, one per line
+          <textarea
+            id="internal"
+            aria-describedby="internal-refusal"
+            rows="3"
+            spellcheck="false"
+            placeholder="resize / redraw"
+          ></textarea>
+        </label>
+        <p id="internal-refusal" class="refusal" role="alert"></p>
+        <label id="deferred-field">
+          Deferred triggers, one per line
+          <textarea
+            id="deferred"
+            aria-describedby="deferred-refusal"
+            rows="2"
+            spellcheck="false"
+          ></textarea>
+        </label>
+        <p id="deferred-refusal" class="refusal" role="alert"></p>
+        <label id="lines-field">
+          Text, one line per row
+          <textarea id="lines" aria-describedby="lines-refusal" rows="4"></textarea>
+        </label>
+        <p id="lines-refusal" class="refusal" role="alert"></p>
+        <label id="mode-field">
+          Mode
+          <select id="mode" aria-describedby="mode-refusal">
+            <option>iterative</option>
+            <option>parallel</option>
+            <option>stream</option>
+          </select>
+        </label>
+        <p id="mode-refusal" class="refusal" role="alert"></p>
+        <label id="points-field">
+          Extension points, one per line
+          <textarea id="points" aria-describedby="points-refusal" rows="3"></textarea>
+        </label>
+        <p id="points-refusal" class="refusal" role="alert"></p>
         <label id="stereotype-field">
           Stereotype
           <input
@@ -77,12 +157,53 @@
           <input id="label" aria-describedby="label-refusal" type="text" />
         </label>
         <p id="label-refusal" class="refusal" role="alert"></p>
-        <label id="event-field">
-          Event
-          <input id="event" aria-describedby="event-refusal" type="text" placeholder="destroy" />
+        <label id="trigger-field">
+          Trigger
+          <input
+            id="trigger"
+            aria-describedby="trigger-refusal"
+            type="text"
+            placeholder="destroy"
+          />
         </label>
-        <p id="event-refusal" class="refusal" role="alert"></p>
+        <p id="trigger-refusal" class="refusal" role="alert"></p>
+        <label id="guard-field">
+          Guard
+          <input id="guard" aria-describedby="guard-refusal" type="text" />
+        </label>
+        <p id="guard-refusal" class="refusal" role="alert"></p>
+        <label id="weight-field">
+          Weight
+          <input id="weight" aria-describedby="weight-refusal" type="text" placeholder="*" />
+        </label>
+        <p id="weight-refusal" class="refusal" role="alert"></p>
+        <label id="effect-field">
+          Effect
+          <input id="effect" aria-describedby="effect-refusal" type="text" />
+        </label>
+        <p id="effect-refusal" class="refusal" role="alert"></p>
+        <label id="source-multiplicity-field">
+          Multiplicity at the source
+          <input
+            id="source-multiplicity"
+            aria-describedby="source-multiplicity-refusal"
+            type="text"
+            placeholder="1"
+          />
+        </label>
+        <p id="source-multiplicity-refusal" class="refusal" role="alert"></p>
+        <label id="target-multiplicity-field">
+          Multiplicity at the target
+          <input
+            id="target-multiplicity"
+            aria-describedby="target-multiplicity-refusal"
+            type="text"
+            placeholder="0..*"
+          />
+        </label>
+        <p id="target-multiplicity-refusal" class="refusal" role="alert"></p>
       </section>
+      <p id="connection-refusal" class="refusal" role="alert" hidden></p>
       <p id="empty">Select a node or an edge to edit it here; Delete removes it.</p>
       <section id="legend">
         <h2>Relationships</h2>

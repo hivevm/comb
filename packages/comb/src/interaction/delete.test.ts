@@ -25,9 +25,12 @@ function selected(canDelete?: (deletion: unknown) => unknown) {
   store.getState().select({ kind: "node", id: "a" });
   const calls: string[] = [];
   const bridge = {
-    edgesAt: () => Uint32Array.of(0),
+    removalOf: () => ({ nodes: Uint32Array.of(0), edges: Uint32Array.of(0) }),
     checkGraphSize: () => {},
-    removeNodes: () => (calls.push("removeNodes"), Uint32Array.of(0)),
+    removeNodes: () => (
+      calls.push("removeNodes"),
+      { nodes: Uint32Array.of(0), edges: Uint32Array.of(0) }
+    ),
     removeEdges: () => calls.push("removeEdges"),
   } as unknown as Bridge;
   const limits = {
@@ -38,6 +41,7 @@ function selected(canDelete?: (deletion: unknown) => unknown) {
     rows: 8,
     columns: 6,
     segments: 8,
+    labels: 8,
   };
   const remove = editorsOf(store, bridge, limits, { canDelete }, false).user.delete;
   return { store, bridge, remove, calls };

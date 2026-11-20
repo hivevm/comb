@@ -3,23 +3,101 @@
 // moved, `movesVersion` that a drag moved its nodes (REN-moving-layer-redraws-changes); the point a
 // connection is dragged to lives in interaction, and `pointerVersion` tells them that it moved.
 import { createStore } from "zustand/vanilla";
-import type { NodeContent, NodeShape } from "../bridge";
+import type { NodeContent, NodeShape, Outline, RegionRead } from "../bridge";
 
-export type { ContentElement, NodeContent, NodeShape, TextRole } from "../bridge";
+export type { ContentElement, NodeContent, NodeShape, Outline, TextRole } from "../bridge";
 
-/** A node as the host application hands it over: `x` and `y` are its initial position, `shape`
- *  the node shape it is drawn and hit in, and `content` what it shows, rows of weighted columns,
- *  from which and its node shape Comb computes its height (REN-node-content-in-rows,
- *  REN-closed-set-of-node-shapes). */
-export interface NodeData {
+/** What every node the host application hands over has: `shape` the node shape it is drawn and
+ *  hit in, and `content` what it shows, rows of weighted columns, from which and its node shape
+ *  Comb computes its height (REN-node-content-in-rows, REN-closed-set-of-node-shapes). */
+interface NodeFields {
   id: string;
+  width: number;
+  /** Its node shape, `rectangle` where left out; a circle, a ringed circle, a bar, a crossed
+   *  circle, and a cross hold no content. */
+  shape?: NodeShape;
+  /** How its outline is drawn: `"solid"`, which `api` fills in where left out, `"none"`, or a dash
+   *  and a gap in world units laid along it clockwise from its top left; a selected node's outline
+   *  is drawn solid whatever it is (REN-node-shapes-cover-uml, *Outline*). */
+  outline?: Outline;
+  /** The height it is given, never less than its content needs, a height below that raised to
+   *  it; without content, as high as given however small; where left out, as high as its content
+   *  needs, or as wide without content (REN-node-shapes-cover-uml). */
+  height?: number;
+  content: NodeContent;
+}
+
+/** A node that lies on the canvas or in a container: `x` and `y` are its initial position. */
+export interface PlacedNodeData extends NodeFields {
   x: number;
   y: number;
-  width: number;
-  /** Its node shape, `rectangle` where left out; a circle, a ringed circle, and a bar hold no
-   *  content. */
-  shape?: NodeShape;
-  content: NodeContent;
+  /** The identifier of the container it lies in, its `x` and `y` then relative to the container's
+   *  top left corner; on the canvas where left out (API-edits-report-nested-changes). */
+  container?: string;
+  /** `true` for a container, which may hold nodes even while empty, and is drawn below the edges
+   *  and the other nodes. */
+  isContainer?: boolean;
+  /** `true` where the user may resize it by its resize handles once it is selected
+   *  (API-edits-report-nested-changes). */
+  resizable?: boolean;
+  /** The direction its `regions` divide it in: `across` side by side, `down` one above the other
+   *  (ARCH-regions-are-container-slots). */
+  divide?: Divide;
+  /** The regions it is divided into, below its content, each a container of its own that nodes
+   *  lie in by its identifier; a node with regions holds no node beside them. */
+  regions?: RegionData[];
+  attachedTo?: never;
+  side?: never;
+  offset?: never;
+}
+
+/** A border node (ARCH-border-nodes-ride-sides): attached to the node `attachedTo`, which is no
+ *  border node, centred on its outline on `side` of its box, `offset` world units from that
+ *  side's start, its left end or its top end, held within the side's length; it moves with that
+ *  node and lies in its container. It is no container and not resizable. */
+export interface BorderNodeData extends NodeFields {
+  attachedTo: string;
+  side: Side;
+  offset: number;
+  x?: never;
+  y?: never;
+  container?: never;
+  isContainer?: never;
+  resizable?: never;
+  divide?: never;
+  regions?: never;
+}
+
+/** A node as the host application hands it over: a node with a position, or a border node. */
+export type NodeData = PlacedNodeData | BorderNodeData;
+
+/** The direction a node or a region is divided in: `across` for regions side by side, `down` for
+ *  regions one above the other (ARCH-regions-are-container-slots). */
+export type Divide = "across" | "down";
+
+/** A region of a node (ARCH-regions-are-container-slots): its identifier, from the space of the
+ *  nodes' identifiers; its name, drawn in a band at its start, at the top of a region side by side
+ *  with others, turned at the left of one above or below others; its size along the direction of
+ *  its division, the last region taking any rest; the line after it, between it and the next
+ *  region, solid or dashed by a dash and a gap; and its own division and regions. */
+export interface RegionData {
+  id: string;
+  name?: string;
+  size: number;
+  line: "solid" | readonly [number, number];
+  divide?: Divide;
+  regions?: RegionData[];
+}
+
+/** What the store keeps of a region besides its identifier and container: its name, its line, the
+ *  direction of the division it lies in, whether it is the last of that division, whose line is
+ *  not drawn, and its own division. */
+export interface RegionView {
+  readonly name?: string;
+  readonly line: "solid" | readonly [number, number];
+  readonly axis: Divide;
+  readonly last: boolean;
+  readonly divide?: Divide;
 }
 
 /** A side of a node, at whose middle its connector sits (API-edges-dock-side-or-outline). */
@@ -29,31 +107,57 @@ export type Side = "top" | "right" | "bottom" | "left";
  *  where the line towards the edge's other end crosses it (API-edges-dock-side-or-outline). */
 export type Dock = Side | "outline";
 
-/** An edge label: placed by its path parameter `t` and its label offset in pixels (G-6). */
+/** An edge label (API-edges-dock-nodes-or-edges, *Edge labels*): its identifier, unique within its
+ *  edge, its text, placed by its path parameter `t` and its label offset in pixels (G-6), 0.5 and
+ *  0 where it gives none, which Comb fills in as it takes the label, on a pill of `background`
+ *  (`0xRRGGBB`), or of the edge's colour as it is now where it gives none. */
 export interface EdgeLabelData {
+  id: string;
   text: string;
-  t: number;
-  offset: number;
+  t?: number;
+  offset?: number;
   background?: number;
 }
 
-/** An edge from one node to another, each end at a side's connector or on the outline, drawn in
- *  `color` (`0xRRGGBB`), dashed by `dash` (dash and gap lengths in world units; solid without),
- *  and with an arrowhead at its target unless `arrow` is `"none"` (G-11). */
-export interface EdgeData {
+/** An edge label as Comb keeps it and tells it in a change, its place filled in; a background
+ *  left out stays out, so that the label follows its edge's colour. */
+export type KeptLabel = Required<Omit<EdgeLabelData, "background">> &
+  Pick<EdgeLabelData, "background">;
+
+/** The arrowhead at an edge's target: a filled triangle, two open strokes, a hollow triangle
+ *  around a white fill, or none (API-edges-dock-nodes-or-edges, *Arrowheads*). */
+export type Arrowhead = "end" | "open" | "hollow" | "none";
+
+/** The source of an edge (API-edges-dock-nodes-or-edges, *Ends*): a node, any node at any depth,
+ *  by `source`, docked by `sourceSide`, a side or the outline, `right` where left out and `top` for
+ *  a loop; or another edge by `sourceEdge`, which itself ends on nodes, at the path parameter
+ *  `sourceT` of its path, from 0 to 1, with no side. */
+export type EdgeSource =
+  | { source: string; sourceSide?: Dock; sourceEdge?: never; sourceT?: never }
+  | { sourceEdge: string; sourceT: number; source?: never; sourceSide?: never };
+
+/** The target of an edge, as `EdgeSource` names its source: a node by `target`, docked by
+ *  `targetSide`, `left` where left out and `top` for a loop; or another edge by `targetEdge` at
+ *  `targetT`. */
+export type EdgeTarget =
+  | { target: string; targetSide?: Dock; targetEdge?: never; targetT?: never }
+  | { targetEdge: string; targetT: number; target?: never; targetSide?: never };
+
+/** An edge from its source to its target, each a node, docked at a side's connector or on the
+ *  outline, or another edge, drawn in `color` (`0xRRGGBB`), dashed by `dash` (dash and gap lengths
+ *  in world units; solid without), with the arrowhead `arrow` at its target, a filled triangle
+ *  where it gives none (G-11), its middle a zigzag where `lightning` is `true`, and carrying at
+ *  most 8 `labels` (API-edges-dock-nodes-or-edges). */
+export type EdgeData = EdgeFields & EdgeSource & EdgeTarget;
+
+/** What an edge holds besides its ends. */
+export interface EdgeFields {
   id: string;
-  source: string;
-  target: string;
-  /** What it leaves its source by, a side or the outline, `right` where left out, and `top` for a
-   *  loop (API-edges-dock-side-or-outline). */
-  sourceSide?: Dock;
-  /** What it enters its target by, a side or the outline, `left` where left out, and `top` for a
-   *  loop. */
-  targetSide?: Dock;
   color?: number;
   dash?: readonly [number, number];
-  arrow?: "end" | "none";
-  label?: EdgeLabelData;
+  arrow?: Arrowhead;
+  lightning?: boolean;
+  labels?: readonly EdgeLabelData[];
 }
 
 export interface GraphData {
@@ -69,34 +173,154 @@ export interface Viewport {
   scale: number;
 }
 
-/** What `updateEdge` may change of an edge: its colour, dash pattern, arrowhead, label, or sides,
- *  a dash and a label cleared with `null`. */
+/** What `updateEdge` may change of an edge: its colour, dash pattern, arrowhead, lightning bolt,
+ *  labels, or sides, a dash and the labels cleared with `null`. `labels` replaces the whole list,
+ *  never merged by identifier: a label without a path parameter goes back to 0.5, one without an
+ *  offset to 0, and one without a background follows the edge's colour
+ *  (API-edges-dock-nodes-or-edges). */
 export interface EdgePatch {
   color?: number;
-  arrow?: "end" | "none";
+  arrow?: Arrowhead;
+  lightning?: boolean;
   sourceSide?: Dock;
   targetSide?: Dock;
   dash?: readonly [number, number] | null;
-  label?: EdgeLabelData | null;
+  labels?: readonly EdgeLabelData[] | null;
 }
 
-/** A node as the store keeps it: its identifier, its width, and its node shape, which `api`
- *  fills in. Its position, its content, and its height are the engine's
- *  (ARCH-graph-in-zustand-store, REN-node-content-in-rows); a
- *  new object for every change of its content, so that a view tells the change by identity. */
-export type NodeView = Pick<NodeData, "id" | "width" | "shape">;
+/** A node as the store keeps it: its identifier, its width, its node shape, which `api` fills
+ *  in, the identifier of its container, its mark as a container, the height its data gives or the
+ *  last resize left, and whether it is resizable, each where the node has one
+ *  (API-edits-report-nested-changes). Its position, its content, and the height it has are the
+ *  engine's (ARCH-graph-in-zustand-store, REN-node-content-in-rows); a new object for every change
+ *  of its content or its size, so that a view tells the change by identity. */
+export type NodeView = Pick<
+  NodeData,
+  | "id"
+  | "width"
+  | "shape"
+  | "outline"
+  | "container"
+  | "isContainer"
+  | "height"
+  | "resizable"
+  | "divide"
+  | "attachedTo"
+> & {
+  /** Set where the slot holds a region of a node, which is no node of the host application's:
+   *  no edge ends on it, and no call names it as a node (ARCH-regions-are-container-slots). */
+  region?: RegionView;
+};
+
+/** What the store keeps of `node`: no key for a container, a mark, a height, whether it is
+ *  resizable, a division, a region, or a node it rides it has none of. */
+export function nodeViewOf(node: NodeView): NodeView {
+  const { id, width, shape, container, isContainer, height, resizable, divide, region } = node;
+  const view: NodeView = { id, width, shape };
+  if (node.outline !== undefined) view.outline = node.outline;
+  if (node.attachedTo !== undefined) view.attachedTo = node.attachedTo;
+  if (container !== undefined) view.container = container;
+  if (isContainer !== undefined) view.isContainer = isContainer;
+  if (height !== undefined) view.height = height;
+  if (resizable !== undefined) view.resizable = resizable;
+  if (divide !== undefined) view.divide = divide;
+  if (region !== undefined) view.region = region;
+  return view;
+}
+
+/** The views of the regions `regions` of the node `container`, divided by `axis`, read into one
+ *  list, each after the region it lies in, in the order the engine gives them slots. A region
+ *  keeps its division where it holds regions of its own. */
+export function regionViewsOf(
+  container: string,
+  axis: Divide,
+  regions: readonly RegionRead[],
+): NodeView[] {
+  const last = new Map<number | undefined, number>();
+  const holds = new Set<number>();
+  regions.forEach(({ of }, i) => {
+    last.set(of, i);
+    if (of !== undefined) holds.add(of);
+  });
+  return regions.map(({ id, name, line, divide, of }, i) => {
+    const parent = of === undefined ? undefined : regions[of]!;
+    const region: RegionView = {
+      line,
+      axis: parent ? parent.divide! : axis,
+      last: last.get(of) === i,
+      ...(name === undefined ? {} : { name }),
+      ...(divide === undefined || !holds.has(i) ? {} : { divide }),
+    };
+    const view: NodeView = {
+      id,
+      width: 0,
+      shape: "rectangle",
+      container: parent ? parent.id : container,
+      isContainer: true,
+    };
+    view.region = region;
+    return view;
+  });
+}
 
 /** A graph as the store takes it once the bridge took it: of each node what the store keeps. */
 export interface KeptGraph {
   nodes: readonly NodeView[];
-  edges: EdgeData[];
+  edges: KeptEdge[];
 }
 
+/** An edge as Comb keeps it once the bridge took it, the places of its labels filled in
+ *  (API-edges-dock-nodes-or-edges). */
+export type KeptEdge = Omit<EdgeFields, "labels"> & {
+  readonly labels?: readonly KeptLabel[];
+} & EdgeSource &
+  EdgeTarget;
+
 /** What `updateNode` may change of a node: its content, which it replaces whole
- *  (REN-node-content-in-rows). */
+ *  (REN-node-content-in-rows), its height, a height below its content's raised to it, and whether
+ *  the user may resize it (API-edits-report-nested-changes). */
 export interface NodePatch {
   content?: NodeContent;
+  height?: number;
+  resizable?: boolean;
+  /** Divides the node anew, with `regions`: in the direction the node has where left out. */
+  divide?: Divide;
+  /** Its regions anew, each taking the size given, the last any rest; a region left out goes
+   *  with everything it holds, and one kept by its identifier keeps what it holds
+   *  (ARCH-regions-are-container-slots, *Removing a region*). */
+  regions?: RegionData[];
+  /** A border node's side and offset anew, the offset held within that side's length; a node
+   *  that is no border node has neither (ARCH-border-nodes-ride-sides). */
+  side?: Side;
+  offset?: number;
+  /** How its outline is drawn anew (REN-node-shapes-cover-uml, *Outline*). */
+  outline?: Outline;
 }
+
+/** The regions of a node `addNode` adds, read into one list, and the slots the engine took them
+ *  into, in their order. */
+export interface TakenRegions {
+  readonly read: readonly RegionRead[];
+  readonly slots: readonly number[];
+}
+
+/** A node divided anew by a patch of `updateNode`: its direction, its regions, the slots the
+ *  engine took them into, depth first, and the slots of the regions it had. */
+export interface Divided {
+  /** The width the engine made the node to hold its regions. */
+  readonly width: number;
+  readonly divide: Divide | undefined;
+  readonly regions: readonly RegionRead[];
+  readonly slots: readonly number[];
+  readonly old: readonly number[];
+}
+
+/** What a patch of `updateNode` set besides content, as the store keeps it, and whether it set a
+ *  border node's side or offset, which the engine keeps. */
+export type NodeSizing = Pick<NodePatch, "height" | "resizable" | "outline"> & {
+  side?: true;
+  offset?: true;
+};
 
 /** Who made a change: the user on the canvas, or the host application through `Comb`. */
 export type By = "user" | "host";
@@ -109,7 +333,27 @@ export type By = "user" | "host";
 export type StoreChange =
   | { readonly kind: "loaded"; readonly by: "host" }
   | { readonly kind: "nodeAdded"; readonly by: "host"; readonly id: string }
-  | { readonly kind: "nodeMoved"; readonly by: "user"; readonly id: string }
+  | { readonly kind: "nodeMoved"; readonly by: By; readonly id: string }
+  | {
+      readonly kind: "nodeResized";
+      readonly by: "user";
+      readonly id: string;
+      /** The nodes that lie directly in it whose position relative to it the resize changed, and
+       *  for a divided node those in its regions whose position relative to their region did. */
+      readonly moved: readonly string[];
+      /** Its regions whose size the resize changed (ARCH-regions-are-container-slots). */
+      readonly regions: readonly string[];
+    }
+  | {
+      readonly kind: "regionsMoved";
+      readonly by: "user";
+      /** The divided node whose line was dragged. */
+      readonly node: string;
+      /** Its regions whose size the drag changed, and the nodes in them whose position relative
+       *  to their region it changed (ARCH-regions-are-container-slots, *Lines*). */
+      readonly regions: readonly string[];
+      readonly moved: readonly string[];
+    }
   | {
       readonly kind: "nodesRemoved";
       readonly by: By;
@@ -118,7 +362,12 @@ export type StoreChange =
     }
   | { readonly kind: "edgesRemoved"; readonly by: By; readonly edges: readonly string[] }
   | { readonly kind: "edgeAdded"; readonly by: By; readonly id: string }
-  | { readonly kind: "labelMoved"; readonly by: "user"; readonly edge: string }
+  | {
+      readonly kind: "labelMoved";
+      readonly by: "user";
+      readonly edge: string;
+      readonly label: string;
+    }
   | {
       readonly kind: "edgeUpdated";
       readonly by: "host";
@@ -131,6 +380,18 @@ export type StoreChange =
       readonly id: string;
       /** Whether the patch set the node's content, which the engine keeps. */
       readonly content: boolean;
+      /** Set where the patch set the node's height, which the engine keeps as raised. */
+      readonly height?: true;
+      /** Whether the node is resizable, where the patch set it. */
+      readonly resizable?: boolean;
+      /** How its outline is drawn, where the patch set it (REN-node-shapes-cover-uml). */
+      readonly outline?: Outline;
+      /** Set where the patch divided the node into regions anew. */
+      readonly regions?: true;
+      /** Set where the patch set a border node's side, and its offset, which the engine keeps
+       *  (ARCH-border-nodes-ride-sides). */
+      readonly side?: true;
+      readonly offset?: true;
     };
 
 /** A connection the user drags from the connector `side` of the node in slot `source`
@@ -163,9 +424,7 @@ export interface GraphView {
   /** The change the last action that changed the graph made, or none before the first. */
   readonly change: StoreChange | null;
   /** The edge in each slot, none at a free slot (ARCH-engine-edits-graph-in-place). */
-  readonly edges: readonly (
-    Readonly<Omit<EdgeData, "label"> & { readonly label?: Readonly<EdgeLabelData> }> | undefined
-  )[];
+  readonly edges: readonly (Readonly<KeptEdge> | undefined)[];
   readonly selection: Readonly<Selection>;
   /** The node whose connectors the pointer shows, or none (API-edges-dock-side-or-outline). */
   readonly hovered: number | null;
@@ -190,11 +449,29 @@ export interface GraphState extends GraphView {
   /** Replaces the graph by `graph`, whose identifiers hold `idUnits` UTF-16 code units, as the
    *  snapshot counted them while it read them. */
   load(graph: KeptGraph, idUnits: number): void;
-  /** Keeps `node`, which the engine took into `slot`, without its position. */
-  addNode(node: NodeData, slot: number): void;
+  /** Keeps `node`, which the engine took into `slot`, without its position, and its regions,
+   *  `read` into one list, which the engine took into `slots` in their order
+   *  (ARCH-regions-are-container-slots). */
+  addNode(node: NodeData, slot: number, regions?: TakenRegions): void;
   /** Records that the engine took a patch of the node `id`, which set its content where
-   *  `content`. */
-  updateNode(id: string, content: boolean): void;
+   *  `content`, its height and whether it is resizable where `sizing` names them, and divided it
+   *  anew where `divided` says how: its regions, which the engine took into `slots`, depth first,
+   *  in place of those in `old`. */
+  updateNode(id: string, content: boolean, sizing?: NodeSizing, divided?: Divided): void;
+  /** Records that a resize, now released, left the node `id` `width` × `height`, the height then
+   *  its own, changed the positions relative to it of the nodes `moved`, and the sizes of its
+   *  regions `regions` (API-edits-report-nested-changes). */
+  nodeResized(
+    id: string,
+    width: number,
+    height: number,
+    moved: readonly string[],
+    regions?: readonly string[],
+  ): void;
+  /** Records that the drag of a line of the divided node `node`, now released, changed the sizes
+   *  of its regions `regions` and the positions relative to their region of the nodes `moved`
+   *  (ARCH-regions-are-container-slots). */
+  regionsMoved(node: string, regions: readonly string[], moved: readonly string[]): void;
   select(selection: Selection): void;
   setViewport(viewport: Viewport): void;
   positionsMoved(): void;
@@ -206,18 +483,20 @@ export interface GraphState extends GraphView {
   dragEnded(): void;
   /** Records that the point a connection is dragged to moved, where interaction keeps it. */
   pointerMoved(): void;
-  /** Records that a drag, now released, left the node `id` where the engine keeps it. */
-  nodeMoved(id: string): void;
+  /** Records that a drag, now released, left the node `id` where the engine keeps it, in the
+   *  container `container`, or on the canvas for `null` (API-edits-report-nested-changes); by the
+   *  host where an `updateNode` moved it into a region (ARCH-regions-are-container-slots). */
+  nodeMoved(id: string, container: string | null, by?: By): void;
   /** Forgets the nodes in `nodeSlots` and the edges in `edgeSlots`, which the engine removed,
    *  leaving their slots free, and clears a selection of one of them. */
   removeNodes(nodeSlots: readonly number[], edgeSlots: readonly number[], by: By): void;
   /** Forgets the edges in `edgeSlots`, which the engine removed, leaving their slots free. */
   removeEdges(edgeSlots: readonly number[], by: By): void;
   /** Keeps `edge`, which the engine took into `slot`, as `by` made it. */
-  addEdge(edge: EdgeData, slot: number, by: By): void;
-  /** Records that a drag, now released, left the label of the edge `id` at path parameter `t`
-   *  and label offset `offset`, where the engine placed it. */
-  labelMoved(id: string, t: number, offset: number): void;
+  addEdge(edge: KeptEdge, slot: number, by: By): void;
+  /** Records that a drag, now released, left the label at `index` of the edge `id` at path
+   *  parameter `t` and label offset `offset`, where the engine placed it. */
+  labelMoved(id: string, index: number, t: number, offset: number): void;
   /** Shows the connectors of the node in `slot`, or none. */
   hover(slot: number | null): void;
   /** Records the connection the user drags, or that it ended. */
@@ -235,9 +514,18 @@ function nodeUnits(node: Pick<NodeView, "id">): number {
   return node.id.length;
 }
 
-/** The UTF-16 code units of the identifiers of `edge`: its own, its source's, and its target's. */
-function edgeUnits(edge: Pick<EdgeData, "id" | "source" | "target">): number {
-  return edge.id.length + edge.source.length + edge.target.length;
+/** The UTF-16 code units of the identifiers of `edge`: its own, its source's, its target's, each
+ *  a node's or an edge's (API-edges-dock-nodes-or-edges), and its labels'. */
+function edgeUnits(edge: EdgeView): number {
+  const ends = (edge.source ?? edge.sourceEdge).length + (edge.target ?? edge.targetEdge).length;
+  return edge.id.length + ends + labelUnits(edge.labels);
+}
+
+/** The UTF-16 code units of the identifiers of `labels` (API-edges-dock-nodes-or-edges). */
+export function labelUnits(labels: readonly { readonly id: string }[] | null | undefined): number {
+  let units = 0;
+  for (const label of labels ?? []) units += label.id.length;
+  return units;
 }
 
 /** `edges` without those in `slots`, the identifiers of those edges, the map without them, and
@@ -290,7 +578,7 @@ function loadedFrom(state: GraphView, graph: KeptGraph, idUnits: number): Partia
   const edgeSlots = new Map<string, number>();
   for (let slot = 0; slot < graph.edges.length; slot++) edgeSlots.set(graph.edges[slot]!.id, slot);
   return {
-    nodes: graph.nodes.map(({ id, width, shape }) => ({ id, width, shape })),
+    nodes: graph.nodes.map(nodeViewOf),
     slots,
     edgeSlots,
     edges: graph.edges,
@@ -307,6 +595,24 @@ function loadedFrom(state: GraphView, graph: KeptGraph, idUnits: number): Partia
  *  of the nodes the drag moves (REN-moving-layer-redraws-changes). */
 function draggedWithout(state: GraphView, nodes: GraphView["nodes"]): Partial<GraphView> {
   return state.dragged?.some((slot) => !nodes[slot]) ? { dragged: null } : {};
+}
+
+/** What `nodeMoved` changes of `state`: the change, by `by`, and where the node `id` lies in
+ *  another container than before, a new view of it that names `container`, or none for the
+ *  canvas. */
+function movedFrom(
+  state: GraphView,
+  id: string,
+  container: string | null,
+  by: By,
+): Partial<GraphView> {
+  const change = { kind: "nodeMoved", by, id } as const;
+  const slot = state.slots.get(id)!;
+  const view = state.nodes[slot]!;
+  if ((view.container ?? null) === container) return { change };
+  const nodes = state.nodes.slice();
+  nodes[slot] = nodeViewOf({ ...view, container: container ?? undefined });
+  return { nodes, change };
 }
 
 /** The actions of a drag of nodes (REN-moving-layer-redraws-changes), by the store's `set`. */
@@ -338,7 +644,8 @@ function withoutNodes(
     if (!node) continue;
     nodes[slot] = undefined;
     slots.delete(node.id);
-    ids.push(node.id);
+    // A region goes with what it divides, and is never named (ARCH-regions-are-container-slots).
+    if (!node.region) ids.push(node.id);
     units += nodeUnits(node);
   }
   const { selection } = state;
@@ -389,28 +696,148 @@ export function edgeNamed(
   return { slot, edge: view.edges[slot]! };
 }
 
-/** `edge` with `patch` merged: a field the patch sets replaces the edge's, and `null` clears a dash
- *  or a label. */
+/** `edge` with `patch` merged: a field the patch sets replaces the edge's, the labels whole, and
+ *  `null` clears a dash or the labels. */
 function patched(edge: EdgeView, patch: EdgePatch): EdgeView {
-  const { dash, label, ...rest } = { ...edge, ...patch };
+  const { dash, labels, ...rest } = { ...edge, ...patch };
+  // The bridge refused a side beside an end on an edge (API-edges-dock-nodes-or-edges).
   return {
     ...rest,
     ...(dash ? { dash } : {}),
-    ...(label ? { label } : {}),
-  };
+    ...(labels ? { labels: labels as readonly KeptLabel[] } : {}),
+  } as EdgeView;
 }
 
 /** What `updateNode` changes of `state`: the node `id` a new object where its content changed, so
  *  that a view tells the change by identity, and the change recorded. */
-function updatedFrom(state: GraphView, id: string, content: boolean): Partial<GraphView> {
-  const nodes = content
-    ? state.nodes.map((node) => (node?.id === id ? { ...node } : node))
-    : state.nodes;
-  return { nodes, change: { kind: "nodeUpdated", by: "host", id, content } };
+function updatedFrom(
+  state: GraphView,
+  id: string,
+  content: boolean,
+  sizing: NodeSizing = {},
+  divided?: Divided,
+): Partial<GraphView> {
+  const { height, resizable, outline } = sizing;
+  const sized = height !== undefined || resizable !== undefined || outline !== undefined;
+  const view = (node: NodeView) => {
+    const updated = nodeViewOf({
+      ...node,
+      ...(height === undefined ? {} : { height }),
+      ...(resizable === undefined ? {} : { resizable }),
+      ...(outline === undefined ? {} : { outline }),
+    });
+    if (divided) {
+      delete updated.divide;
+      if (divided.divide !== undefined && divided.regions.length > 0)
+        updated.divide = divided.divide;
+      updated.width = divided.width;
+    }
+    return updated;
+  };
+  let nodes =
+    content || sized || divided
+      ? state.nodes.map((node) => (node?.id === id ? view(node) : node))
+      : state.nodes;
+  let { slots, idUnits } = state;
+  if (divided) {
+    ({ nodes, slots, idUnits } = withRegions(nodes, slots, idUnits, id, divided));
+  }
+  return { nodes, slots, idUnits, change: updateOf(id, content, sizing, divided !== undefined) };
+}
+
+/** The change `updateNode` records of the node `id`: whether it set content, what it set of the
+ *  node's size and place, and whether it divided the node anew. */
+function updateOf(id: string, content: boolean, sizing: NodeSizing, divided: boolean) {
+  const { height, resizable, side, offset, outline } = sizing;
+  return {
+    kind: "nodeUpdated",
+    by: "host",
+    id,
+    content,
+    ...(height === undefined ? {} : { height: true as const }),
+    ...(resizable === undefined ? {} : { resizable }),
+    ...(outline === undefined ? {} : { outline }),
+    ...(divided ? { regions: true as const } : {}),
+    ...(side ? { side: true as const } : {}),
+    ...(offset ? { offset: true as const } : {}),
+  } as const;
+}
+
+/** `nodes`, `slots`, and `idUnits` without the regions in `divided.old` the store still keeps and
+ *  with the regions of the node `id` `divided` names, each in its slot. */
+function withRegions(
+  before: GraphView["nodes"],
+  map: ReadonlyMap<string, number>,
+  units: number,
+  id: string,
+  { divide, regions, slots: taken, old }: Divided,
+) {
+  const nodes = before.slice();
+  const slots = new Map(map);
+  let idUnits = units;
+  for (const slot of old) {
+    const region = nodes[slot];
+    if (!region?.region) continue;
+    nodes[slot] = undefined;
+    slots.delete(region.id);
+    idUnits -= nodeUnits(region);
+  }
+  const views = divide === undefined ? [] : regionViewsOf(id, divide, regions);
+  views.forEach((view, i) => {
+    nodes[taken[i]!] = view;
+    slots.set(view.id, taken[i]!);
+    idUnits += nodeUnits(view);
+  });
+  return { nodes, slots, idUnits };
+}
+
+/** What `nodeResized` changes of `state`: a new view of the node `id`, `width` × `height`, the
+ *  height its own as the engine keeps it after a resize, and the change. */
+function resizedFrom(
+  state: GraphView,
+  id: string,
+  [width, height]: readonly [number, number],
+  moved: readonly string[],
+  regions: readonly string[],
+): Partial<GraphView> {
+  const slot = state.slots.get(id)!;
+  const nodes = state.nodes.slice();
+  nodes[slot] = nodeViewOf({ ...nodes[slot]!, width, height });
+  return { nodes, change: { kind: "nodeResized", by: "user", id, moved, regions } };
+}
+
+/** What `addNode` changes of `state`: `node` kept in `slot`, its regions in `regions`, depth
+ *  first, and their identifiers counted (ARCH-regions-are-container-slots). */
+function withNode(
+  state: GraphView,
+  node: NodeData,
+  slot: number,
+  { read, slots: regions }: TakenRegions,
+): Partial<GraphView> {
+  const { id, divide } = node;
+  const nodes = state.nodes.slice();
+  const divided = divide !== undefined && regions.length > 0;
+  nodes[slot] = nodeViewOf({ ...node, divide: divided ? divide : undefined });
+  const added = divided ? regionViewsOf(id, divide, read) : [];
+  const slots = new Map(state.slots).set(id, slot);
+  let units = nodeUnits({ id });
+  added.forEach((view, i) => {
+    nodes[regions[i]!] = view;
+    slots.set(view.id, regions[i]!);
+    units += nodeUnits(view);
+  });
+  return {
+    nodes,
+    slots,
+    idUnits: state.idUnits + units,
+    // Its slot in `nodes` is the signal of the new node, which a kept query at the far level
+    // survives (REN-moving-layer-redraws-changes, ARCH-graph-in-zustand-store); no counter moves.
+    change: { kind: "nodeAdded", by: "host", id },
+  };
 }
 
 /** What `addEdge` changes of `state`: `edge` kept in `slot`, and its identifiers counted. */
-function withEdge(state: GraphView, edge: EdgeData, slot: number, by: By): Partial<GraphView> {
+function withEdge(state: GraphView, edge: KeptEdge, slot: number, by: By): Partial<GraphView> {
   const edges = state.edges.slice();
   edges[slot] = edge;
   return {
@@ -438,37 +865,33 @@ export function createGraphStore() {
     movesVersion: 0,
     pointerVersion: 0,
     load: (graph, idUnits) => set((state) => loadedFrom(state, graph, idUnits)),
-    addNode: ({ id, width, shape }, slot) =>
-      set((state) => {
-        const nodes = state.nodes.slice();
-        nodes[slot] = { id, width, shape };
-        return {
-          nodes,
-          slots: new Map(state.slots).set(id, slot),
-          idUnits: state.idUnits + nodeUnits({ id }),
-          // Its slot in `nodes` is the signal of the new node, which a kept query at the far level
-          // survives (REN-moving-layer-redraws-changes, ARCH-graph-in-zustand-store); no counter
-          // moves.
-          change: { kind: "nodeAdded", by: "host", id },
-        };
-      }),
-    updateNode: (id, content) => set((state) => updatedFrom(state, id, content)),
+    addNode: (node, slot, regions = { read: [], slots: [] }) =>
+      set((state) => withNode(state, node, slot, regions)),
+    updateNode: (id, content, sizing, divided) =>
+      set((state) => updatedFrom(state, id, content, sizing, divided)),
+    nodeResized: (id, width, height, moved, regions = []) =>
+      set((state) => resizedFrom(state, id, [width, height], moved, regions)),
+    regionsMoved: (node, regions, moved) =>
+      set({ change: { kind: "regionsMoved", by: "user", node, regions, moved } }),
     select: (selection) => set({ selection }),
     setViewport: (viewport) => set({ viewport }),
     positionsMoved: () => set((state) => ({ positionsVersion: state.positionsVersion + 1 })),
     ...dragsOf(set),
     pointerMoved: () => set((state) => ({ pointerVersion: state.pointerVersion + 1 })),
-    nodeMoved: (id) => set({ change: { kind: "nodeMoved", by: "user", id } }),
+    nodeMoved: (id, container, by = "user") => set((state) => movedFrom(state, id, container, by)),
     removeNodes: (nodeSlots, edgeSlots, by) =>
       set((state) => withoutNodes(state, nodeSlots, edgeSlots, by)),
     removeEdges: (edgeSlots, by) => set((state) => withoutEdgesOf(state, edgeSlots, by)),
     addEdge: (edge, slot, by) => set((state) => withEdge(state, edge, slot, by)),
-    labelMoved: (id, t, offset) =>
+    labelMoved: (id, index, t, offset) =>
       set((state) => {
         const { slot, edge } = edgeNamed(state, id);
         const edges = state.edges.slice();
-        edges[slot] = { ...edge, label: { ...edge.label!, t, offset } };
-        return { edges, change: { kind: "labelMoved", by: "user", edge: id } };
+        const labels = edge.labels!.slice();
+        labels[index] = { ...labels[index]!, t, offset };
+        edges[slot] = { ...edge, labels };
+        const label = labels[index]!.id;
+        return { edges, change: { kind: "labelMoved", by: "user", edge: id, label } };
       }),
     hover: (hovered) => set((state) => (state.hovered === hovered ? state : { hovered })),
     connect: (connection) => set({ connection }),
@@ -476,8 +899,10 @@ export function createGraphStore() {
       set((state) => {
         const { slot, edge } = edgeNamed(state, id);
         const edges = state.edges.slice();
-        edges[slot] = patched(edge, patch);
-        return { edges, change: { kind: "edgeUpdated", by: "host", id, patch } };
+        const next = patched(edge, patch);
+        edges[slot] = next;
+        const idUnits = state.idUnits - edgeUnits(edge) + edgeUnits(next);
+        return { edges, idUnits, change: { kind: "edgeUpdated", by: "host", id, patch } };
       }),
   }));
 }

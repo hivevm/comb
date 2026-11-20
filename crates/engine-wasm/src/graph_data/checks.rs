@@ -3,18 +3,20 @@
 //! identifiers, each rule through one function that a load, `addNode`, `addEdge`, and `updateEdge`
 //! reach alike.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use comb_engine::content::Fonts;
 use comb_engine::geometry::WORLD_LIMIT;
-use comb_engine::graph::{EdgeSpec, LabelPlacement};
-use comb_engine::shape::NodeShape;
-use comb_engine::stroke::EdgeStyle;
+use comb_engine::graph::{EdgeSpec, End, LabelPlacement, Which};
+use comb_engine::shape::{NodeShape, Outline};
+use comb_engine::stroke::{Arrowhead, EdgeStyle};
 
-use super::item::{Batch, Edge, Label, Node};
+use super::edge_columns::IdLengths;
+use super::item::{Batch, Edge, EndRead, Label, Node};
+use super::problem::AN_OUTLINE;
 use super::{
-    Arrow, ContentColumns, Cursor, GraphDataProblem, GraphList, ID_LIMIT, MAX_ID, MAX_TEXT,
-    TEXT_LIMIT, check_id_budget, slot, utf16_length,
+    Arrow, ContentColumns, Cursor, GraphDataProblem, GraphList, ID_LIMIT, LABEL_LIMIT, MAX_ID,
+    MAX_LABELS, MAX_TEXT, TEXT_LIMIT, check_id_budget, slot, utf16_length,
 };
 
 /// The nodes of a batch as the engine takes them: positions and sizes, `x, y` and `width, height`
@@ -23,6 +25,15 @@ pub(super) struct Nodes<'a> {
     pub(super) positions: Vec<f32>,
     pub(super) sizes: Vec<f32>,
     pub(super) shapes: Vec<NodeShape>,
+    /// How each node's outline is drawn, as the engine keeps it (REN-node-shapes-cover-uml).
+    pub(super) outlines: Vec<Outline>,
+    /// The height each node's data gives, as the engine keeps it, or none, and whether the user
+    /// may resize it (API-edits-report-nested-changes).
+    pub(super) given: Vec<Option<f32>>,
+    pub(super) resizable: Vec<bool>,
+    /// The height of each node's content, below which its regions lie; 0 without content
+    /// (ARCH-regions-are-container-slots).
+    pub(super) tops: Vec<f32>,
     pub(super) slots: HashMap<&'a str, u32>,
     /// The code units of the strings of all their content, as the budget counted them.
     pub(super) units: u64,
@@ -60,6 +71,41 @@ pub(super) fn checked_node(node: &Node) -> Result<([f32; 2], f32), GraphDataProb
     Ok(([x, y], width))
 }
 
+/// The height the data of `node` gives, as the engine keeps it, or none; refused as
+/// `invalidSize` where, narrowed to `f32`, it is not finite or not above 0
+/// (API-bridge-columns-carry-nesting).
+pub(crate) fn given_height(id: &str, height: Option<f64>) -> Result<Option<f32>, GraphDataProblem> {
+    let Some(height) = height else {
+        return Ok(None);
+    };
+    // Checked as the engine keeps it: a number beyond `f32` is as infinite as infinity.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "checked as f32 below, so that what f32 cannot hold is refused"
+    )]
+    let height = height as f32;
+    if !height.is_finite() || height <= 0.0 {
+        return Err(GraphDataProblem::InvalidSize {
+            node: id.to_owned(),
+        });
+    }
+    Ok(Some(height))
+}
+
+/// The height of the node of node shape `shape`, `width` wide, whose content of `rows` rows is
+/// `content` high with its padding, before the least height of a node, and whose data gives the
+/// height `given`, or none, as the engine keeps it: `NodeShape::sized`
+/// (REN-node-shapes-cover-uml, *Height*).
+pub(crate) fn node_height(
+    shape: NodeShape,
+    width: f32,
+    (content, rows): (f64, usize),
+    given: Option<f32>,
+) -> f32 {
+    let content = (rows > 0).then_some(content);
+    kept_height(shape.sized(f64::from(width), content, given.map(f64::from)))
+}
+
 /// Refuses the node `id` at `y` whose far side, `y + height`, its height the one its content lays
 /// out to, lies past the world's limit (ARCH-one-workspace-per-example), naming the field `height`,
 /// as the world's limit refuses a far side `x + width`.
@@ -90,10 +136,46 @@ pub(crate) const fn kept_height(height: f64) -> f32 {
     height as f32
 }
 
-/// The height of the node of node shape `shape`, `width` wide, whose content lays out to
-/// `content` high in its inner rectangle, as the engine keeps it (REN-closed-set-of-node-shapes).
-pub(crate) fn shaped_height(shape: NodeShape, width: f32, content: f64) -> f32 {
-    kept_height(shape.height(f64::from(width), content))
+/// How far below the top of a node of node shape `shape`, `width` wide, its regions lie, its
+/// content `(content, rows)` as its layout gives it, its rows and their padding
+/// (ARCH-regions-are-container-slots, *Division*): below an actor's or an hourglass's drawing and
+/// its content, as high as `NodeShape::needed` makes them; below any other node's content, at
+/// least the least height of a node; at 0 for another node without rows.
+pub(crate) fn content_top(shape: NodeShape, width: f32, (content, rows): (f64, usize)) -> f32 {
+    let content = if rows > 0 { content } else { 0.0 };
+    if shape.drawing(f64::from(width)).is_some() {
+        kept_height(shape.needed(f64::from(width), content))
+    } else if rows > 0 {
+        kept_height(content.max(comb_engine::content::MIN_HEIGHT))
+    } else {
+        0.0
+    }
+}
+
+/// The outline `outline` of the node `id` at `index` as the engine keeps it, or its refusal as
+/// `invalidField` naming the node and `outline`: a dash pattern is checked as an edge's is, as
+/// `f32`, its dash positive and its gap not negative (REN-node-shapes-cover-uml, *Outline*). It
+/// is read with the field, in the first pass, so that a dash pattern it refuses is named as a
+/// value of another type is.
+pub(crate) fn outline_of(
+    id: &str,
+    index: usize,
+    outline: super::Outline,
+) -> Result<Outline, GraphDataProblem> {
+    Ok(match outline {
+        super::Outline::Solid => Outline::Solid,
+        super::Outline::None => Outline::None,
+        super::Outline::Dashed(super::Pair(dash)) => {
+            let (dash, gap) = dash_of(id, dash).map_err(|_| GraphDataProblem::InvalidField {
+                list: GraphList::Nodes,
+                index: slot(index).unwrap_or(u32::MAX),
+                id: Some(id.to_owned()),
+                field: "outline".to_owned(),
+                expected: AN_OUTLINE.to_owned(),
+            })?;
+            Outline::Dashed([dash, gap])
+        }
+    })
 }
 
 /// Refuses content of `rows` rows in the node `id` of the filled node shape `shape`, which holds
@@ -122,12 +204,19 @@ pub(super) fn nodes_of<'a>(
     let mut positions = Vec::with_capacity(batch.nodes.len() * 2);
     let mut sizes = Vec::with_capacity(batch.nodes.len() * 2);
     let mut shapes = Vec::with_capacity(batch.nodes.len());
+    let mut outlines = Vec::with_capacity(batch.nodes.len());
+    let mut given = Vec::with_capacity(batch.nodes.len());
+    let mut tops = Vec::with_capacity(batch.nodes.len());
     let mut cursor = Cursor::default();
     for (index, node) in batch.nodes.iter().enumerate() {
         let (position, width) = checked_node(node)?;
-        content_fits_shape(node.id, node.shape, content.rows(index).len())?;
-        let height = content.check(index, node.id, &mut cursor, fonts)?;
-        let height = shaped_height(node.shape, width, height);
+        let height_given = given_height(node.id, node.height)?;
+        outlines.push(node.outline);
+        let rows = content.rows(index).len();
+        content_fits_shape(node.id, node.shape, rows)?;
+        let laid = content.check(index, node.id, &mut cursor, fonts)?;
+        let height = node_height(node.shape, width, (laid, rows), height_given);
+        tops.push(content_top(node.shape, width, (laid, rows)));
         within_by_height(node.id, position[1], height)?;
         if slots.insert(node.id, slot(index)?).is_some() {
             return Err(GraphDataProblem::DuplicateNode {
@@ -137,11 +226,16 @@ pub(super) fn nodes_of<'a>(
         positions.extend(position);
         sizes.extend([width, height]);
         shapes.push(node.shape);
+        given.push(height_given);
     }
     Ok(Nodes {
         positions,
         sizes,
         shapes,
+        outlines,
+        resizable: batch.nodes.iter().map(|node| node.resizable).collect(),
+        given,
+        tops,
         slots,
         units: cursor.units(),
     })
@@ -152,32 +246,77 @@ pub(super) fn rgb(value: f64) -> bool {
     value.fract() == 0.0 && (0.0..=f64::from(0xff_ffff)).contains(&value)
 }
 
-/// The placement of the label of the edge `id`, or why it was refused.
-pub(super) fn label_placement(id: &str, label: &Label) -> Result<LabelPlacement, GraphDataProblem> {
+/// The placement of each label of the edge `id`, in its order, or why one was refused: more
+/// than `MAX_LABELS` of them, then each label in turn, an identifier its edge's labels hold
+/// before it, a path parameter or offset not finite, an offset past the world, a text, and a
+/// background (API-edges-dock-nodes-or-edges, *Edge labels*).
+pub(super) fn label_placements(
+    id: &str,
+    labels: &[Label],
+) -> Result<Vec<LabelPlacement>, GraphDataProblem> {
     let edge = || id.to_owned();
+    if labels.len() > MAX_LABELS {
+        return Err(GraphDataProblem::TooManyLabels {
+            edge: edge(),
+            limit: LABEL_LIMIT,
+        });
+    }
+    let mut placements = Vec::with_capacity(labels.len());
+    for (i, label) in labels.iter().enumerate() {
+        let named = || label.id.to_owned();
+        if labels[..i].iter().any(|before| before.id == label.id) {
+            return Err(GraphDataProblem::DuplicateLabel {
+                edge: edge(),
+                label: named(),
+            });
+        }
+        placements.push(label_placement(id, i, label)?);
+    }
+    Ok(placements)
+}
+
+/// The placement of the label at `index` of the edge `id`, or why it was refused.
+fn label_placement(
+    id: &str,
+    index: usize,
+    label: &Label,
+) -> Result<LabelPlacement, GraphDataProblem> {
+    let (edge, named) = (|| id.to_owned(), || label.id.to_owned());
     if !(label.t.is_finite() && label.offset.is_finite()) {
-        return Err(GraphDataProblem::NonFiniteLabel { edge: edge() });
+        return Err(GraphDataProblem::NonFiniteLabel {
+            edge: edge(),
+            label: named(),
+        });
     }
     if label.offset.abs() > WORLD_LIMIT {
         return Err(GraphDataProblem::BeyondWorld {
             list: GraphList::Edges,
             id: edge(),
-            field: "label.offset".to_owned(),
+            field: format!("labels[{index}].offset"),
             limit: WORLD_LIMIT,
         });
     }
     match label.text_length {
-        None => return Err(GraphDataProblem::InvalidLabelText { edge: edge() }),
+        None => {
+            return Err(GraphDataProblem::InvalidLabelText {
+                edge: edge(),
+                label: named(),
+            });
+        }
         Some(length) if length > MAX_TEXT => {
             return Err(GraphDataProblem::LabelTextTooLong {
                 edge: edge(),
+                label: named(),
                 limit: TEXT_LIMIT,
             });
         }
         Some(_) => {}
     }
     if label.background.is_some_and(|b| !rgb(b)) {
-        return Err(GraphDataProblem::InvalidBackground { edge: edge() });
+        return Err(GraphDataProblem::InvalidBackground {
+            edge: edge(),
+            label: named(),
+        });
     }
     Ok(LabelPlacement {
         t: label.t,
@@ -215,62 +354,123 @@ pub(super) fn dash_of(id: &str, dash: [f64; 2]) -> Result<(f32, f32), GraphDataP
     Ok((dash, gap))
 }
 
-/// The label placement and style of an edge, or why they were refused.
-fn placement_of(edge: &Edge) -> Result<(Option<LabelPlacement>, EdgeStyle), GraphDataProblem> {
-    let label = edge
-        .label
-        .as_ref()
-        .map(|label| label_placement(edge.id, label))
-        .transpose()?;
+/// The arrowhead the engine draws for `arrow` (API-edges-dock-nodes-or-edges, *Arrowheads*).
+pub(super) const fn arrowhead_of(arrow: Arrow) -> Arrowhead {
+    match arrow {
+        Arrow::End => Arrowhead::End,
+        Arrow::None => Arrowhead::None,
+        Arrow::Open => Arrowhead::Open,
+        Arrow::Hollow => Arrowhead::Hollow,
+    }
+}
+
+/// The label placements and style of an edge, or why they were refused.
+fn placement_of(edge: &Edge) -> Result<(Vec<LabelPlacement>, EdgeStyle), GraphDataProblem> {
+    let labels = label_placements(edge.id, &edge.labels)?;
     let style = EdgeStyle {
         color: color_of(edge.id, edge.color)?,
         dash: edge.dash.map(|dash| dash_of(edge.id, dash)).transpose()?,
-        arrow: edge.arrow == Arrow::End,
+        arrow: arrowhead_of(edge.arrow),
+        lightning: edge.lightning,
     };
-    Ok((label, style))
+    Ok((labels, style))
 }
 
-/// The edge as the engine keeps it between the node slots `source` and `target`, as a load and
-/// `addEdge` build it, or why its label or style was refused.
-pub(super) fn spec_of(edge: &Edge, source: u32, target: u32) -> Result<EdgeSpec, GraphDataProblem> {
-    let (label, style) = placement_of(edge)?;
+/// The edge as the engine keeps it between the ends `source` and `target`, as a load and `addEdge`
+/// build it, or why its label or style was refused.
+pub(super) fn spec_of(edge: &Edge, source: End, target: End) -> Result<EdgeSpec, GraphDataProblem> {
+    let (labels, style) = placement_of(edge)?;
     Ok(EdgeSpec {
-        sides: edge.sides,
+        sides: edge.sides(),
         source,
         target,
-        label,
+        labels,
         style,
     })
 }
 
-/// Resolves every edge's ends to node slots, or names the first offending edge: the second of
-/// two that share an identifier, or one whose ends, label, or style were refused.
+/// The field that names the end `which` of an edge where it lies on an edge, as `invalidEdgeEnd`
+/// names it (API-edges-dock-nodes-or-edges).
+pub(super) const fn edge_end_field(which: Which) -> &'static str {
+    match which {
+        Which::Source => "sourceEdge",
+        Which::Target => "targetEdge",
+    }
+}
+
+/// Resolves every edge's ends to slots, or names the first offending edge: in the order of the
+/// edges, the second of two that share an identifier, or one whose end names a node the batch
+/// does not hold, or whose label or style were refused; then, once every edge is read, so that an
+/// edge may end on one later in the list, one whose end names an edge the batch does not hold, the
+/// edge itself, or one that ends on an edge (API-edges-dock-nodes-or-edges, *Ends*).
 pub(super) fn edges_of(
     batch: &Batch,
     slots: &HashMap<&str, u32>,
 ) -> Result<Vec<EdgeSpec>, GraphDataProblem> {
-    let mut seen = HashSet::with_capacity(batch.edges.len());
-    let end = |edge: &Edge, node: &str| {
-        slots
-            .get(node)
-            .copied()
-            .ok_or_else(|| GraphDataProblem::MissingNode {
-                edge: edge.id.to_owned(),
-                node: node.to_owned(),
-            })
+    let mut seen = HashMap::with_capacity(batch.edges.len());
+    let end = |edge: &Edge, end: EndRead| match end {
+        EndRead::Node { id, .. } => {
+            slots
+                .get(id)
+                .copied()
+                .map(End::Node)
+                .ok_or_else(|| GraphDataProblem::MissingNode {
+                    edge: Some(edge.id.to_owned()),
+                    border_node: None,
+                    node: id.to_owned(),
+                })
+        }
+        // Resolved below, once every edge is read.
+        EndRead::Edge { t, .. } => Ok(End::Edge { slot: u32::MAX, t }),
     };
-    batch
-        .edges
-        .iter()
-        .map(|edge| {
-            if !seen.insert(edge.id) {
-                return Err(GraphDataProblem::DuplicateEdge {
+    let mut specs = Vec::with_capacity(batch.edges.len());
+    for (index, edge) in batch.edges.iter().enumerate() {
+        if seen.insert(edge.id, slot(index)?).is_some() {
+            return Err(GraphDataProblem::DuplicateEdge {
+                edge: edge.id.to_owned(),
+            });
+        }
+        specs.push(spec_of(
+            edge,
+            end(edge, edge.source)?,
+            end(edge, edge.target)?,
+        )?);
+    }
+    let on = |edge: &Edge, end: EndRead| match end {
+        EndRead::Node { .. } => Ok(None),
+        EndRead::Edge { id, .. } => {
+            seen.get(id)
+                .copied()
+                .map(Some)
+                .ok_or_else(|| GraphDataProblem::MissingEdge {
                     edge: edge.id.to_owned(),
+                    missing: id.to_owned(),
+                })
+        }
+    };
+    for (index, edge) in batch.edges.iter().enumerate() {
+        let ends = [(Which::Source, edge.source), (Which::Target, edge.target)];
+        for (which, read) in ends {
+            let Some(on) = on(edge, read)? else { continue };
+            let spec = &specs[on as usize];
+            let ends_on_edge = spec.source.edge().is_some() || spec.target.edge().is_some();
+            if on as usize == index || ends_on_edge {
+                return Err(GraphDataProblem::InvalidEdgeEnd {
+                    edge: edge.id.to_owned(),
+                    end: edge_end_field(which).to_owned(),
                 });
             }
-            spec_of(edge, end(edge, edge.source)?, end(edge, edge.target)?)
-        })
-        .collect()
+            let resolved = &mut specs[index];
+            let at = match which {
+                Which::Source => &mut resolved.source,
+                Which::Target => &mut resolved.target,
+            };
+            if let End::Edge { slot, .. } = at {
+                *slot = on;
+            }
+        }
+    }
+    Ok(specs)
 }
 
 /// The length of the identifier `field` of the item at `index` of `list`, or its refusal where it
@@ -305,28 +505,56 @@ fn checked_id_length(
 }
 
 /// Checks the length of every identifier of a load, the nodes' and the edges' by their lengths,
-/// and of all of them together.
-pub(super) fn ids_of(
+/// each edge's with its labels', and of all of them together.
+pub(super) fn ids_of<L: IntoIterator<Item = usize>>(
     node_ids: impl IntoIterator<Item = usize>,
-    edge_ids: impl IntoIterator<Item = [usize; 3]>,
+    edge_ids: impl IntoIterator<Item = (IdLengths, L)>,
 ) -> Result<(), GraphDataProblem> {
     let mut units = 0;
     for (index, length) in node_ids.into_iter().enumerate() {
         units += checked_id_length("nodes", index, "id", length)?;
     }
-    for (index, lengths) in edge_ids.into_iter().enumerate() {
-        units += edge_ids_of(index, lengths)?;
+    for (index, (lengths, labels)) in edge_ids.into_iter().enumerate() {
+        units += edge_ids_of(index, lengths, labels)?;
     }
     check_id_budget(units as f64)
 }
 
 /// The UTF-16 code units of the identifier, the source, and the target of the edge at `index`,
-/// given as their `lengths`, as a load and `addEdge` check them, or the refusal of the first
-/// longer than `MAX_ID`.
-pub(super) fn edge_ids_of(index: usize, lengths: [usize; 3]) -> Result<usize, GraphDataProblem> {
+/// given as their `lengths`, and of the identifiers of its labels, given as `labels`, as a load
+/// and `addEdge` check them, or the refusal of the first longer than `MAX_ID`, an end named by
+/// the field that names it, `sourceEdge` or `targetEdge` for an end on an edge, and a label's
+/// named as `labels`.
+pub(super) fn edge_ids_of(
+    index: usize,
+    named: IdLengths,
+    labels: impl IntoIterator<Item = usize>,
+) -> Result<usize, GraphDataProblem> {
+    let ends = [Which::Source, Which::Target]
+        .into_iter()
+        .zip(named.on_edge)
+        .map(|(which, on_edge)| match (which, on_edge) {
+            (_, true) => edge_end_field(which),
+            (Which::Source, false) => "source",
+            (Which::Target, false) => "target",
+        });
     let mut units = 0;
-    for (field, length) in ["id", "source", "target"].into_iter().zip(lengths) {
+    for (field, length) in std::iter::once("id").chain(ends).zip(named.lengths) {
         units += checked_id_length("edges", index, field, length)?;
+    }
+    Ok(units + label_ids_of(index, labels)?)
+}
+
+/// The UTF-16 code units of the identifiers of the labels of the edge at `index`, given as their
+/// `lengths`, or the refusal of the first longer than `MAX_ID`, named as `labels`
+/// (API-edges-dock-nodes-or-edges).
+pub(super) fn label_ids_of(
+    index: usize,
+    lengths: impl IntoIterator<Item = usize>,
+) -> Result<usize, GraphDataProblem> {
+    let mut units = 0;
+    for length in lengths {
+        units += checked_id_length("edges", index, "labels", length)?;
     }
     Ok(units)
 }
@@ -404,7 +632,8 @@ mod tests {
         assert_eq!(
             error,
             GraphDataProblem::MissingNode {
-                edge: "e".into(),
+                edge: Some("e".into()),
+                border_node: None,
                 node: "z".into()
             }
         );
@@ -413,15 +642,22 @@ mod tests {
     #[test]
     fn a_non_finite_label_names_its_edge() {
         let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[("e", "a", "b")]);
-        data.edges[0].label = Some(LabelInput {
+        data.edges[0].labels = Some(vec![Field(Some(LabelInput {
+            id: "m".to_owned().into(),
             text_length: Some(1),
-            t: f64::NAN.into(),
-            offset: 0.0.into(),
+            t: Some(f64::NAN).into(),
+            offset: Some(0.0).into(),
             background: None,
-        })
+        }))])
         .into();
         let error = graph_of(&data).unwrap_err();
-        assert_eq!(error, GraphDataProblem::NonFiniteLabel { edge: "e".into() });
+        assert_eq!(
+            error,
+            GraphDataProblem::NonFiniteLabel {
+                edge: "e".into(),
+                label: "m".into(),
+            }
+        );
     }
 
     #[test]
@@ -470,16 +706,17 @@ mod tests {
     fn a_label_offset_past_the_world_names_its_edge_and_the_field() {
         // Verifies: Q-7, ARCH-one-workspace-per-example
         let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[("e", "a", "b")]);
-        data.edges[0].label = Some(LabelInput {
+        data.edges[0].labels = Some(vec![Field(Some(LabelInput {
+            id: "m".to_owned().into(),
             text_length: Some(1),
-            t: 0.5.into(),
-            offset: (-WORLD_LIMIT * 2.0).into(),
+            t: Some(0.5).into(),
+            offset: Some(-WORLD_LIMIT * 2.0).into(),
             background: None,
-        })
+        }))])
         .into();
         assert_eq!(
             graph_of(&data).unwrap_err(),
-            beyond(GraphList::Edges, "e", "label.offset")
+            beyond(GraphList::Edges, "e", "labels[0].offset")
         );
     }
 
@@ -512,12 +749,13 @@ mod tests {
         let two = [("a", 0.0, 0.0), ("b", 300.0, 0.0)];
         let label = |text, background| {
             let mut data = batch(&two, &[("e", "a", "b")]);
-            data.edges[0].label = Some(LabelInput {
+            data.edges[0].labels = Some(vec![Field(Some(LabelInput {
+                id: "m".to_owned().into(),
                 text_length: text,
-                t: 0.5.into(),
-                offset: 0.0.into(),
+                t: Some(0.5).into(),
+                offset: Some(0.0).into(),
                 background,
-            })
+            }))])
             .into();
             graph_of(&data)
         };
@@ -526,12 +764,18 @@ mod tests {
         assert!(label(Some(1), Some(f64::from(0xff_ffff))).is_ok());
         assert_eq!(
             label(None, None).unwrap_err(),
-            GraphDataProblem::InvalidLabelText { edge: "e".into() }
+            GraphDataProblem::InvalidLabelText {
+                edge: "e".into(),
+                label: "m".into(),
+            }
         );
         for background in [-5.0, 1.5, f64::NAN, 1e20, f64::from(0x100_0000)] {
             assert_eq!(
                 label(Some(1), Some(background)).unwrap_err(),
-                GraphDataProblem::InvalidBackground { edge: "e".into() }
+                GraphDataProblem::InvalidBackground {
+                    edge: "e".into(),
+                    label: "m".into(),
+                }
             );
         }
     }
@@ -541,12 +785,13 @@ mod tests {
         let two = [("a", 0.0, 0.0), ("b", 300.0, 0.0)];
         let mut data = batch(&two, &[("e", "a", "b")]);
         data.nodes[0].content = titled(&"x".repeat(MAX_TEXT));
-        data.edges[0].label = Some(LabelInput {
+        data.edges[0].labels = Some(vec![Field(Some(LabelInput {
+            id: "m".to_owned().into(),
             text_length: Some(MAX_TEXT),
-            t: 0.5.into(),
-            offset: 0.0.into(),
+            t: Some(0.5).into(),
+            offset: Some(0.0).into(),
             background: None,
-        })
+        }))])
         .into();
         assert!(graph_of(&data).is_ok());
         data.nodes[0].content = titled(&"x".repeat(MAX_TEXT + 1));
@@ -561,13 +806,16 @@ mod tests {
             }
         );
         data.nodes[0].content = titled(&"x".repeat(MAX_TEXT));
-        if let Field(Some(Some(label))) = &mut data.edges[0].label {
+        if let Field(Some(Some(labels))) = &mut data.edges[0].labels
+            && let Some(Field(Some(label))) = labels.first_mut()
+        {
             label.text_length = Some(MAX_TEXT + 1);
         }
         assert_eq!(
             graph_of(&data).unwrap_err(),
             GraphDataProblem::LabelTextTooLong {
                 edge: "e".into(),
+                label: "m".into(),
                 limit: 1_000
             }
         );
@@ -615,6 +863,16 @@ mod tests {
                     y: 0.0.into(),
                     width: 1.0.into(),
                     shape: crate::NodeShape::Rectangle.into(),
+                    container: None.into(),
+                    is_container: None.into(),
+                    height: None.into(),
+                    resizable: None.into(),
+                    outline: None.into(),
+                    divide: None.into(),
+                    regions: None.into(),
+                    attached_to: None.into(),
+                    side: None.into(),
+                    offset: None.into(),
                     content: titled("x"),
                 })
                 .collect(),
@@ -625,7 +883,14 @@ mod tests {
             let data = nodes(count);
             let batch = batch_of(&data).unwrap();
             let edges = batch.edges.iter();
-            let edges = edges.map(|e| [e.id, e.source, e.target].map(utf16_length));
+            let edges = edges.map(|e| {
+                let labels = e.labels.iter().map(|label| utf16_length(label.id));
+                let named = IdLengths {
+                    lengths: [e.id, e.source.id(), e.target.id()].map(utf16_length),
+                    on_edge: [false; 2],
+                };
+                (named, labels)
+            });
             ids_of(batch.nodes.iter().map(|n| utf16_length(n.id)), edges)
         };
         assert_eq!(ids(250_000), Ok(()));
@@ -643,9 +908,10 @@ mod tests {
         // The rules, after every field's type.
         let cases: Vec<(OwnedEdgeColumns, GraphDataProblem)> = vec![
             (
-                d_and(|e| e.target = text("z")),
+                d_and(|e| e.target = Field(Some(Some("z".to_owned())))),
                 GraphDataProblem::MissingNode {
-                    edge: e(),
+                    edge: Some(e()),
+                    border_node: None,
                     node: "z".into(),
                 },
             ),
@@ -663,41 +929,12 @@ mod tests {
                 },
             ),
             (
-                d_and(|e| label_in(e).text_length = Some(MAX_TEXT + 1)),
-                GraphDataProblem::LabelTextTooLong {
-                    edge: e(),
-                    limit: TEXT_LIMIT,
-                },
-            ),
-            // A label text missing, of another type, or with a lone surrogate is no text.
-            (
-                d_and(|e| label_in(e).text_length = None),
-                GraphDataProblem::InvalidLabelText { edge: e() },
-            ),
-            // A background of another type crosses as NaN.
-            (
-                d_and(|e| label_in(e).background = Some(f64::NAN)),
-                GraphDataProblem::InvalidBackground { edge: e() },
-            ),
-            (
-                d_and(|e| label_in(e).background = Some(f64::from(0x100_0000))),
-                GraphDataProblem::InvalidBackground { edge: e() },
-            ),
-            (
                 d_and(|e| e.color = 1.5.into()),
                 GraphDataProblem::InvalidColor { edge: e() },
             ),
             (
                 d_and(|e| e.dash = Some(Pair([0.0, 4.0])).into()),
                 GraphDataProblem::InvalidDash { edge: e() },
-            ),
-            (
-                d_and(|e| label_in(e).t = f64::INFINITY.into()),
-                GraphDataProblem::NonFiniteLabel { edge: e() },
-            ),
-            (
-                d_and(|e| label_in(e).offset = (WORLD_LIMIT * 2.0).into()),
-                beyond(GraphList::Edges, "e", "label.offset"),
             ),
         ];
         for (columns, problem) in cases {
@@ -709,7 +946,60 @@ mod tests {
         ))]);
         let graph = load_edges(&plain).unwrap();
         let edge = graph.edge(0).unwrap();
-        assert_eq!((edge.label, edge.style.dash), (None, None));
+        assert_eq!((edge.labels.as_slice(), edge.style.dash), (&[][..], None));
         assert!(load_edges(&d_and(|_| {})).is_ok());
+    }
+
+    #[test]
+    fn every_rule_of_a_label_refuses_its_columns_naming_its_edge_and_the_label() {
+        // Verifies: API-bridge-columns-carry-nesting, API-edges-dock-nodes-or-edges
+        let (e, m) = (|| "e".to_owned(), || "m".to_owned());
+        let cases: Vec<(OwnedEdgeColumns, GraphDataProblem)> = vec![
+            (
+                d_and(|e| label_in(e).text_length = Some(MAX_TEXT + 1)),
+                GraphDataProblem::LabelTextTooLong {
+                    edge: e(),
+                    label: m(),
+                    limit: TEXT_LIMIT,
+                },
+            ),
+            // A label text missing, of another type, or with a lone surrogate is no text.
+            (
+                d_and(|e| label_in(e).text_length = None),
+                GraphDataProblem::InvalidLabelText {
+                    edge: e(),
+                    label: m(),
+                },
+            ),
+            // A background of another type crosses as NaN.
+            (
+                d_and(|e| label_in(e).background = Some(f64::NAN)),
+                GraphDataProblem::InvalidBackground {
+                    edge: e(),
+                    label: m(),
+                },
+            ),
+            (
+                d_and(|e| label_in(e).background = Some(f64::from(0x100_0000))),
+                GraphDataProblem::InvalidBackground {
+                    edge: e(),
+                    label: m(),
+                },
+            ),
+            (
+                d_and(|e| label_in(e).t = Some(f64::INFINITY).into()),
+                GraphDataProblem::NonFiniteLabel {
+                    edge: e(),
+                    label: m(),
+                },
+            ),
+            (
+                d_and(|e| label_in(e).offset = Some(WORLD_LIMIT * 2.0).into()),
+                beyond(GraphList::Edges, "e", "labels[0].offset"),
+            ),
+        ];
+        for (columns, problem) in cases {
+            assert_eq!(load_edges(&columns).err(), Some(problem));
+        }
     }
 }

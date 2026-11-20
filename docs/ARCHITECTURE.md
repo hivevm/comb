@@ -6,7 +6,7 @@
 > is updated in the same change as the structure it describes
 > ([NUC-documents-are-fixed](adr/NUC-documents-are-fixed.md)).
 >
-> **Last design revision:** 2026-11-07, due after 20 changes. The revision that took the count
+> **Last design revision:** 2026-11-18, due after 20 changes. The revision that took the count
 > moves the date; the number is this project's to set; a sensor counts the changes outside
 > `docs/` since the commit that set the date and says when the next is due
 > ([NUC-design-is-revised §4](adr/NUC-design-is-revised.md)).
@@ -36,40 +36,51 @@ is no object of node and edge lists of objects, as malformed; coordinates, sizes
 that are not finite as the engine keeps them (`f32`), negative sizes, a dash that is not positive or
 a negative gap, a node whose coordinate or far side (`x + width`) lies more than the world's limit,
 2^120 world units, from the origin, and a label offset beyond it (`beyondWorld`), naming the node or
-edge and the field, duplicate node or edge identifiers, edges to missing nodes, non-finite label
-placements, a colour that is not an integer from `0` to `0xFFFFFF`, a text of node content, an
-action's identifier (`id`), an icon's name (`name`), or a label text that is not a string or longer
-than 1,000 UTF-16 code units, node content that is no list of rows, a row that is no list or an
-element that is no object (`invalidContentShape`, naming the node, row, and column), more than 8
-rows or a row of more than 6 columns, an element of a kind other than `text`, `action`, `badge`,
-`progress`, `metric`, and `icon`, a weight that is not a positive finite number, a role of a text
-other than `title`, `body`, and `caption`, a trend's direction other than `up`, `down`, and `flat`
-or a trend that is no object (`invalidDirection`), a badge's, a trend's, or a segment's colour that
-is not an integer from `0` to `0xFFFFFF` (`invalidContentColor`), a progress bar's segments that are
-no list or a segment that is no object (`invalidContentShape`), more than 8 segments
-(`tooManySegments`), a segment's fraction that is negative or not finite (`invalidFraction`) and
-fractions that sum past 1 (`fractionsPastOne`), each naming the segment where it names one, the
-texts and the actions' identifiers of a load's content holding more than 1,000,000,000 code units
-together, each naming the node and, where it has them, the row and column, a label background that
-is not an integer from `0` to `0xFFFFFF`, more than 1,000,000 nodes or edges, an identifier, source,
-or target longer than 256 UTF-16 code units, and identifiers of one load that hold more than
-64,000,000 code units together, a node shape other than `rectangle`, `rounded-rectangle`, `ellipse`,
-`circle`, `ringed-circle`, `diamond`, and `bar` (`invalidField`), content in a filled node shape, a
-circle, a ringed circle, or a bar (`contentInFilledShape`), and an edge side other than `top`,
-`right`, `bottom`, `left`, and `outline`. `api` refuses, against the store's map from identifiers to
-slots (ARCH-one-workspace-per-example), an identifier `updateNode` or `removeNodes` names that the
-graph does not hold (`unknownNode`), one `updateEdge` or `removeEdges` names (`unknownEdge`), one
+edge and the field, duplicate node or edge identifiers, edges to missing nodes, an edge that still
+carries `label`, which its list `labels` replaced (`invalidField`), two labels of one edge of one
+identifier (`duplicateLabel`) and more than 8 labels on one edge (`tooManyLabels`), non-finite label
+placements, each label's refusal naming the edge and the label, a colour that is not an integer from
+`0` to `0xFFFFFF`, a text of node content, an action's identifier (`id`), an icon's name (`name`),
+or a label text that is not a string or longer than 1,000 UTF-16 code units, node content that is no
+list of rows, a row that is no list or an element that is no object (`invalidContentShape`, naming
+the node, row, and column), more than 8 rows or a row of more than 6 columns, an element of a kind
+other than `text`, `action`, `badge`, `progress`, `metric`, and `icon`, a weight that is not a
+positive finite number, a role of a text other than `title`, `body`, and `caption`, a trend's
+direction other than `up`, `down`, and `flat` or a trend that is no object (`invalidDirection`), a
+badge's, a trend's, or a segment's colour that is not an integer from `0` to `0xFFFFFF`
+(`invalidContentColor`), a progress bar's segments that are no list or a segment that is no object
+(`invalidContentShape`), more than 8 segments (`tooManySegments`), a segment's fraction that is
+negative or not finite (`invalidFraction`) and fractions that sum past 1 (`fractionsPastOne`), each
+naming the segment where it names one, the texts and the actions' identifiers of a load's content
+holding more than 1,000,000,000 code units together, each naming the node and, where it has them,
+the row and column, a label background that is not an integer from `0` to `0xFFFFFF`, more than
+1,000,000 nodes or edges, an identifier, source, or target longer than 256 UTF-16 code units, and
+identifiers of one load that hold more than 64,000,000 code units together, a node shape other than
+`rectangle`, `rounded-rectangle`, `ellipse`, `circle`, `ringed-circle`, `diamond`, `bar`,
+`pentagon`, `notched-rectangle`, `note`, `frame`, `crossed-circle`, `cross`, `actor`, and
+`hourglass`, and an outline other than `"solid"`, `"none"`, and a dash pattern an edge's rule allows
+(`invalidField`), content in a filled node shape, a circle, a ringed circle, a bar, a crossed
+circle, or a cross (`contentInFilledShape`), and an edge side other than `top`, `right`, `bottom`,
+`left`, and `outline`, a border node attached to itself or to another border node, one with
+`isContainer`, regions that are not empty, or `resizable`, and one with `x`, `y`, or `container`
+beside `attachedTo` (`invalidAttachment`), and an end on an edge that ends on an edge, on itself, or
+in a cycle (`invalidEdgeEnd`). `api` refuses, against the store's map from identifiers to slots
+(ARCH-one-workspace-per-example), an identifier `updateNode` or `removeNodes` names that the graph
+does not hold (`unknownNode`), one `updateEdge` or `removeEdges` names (`unknownEdge`), one
 `addNode`, `addEdge`, or a user's connection adds that it holds already (`duplicateNode`,
-`duplicateEdge`), and an end of an added edge it does not hold (`missingNode`). The bridge crate
-checks the node `addNode` and the edge `addEdge` hand over as a load checks one, refuses an edge
-from a node to itself (`selfEdge`) unless `CombOptions.allowLoops` allows loops, which a load
-accepts either way (API-edges-dock-side-or-outline), and an addition past the 1,000,000 nodes or
-edges a load may hold, and `api` has it check the code units of identifiers the store counts with
-the new ones. The engine keeps the count of the code units of the strings of content its nodes hold,
-set by a load and moved by every addition, patch, and removal of a node, and refuses an addition or
-a patch whose strings would pass the budget a load is held to (`contentBudgetExceeded`), before
-anything changes. It refuses a patch of `updateNode` that holds a field other than `content`, a
-patch of `updateEdge` that holds a field other than a colour, dash, arrowhead, label, or side
+`duplicateEdge`), and an end of an added edge it does not hold (`missingNode`), or an edge an added
+edge ends on that it does not hold (`missingEdge`). The bridge crate checks the node `addNode` and
+the edge `addEdge` hand over as a load checks one, refuses an edge from a node to itself
+(`selfEdge`) unless `CombOptions.allowLoops` allows loops, which a load accepts either way
+(API-edges-dock-side-or-outline), and an addition past the 1,000,000 nodes or edges a load may hold,
+and `api` has it check the code units of identifiers the store counts with the new ones. The engine
+keeps the count of the code units of the strings of content its nodes hold, set by a load and moved
+by every addition, patch, and removal of a node, and refuses an addition or a patch whose strings
+would pass the budget a load is held to (`contentBudgetExceeded`), before anything changes. It
+refuses a patch of `updateNode` that holds a field other than `content`, `height`, `resizable`,
+`divide`, `regions`, `side`, `offset`, or `outline` (`unknownPatchField`), `side` or `offset` of
+a node that rides no other (`invalidAttachment`), a patch of `updateEdge` that holds a field
+other than a colour, dash, arrowhead, lightning bolt, labels, or side, `label` among them
 (`unknownEdgePatchField`), and a field it would refuse in a load. Label texts and label backgrounds
 are checked there but not kept by the engine; the content of a node it keeps, to lay it out. `api`
 reads the host's graph data once, in JavaScript, into a snapshot (`api/snapshot.ts`) of plain data
@@ -86,20 +97,23 @@ then the code units of the texts of content, counted and stopped at their budget
 (`checkContentBudget`, naming the node whose text passed it), then the snapshot, and the store keeps
 the snapshot's edges, whose sides `api` fills in where the host leaves them out, `right` to `left`,
 and `top` for both of a loop, and of each node its identifier, width, and node shape, which `api`
-fills in as `rectangle` where the host leaves it out; a node's content is the engine's alone, which
+fills in as `rectangle` where the host leaves it out, its outline, its container, its mark as a
+container, its height, whether it is resizable, its division, the node it rides (`attachedTo`), and,
+for a region, its view (`RegionView`); a node's content is the engine's alone, which
 the snapshot of a load writes straight into its columns, and which the engine's `content` builds
 when inspection or a change Comb tells asks for it. One walk reads a node's content, `walkContent`,
 and hands what it read to a sink: a load's writes its columns and counts its texts against the
 budget, that of `addNode`, `updateNode`, and `heightOf` builds the plain data serde reads. A load's
 nodes and edges cross as columns the snapshot writes while it reads them, through the bridge's
-`nodeColumns` and `edgeColumns`: each string field, the identifiers, sources, targets, label texts,
-the texts of content, and its names, the actions' identifiers, as pieces of at most 2^28 UTF-16 code
-units, each ending where a value ends, with its boundaries in UTF-16 code units across all pieces,
-per label text, text, and name of content whether it is a string, the numbers as `Float64Array`, an
-arrowhead, the sides, a node shape, an element's kind, and a text's role as byte codes, the
-boundaries of each node's rows and each row's elements as `Uint32Array`, whether a label, its
-background, and a dash are present as bytes, and the first value refused by its type as its
-position, a shape of content the snapshot cannot flatten with its row and column
+`nodeColumns` and `edgeColumns`: each string field, the identifiers, sources, targets, label
+identifiers and texts, the texts of content, and its names, the actions' identifiers, as pieces of
+at most 2^28 UTF-16 code units, each ending where a value ends, with its boundaries in UTF-16 code
+units across all pieces, per label text, text, and name of content whether it is a string, the
+numbers as `Float64Array`, an arrowhead, the sides, a node shape, an element's kind, and a text's
+role as byte codes, the boundaries of each node's rows and each row's elements and of each edge's
+labels as `Uint32Array`, whether a label's background, a dash, and a lightning bolt are present as
+bytes, and the first value refused by its type as its position, a shape of content the snapshot
+cannot flatten with its row and column, a field of a label with the label's place in its edge's list
 ([API-bridge-takes-serde-and-columns](adr/API-bridge-takes-serde-and-columns.md));
 serde-wasm-bindgen converts nothing of a load. A string with a lone surrogate, which the bridge
 would read as U+FFFD, `api` hands over as `false`, so that it is refused. `updateNode` and
@@ -126,13 +140,25 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   its length either side of its middle, clockwise, pulled out as far as the side is long, and moved
   inward as a whole along the side's normal until their ends meet the outline of the node's node
   shape ([API-edges-dock-side-or-outline](adr/API-edges-dock-side-or-outline.md)), their exact
-  bounds, the point and normal at a path parameter, and edge-label placement. `shape` holds the
-  closed set of node shapes ([REN-closed-set-of-node-shapes](adr/REN-closed-set-of-node-shapes.md)):
+  bounds, the point and normal at a path parameter, edge-label placement, and the parts of a
+  lightning bolt's path either side of its zigzag and the zigzag's two turns. `shape` holds the
+  closed set of node shapes ([REN-node-shapes-cover-uml](adr/REN-node-shapes-cover-uml.md)):
   each one's height for content of a given height, the inner rectangle its content is laid out in,
-  its hit test, the point where a line from its centre crosses its outline, and how far inward from
-  a side its outline lies at an offset along it, all in the node's own coordinates. `graph` keeps
-  the loaded graph, node positions and sizes per slot, a node shape per node slot, a rectangle by
-  default, by which `node_at` hits a node within its outline and its edges' ends on the outline lie,
+  a frame's its tab, as large as its content uncut (`natural` of `content`), an actor's and an
+  hourglass's below their drawing (`drawing`), as wide as the node and at most 48 high, the height
+  a node needs for its rows and padding (`needed`, the least height of 64 applied to the content,
+  or to an actor's or an hourglass's whole node, its drawing counted in),
+  its hit test, the point where a line from its centre crosses its outline, how far inward from
+  a side its outline lies at an offset along it, and for border nodes the point of the outline on a
+  side at an offset along it (`on_side`), the point of the outline nearest a point (`nearest`, the
+  ellipse's by Eberly's bisection), the side a border node rides to a point of the outline, which a
+  notch's points take from the left (`NodeShape::side_of`), and the dashes of a dashed outline,
+  laid along the outline as drawn, flattened within a sixteenth of a world unit, clockwise from
+  its point nearest the box's top left corner, and cut to a query's rectangle (`dashes`), all in
+  the node's own coordinates. `graph` keeps
+  the loaded graph, node positions and sizes per slot, a node shape and an outline per node slot,
+  a solid rectangle by default, by which `node_at` hits a node within its outline and its edges'
+  ends on the outline lie,
   and edges per slot, a rank per node slot, a list of the edges at each node slot, a list each of
   free node and edge slots, and a spatial index (`spatial`, a uniform grid each for nodes and edges,
   with an overflow list for items that cover many cells) that loads, additions, and moves keep
@@ -145,44 +171,90 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   the one function that holds the rule that builds them again, called after every addition and move,
   a removal building nothing, and a rebuild building the grids from the edges as they are placed: a
   load places every edge once, and each edit places the edges it changes; `hit`, `labels`, and
-  `query`; each with its tests, `tests` with the graphs they build and the property tests of the
+  `query`; `resize`, the eight resize handles, whether each node is resizable and the height its
+  data gives, which `hit`'s `handle_at` reads to find a handle of the selected node within 6
+  screen pixels at the near and middle level, and the resize of a node from the box it had at the
+  press by a drag of a handle, never smaller than 8 a side, than the height the node shape needs at
+  the new width for the content's height the caller hands in, an actor's and an hourglass's drawing
+  among it, or than the boxes of the nodes that lie directly in it, a circle, a crossed circle, and
+  a cross as high as wide, the nodes it
+  holds kept at their world positions and their positions relative to it kept anew
+  ([API-edits-report-nested-changes](adr/API-edits-report-nested-changes.md)); `containers`,
+  which node each node lies in: a load's `Nesting` checked so that a node lies only in a container
+  and never in itself or a node it holds, the world positions as the sums along each chain of
+  containers, the lists of what each container holds, and the order of the containers, each after
+  its own container and siblings by rank, a node added into a container,
+  and what a removal takes along, a node with everything it holds at every depth, and a move of a
+  container moving everything it holds
+  ([ARCH-engine-edits-nested-graph](adr/ARCH-engine-edits-nested-graph.md)); `regions`, the
+  regions a node is divided into, each a container in a node slot of its own marked as a region,
+  in the node or region it divides: `arrange` lays them out from their sizes below the divided
+  node's content, a named region's band of 24 at its start, the node grown to what they need and
+  the last region taking the rest, what each holds moved along; `move_line` moves the line after a
+  region toward the pointer as far as `reach` lets the regions beside it shrink, never below 8,
+  their bands, or the boxes of the nodes they hold, and never back past where it stands where a
+  node overhangs its region, and `refit` fits the regions inside them, the one at the moved side
+  of each division or all across it, keeping what they hold where it lies in the world, as a resize
+  of the divided node does; `line_at` finds the line within 4 screen pixels at the near and middle
+  level, the innermost, which `hit_at` names before a connector, a region hit is named as the node
+  it divides, and `container_at` passes over a divided node or region to its regions; each walk
+  over regions is a loop over `regions_of`, the deepest first where a region needs its own
+  ([ARCH-regions-are-container-slots](adr/ARCH-regions-are-container-slots.md)); `borders`, the
+  border nodes, each a node slot of its own attached to another node by a side of its box and an
+  offset along it, which `attach`, `set_place`, and `slide`, the drag, hold within the side's
+  length as they place one, and which a resize keeps as it is, holding it within the side's length
+  only where it places the border node; every change of a node's box, by `shift` for
+  a move of it or of a container that holds it and by `reboxed` for a resize, a new height, or a
+  layout of regions, and every change of its node shape, places its border nodes again in the same
+  call, their edges with them; a border node lies in no container's list and follows its node, so
+  that a move into a container takes it along, `shift` and `move_into` pass it over, `removal`
+  names the border nodes of every node it takes, and `draw_key` draws and hits it directly after
+  its node, at the node's rank, a container's border node among the other nodes
+  ([ARCH-border-nodes-ride-sides](adr/ARCH-border-nodes-ride-sides.md)); each with its tests,
+  `tests` with the graphs they build and the property tests of the
   whole graph against a scan, and `budget`, the property test of the mesh budget. `add_node` takes
   the free slot freed last, or a new one after the highest, and the next rank, and puts the node
   into the grid in place; a load ranks node `i` as `i`; `add_edge` takes the edge slot freed last,
-  or a new one, and puts the edge into the lists of its ends and the grid in place, and
-  `update_edge` restyles and re-places one; `remove_nodes` frees the node slots and those of the
-  edges at them, `remove_edges` edge slots, and both take the items out of the grids and the lists
-  at the nodes; a free slot holds nothing, no query or hit returns it, a rebuild covers only the
+  or a new one, and puts the edge into the lists of its ends, of a node or of the edge an end lies
+  on, and the grid in place, and `update_edge` restyles and re-places one; placing an edge
+  re-places the edges that end on it, one level deep
+  ([API-edges-dock-nodes-or-edges](adr/API-edges-dock-nodes-or-edges.md)); `remove_nodes` frees
+  the node slots and those of the edges at them, `remove_edges` edge slots, each with the edges
+  that end on those edges, and both take the items out of the grids and the lists at the nodes and
+  edges; a free slot holds nothing, no query or hit returns it, a rebuild covers only the
   slots in use, and a call that names one refuses it as it refuses a slot beyond the graph, as a
-  slot that holds nothing (`SlotError`). Its query returns the slots a rectangle meets, node slots
-  in ascending rank, and `hit_at` what a press at a point hits
-  ([REN-node-content-in-rows](adr/REN-node-content-in-rows.md)): the node drawn on top there, the
-  one of the highest rank, else the edge in the highest slot within 4 screen pixels of its path as
-  the stroke of the level flattens it, the parts of the path far from the point as chords; where the
+  slot that holds nothing (`SlotError`). Its query returns the slots a rectangle meets, each node
+  by its own box, the containers in their order and the other node slots in ascending rank, and
+  `hit_at` what a press at a point hits
+  ([REN-node-content-in-rows](adr/REN-node-content-in-rows.md)): the node that is no container
+  drawn on top there, the one of the highest rank, else the edge in the highest slot within 4
+  screen pixels of its path as the stroke of the level flattens it, the parts of the path far from
+  the point as chords, else the last container in their order; where the
   shell asks for connectors, at the near and middle level, a connector within 8 screen pixels, of
   the node of the highest rank, comes before them all. Inside its node's outline a connector reaches
   no further than a quarter of the node's height (top, bottom) or width (right, left), so that the
   middle half of a node, a bar's too, is the node's; beside the outline, in a corner of a circle's
   rectangle too, it reaches the 8 pixels. At the near level a label whose pill, as the labels layer
-  measures and hands it over (`setLabelSize`), holds the point comes before a node; `move_label`
-  places a dragged label at the path parameter nearest a point and its distance along the normal
-  there; `mesh_at` meshes every edge at given node slots and of given edge slots, found by a query
-  or not, as the query meshes the edges it found, what a drag redraws of the nodes it moves and an
-  edit of what it added
+  measures and hands it over (`setLabelSize`), holds the point comes before a node, named by its
+  edge's slot and its place in the edge's list of labels; `move_label` places the one dragged label
+  at the path parameter nearest a point and its distance along the normal there; `mesh_at` meshes
+  every edge at given node slots and of given edge slots, found by a query or not, as the query
+  meshes the edges it found, what a drag redraws of the nodes it moves and an edit of what it added
   ([REN-moving-layer-redraws-changes](adr/REN-moving-layer-redraws-changes.md)). `stroke` flattens
   the found edges within a tolerance and strokes them into the triangles of one mesh, with each
-  edge's colour, dash pattern, and arrowhead, or as thin lines alone at the far level of detail; it
-  decides the stroke of each level. A part of a path whose control points miss the query's
-  rectangle, grown by the stroke's width, is drawn as its chord, a segment that meets the grown
-  rectangle with an end outside it is split where it enters and leaves it, so that what the
-  rectangle shows rounds by its distance from the query's origin, and a path is subdivided at most
-  24 levels deep; the mesh of one query holds at most the mesh budget, 2^22 vertices: each edge's
-  floor, its chord or its arrowhead alone where that is its full mesh, is reserved first, edges are
-  meshed in full in slot order while each fits beside the floors of those after it, and from the
-  first that does not, every edge is drawn as its floor and the mesh is coarsened; its vectors grow
-  by `try_reserve`, so that memory running short coarsens the mesh instead of trapping; the mesh
-  records where each edge's indices start, so that the shell can leave an edge out of a mesh it
-  keeps. `content` lays a node's content out
+  edge's colour, dash pattern, and arrowhead, a filled triangle, two open strokes the edge's stroke
+  runs on between to the tip, or a white triangle inside its outline, a lightning bolt's middle as
+  its zigzag, or as thin lines alone at the far level of detail; it decides the stroke of each
+  level. A part of a path whose control points miss the query's rectangle, grown by the stroke's
+  width, is drawn as its chord, a segment that meets the grown rectangle with an end outside it is
+  split where it enters and leaves it, so that what the rectangle shows rounds by its distance from
+  the query's origin, and a path is subdivided at most 24 levels deep; the mesh of one query holds
+  at most the mesh budget, 2^22 vertices: each edge's floor, its chord or its arrowhead alone where
+  that is its full mesh, is reserved first, edges are meshed in full in slot order while each fits
+  beside the floors of those after it, and from the first that does not, every edge is drawn as its
+  floor and the mesh is coarsened; its vectors grow by `try_reserve`, so that memory running short
+  coarsens the mesh instead of trapping; the mesh records where each edge's indices start, so that
+  the shell can leave an edge out of a mesh it keeps. `content` lays a node's content out
   ([REN-node-content-in-rows](adr/REN-node-content-in-rows.md)): from each role's font, the glyph
   advances and the line height the shell hands over, an action in the font of role body, a badge in
   it on a pill at its column's left that hugs the drawn text with 8 either side and 3 above and
@@ -207,31 +279,58 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   conversion of a count to slots, which the bridge uses too. Only what the bridge uses is public;
   the rest is private to the crate, so that the `dead_code` lint finds what only tests reach.
 - **Bridge** — `crates/engine-wasm` holds every WebAssembly export: `loadGraph` checks graph data
-  and resolves edge ends to slots, keeps the content of the nodes, gives each node its node shape,
+  and resolves edge ends to slots, takes each node's container as the slot `api` resolved and its
+  mark as a container, refuses a node out of place (`invalidContainer`) once every node is checked
+  and before the edges, and loads the nodes at their world positions, a sum past the world's limit
+  refused as `beyondWorld`
+  ([API-bridge-columns-carry-nesting](adr/API-bridge-columns-carry-nesting.md)),
+  keeps the content of the nodes, gives each node its node shape,
   refusing content in a filled one, and makes each node as high as its node shape needs for its
   content laid out in its inner rectangle in the fonts `setFont` handed over
-  ([REN-closed-set-of-node-shapes](adr/REN-closed-set-of-node-shapes.md)), which the sizes buffer
+  ([REN-closed-set-of-node-shapes](adr/REN-closed-set-of-node-shapes.md)), or as the height its
+  data gives where that is more, and a node without content as high as that height or as wide
+  (`NodeShape::sized` of `shape`, [REN-node-shapes-cover-uml](adr/REN-node-shapes-cover-uml.md)),
+  refusing a height that is not finite or not above 0 as `f32` holds it, and keeps whether each node
+  is resizable, which the sizes buffer
   holds beside the positions buffer, and a font handed over later lays every node out anew; a node
   whose far side, by that height, lies past the world's limit is refused; `updateNode` checks a
-  patch of a node's content as a load checks it and gives the node the new content and its height,
+  patch of a node's content, height, and whether it is resizable as a load checks them and gives
+  the node the new content and its height, never less than its content, old or new, needs,
   `addNode` checks one node as a load would and returns the slot the engine chose for it, `heightOf`
   checks a node named `""` at the origin as `addNode` does and returns the height its content lays
-  out to, adding nothing (API-host-asks-content-height), `addEdge` checks one edge as a load would,
-  refuses one from a node to itself unless it is handed that loops are allowed, and adds it between
-  the node slots `api` resolved, `updateEdge` checks a patch of an edge's colour, dash, arrowhead,
-  label, and sides as a load checks those fields and restyles and re-places the edge, `edgesAt`
-  names the edges at given nodes without removing anything, `removeNodes` removes nodes and the
-  edges at them and returns those edges' slots, `removeEdges` removes edges, `translate` moves
-  nodes, each as far as keeps it within the world's limit, so that every point the engine derives
+  out to, adding nothing (API-host-asks-content-height, which the proposed REN-node-content-and-hits
+  supersedes, changing the clause of content without rows, whose height follows the width),
+  `addEdge` checks one edge as a load would, refuses one from a node to itself unless it is handed
+  that loops are allowed, and adds it between the node slots `api` resolved, `updateEdge` checks a
+  patch of an edge's colour, dash, arrowhead, lightning bolt, labels, which replace the whole list,
+  and sides as a load checks those fields and restyles and re-places the edge, `edgesAt`
+  names the edges at given nodes without removing anything, `removalOf` names the nodes and the
+  edges a removal of given nodes takes along, `edgeRemovalOf` the edges a removal of given edges
+  takes along, the edges that end on them among them, `removeNodes` removes nodes, everything they
+  hold, their border nodes, the edges at any of them, and the edges that end on those edges, and
+  returns those nodes' and edges' slots, `removeEdges`
+  removes edges and returns their slots, `translate` moves nodes, a container with what it holds,
+  each as far as keeps it within the world's limit, what it holds at the sum of its world position
+  and their positions relative to it, which the engine keeps, `place` puts a node at a world
+  position and what it holds at those sums, as a drag taken back puts them exactly where they lay
+  at the press, `containerAt`
+  names the topmost container under a world point that is neither a dragged node nor one it
+  holds, `moveInto` puts a node into a container or onto the canvas at the world position it has
+  and gives it the next rank, refusing a container that cannot take it with a `ContainerError`,
+  so that every point the engine derives
   stays within `f32`, `query` takes a rectangle, a level of detail, the size of a screen pixel, at
   most 2^114 world units for a stroke, and how far an edge label's pill reaches from its point, and
-  writes the found node slots, the edge-label slots and points (at the near level only), at the near
+  writes the found containers and the other node slots apart (`visibleContainers…`,
+  `visibleNodes…`), the edge labels found, as pairs of their edge's slot and their place in its
+  list, and their points (at the near level only), at the near
   and the middle level where the elements of each found node drawn at the level lie (`drawn_at`),
   and their kinds, roles, and colours (`contentBounds…`, `contentRects…`, `contentKinds…`,
   `contentRoles…`, `contentColors…`), the pieces of each progress bar's bar and their colours
   (`contentBarBounds…`, `contentBars…`, `contentBarColors…`), the parts of each metric and the end
   of each part's text (`contentPartBounds…`, `contentParts…`, `contentPartEnds…`) and its arrow
-  (`contentArrowBounds…`, `contentArrows…`), what of each text is drawn, and each icon's registered
+  (`contentArrowBounds…`, `contentArrows…`), each separator's line as a piece of its own kind,
+  `KindCode::Separator`, the dash segments of each found node's dashed outline (`dashBounds…`,
+  `dashes…`), what of each text is drawn, and each icon's registered
   name whole, as one string `contentTexts` returns, cut by `contentTextBounds…`, the found edge
   slots, and the edge mesh into buffers the engine owns, the label points and the mesh's positions
   relative to the query's origin, which `originX` and `originY` read
@@ -245,17 +344,35 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   buffer of either mesh, named by a `MeshOf`, the query's or the moving layer's, by a `MeshBuffer`,
   so that the shell reads both through one function; `drawnEdges` computes the ends of the found
   edges and of the moving mesh's when inspection asks, as they lie then, and `hit` names what a
-  press at a point hits, a connector where the shell asks for connectors, a label, a node, or an
-  edge by its slot, or nothing, as one generated value, and refuses a pixel as `query` does and a
-  point that is not finite; `setLabelSize` takes the measure of a label's pill, `labelPoint` names
-  where a label lies, and `moveLabel` places a dragged label, one dragged beyond the world's limit
+  press at a point hits, a resize handle of the selected node it is handed, a line between regions,
+  a connector where the shell asks for connectors, a label, a node, or an edge by its slot, or
+  nothing, as one generated value, refusing a pixel as `query` does and a point that is not finite,
+  `resizeNode` resizes a node by a handle from the box it had at the press, its content's height the
+  least, `regionsOf` names the regions of a divided node depth first, `moveLine` moves the line
+  after a region, `bandName` cuts a region's name to its band in the font of `title`,
+  `bandThickness` hands the shell the band's thickness the engine lays regions out by, a load takes
+  the regions as columns of their own in the slots after the nodes, and `addNode` and `updateNode`
+  take them as the node's `regions`, which `api` flattens into one list, each region after the one
+  it lies in, so that no walk over regions recurses; `updateNode` divides the node anew and returns
+  what went with a region left out, and a region's name counts against the budget of content; a load
+  takes the border nodes as columns of their own, the slot each rides, its side, its offset, and
+  what stands beside its `attachedTo`, `addNode` takes the slot of the node it rides beside its
+  container, `updateNode` sets a border node's `side` and `offset`, `borderOf` names where one sits,
+  and `slide` drags one to the point of the outline nearest the pointer; a load, `addNode`, and
+  `updateNode` take a node's `outline` and a content row's separator byte, and `innerOf` names the
+  inner rectangle a node's content lies in, a frame's tab; `setLabelSize` takes the measure of a
+  label's pill, `labelPoint` names where a label lies, and `moveLabel` places a dragged label, each
+  by its edge's slot and its place in the edge's list, one dragged beyond the world's limit
   stopping there, refuses a point that is not finite as `hit` does, and returns its path parameter
   and offset; it generates the type of every problem of graph data the methods of `Comb` throw,
   `GraphDataProblem`, which `comb` exports, and keeps the refusals of the shell's mistakes in types
-  of their own: `SlotError` of a slot that holds nothing, which `translate`, the removals,
-  `edgesAt`, `setLabelSize`, `moveLabel`, `content`, `updateNode`, `addEdge`, and `updateEdge` throw
-  alike, and `NumberError` of a number the shell computed that an export cannot take, whose kind
-  names it: `nonFinitePoint` of `hit` and `moveLabel`, `invalidPixel` of `query` and `hit`,
+  of their own: `SlotError` of a slot that holds nothing, which `translate`, `place`, the removals,
+  `edgesAt`, `setLabelSize`, `moveLabel`, `content`, `updateNode`, `addEdge`, `updateEdge`,
+  `containerAt`, `moveInto` (wrapped in `MoveIntoRefusal`), `resizeNode`, `meshAt`,
+  `slide`, and `innerOf` throw alike, `LineRefusal` of `moveLine`'s slot that holds no node or no
+  line, and `NumberError` of a number the shell computed that an export cannot take, whose kind
+  names it: `nonFinitePoint` of `hit`, `moveLabel`, `place`, `slide`, `containerAt`, and
+  `resizeNode`, `invalidPixel` of `query`, `meshAt`, and `hit`,
   `invalidFont` of `setFont`, and `nonFiniteDelta` of `translate`, which `TranslateError` names,
   never a `GraphDataProblem`
   ([API-shell-mistake-refused-as-shells](adr/API-shell-mistake-refused-as-shells.md)). The shell
@@ -272,7 +389,10 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   host application hands over, `strings` the decoding of every string column, `node_columns` and
   `edge_columns` the columns of a load's nodes and edges, `problem` the refusals, `item` the reading
   of a node or an edge, `checks` the rules of each, `load` a load and `addNode`, `edit` `addEdge`
-  and the patches, and `content` node content, itself split into `codes`, its codes and limits,
+  and the patches, `regions` the regions of a divided node as `addNode`, `updateNode`, and a load's
+  columns hand them over, checked and built into node slots of their own, `borders` the checks of a
+  border node's `attachedTo`, `side`, and `offset` and its attachment once the graph holds the node
+  it rides, and `content` node content, itself split into `codes`, its codes and limits,
   `check`, the one check of a load's content columns and of a single node's content, `data`, the
   content the engine keeps, `layout`, the content as the engine's layout and hit test read it,
   `node_content`, the content as the host application's type describes it, and `input`, the content
@@ -310,7 +430,10 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   `node-drag.ts` selects a node on press and drags it once the pointer has moved more than the
   slop of 4 screen pixels (`SLOP` of `gesture.ts`), and on a release on the canvas within it
   tells a click on the element of the node's content under the release, hit anew, through the
-  `click` of the gestures' `Context`; a cancelled pointer ends a gesture as no release;
+  `click` of the gestures' `Context`; a border node it slides along its node's outline by the
+  engine's `slide` instead, asks no veto, and records `nodeMoved` at the release only where its
+  side or offset changed; a drag signals as dragged the slots `removalOf` names, a node's content
+  and border nodes among them; a cancelled pointer ends a gesture as no release;
   `pan.ts` selects an edge on press and pans once the pointer has moved beyond the same slop, or
   clears the selection on the empty canvas and pans; `index.ts` zooms around the pointer and sets
   the cursor over what a press would hit;
@@ -319,17 +442,36 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   yet, the source's own where `CombOptions.allowLoops` allows loops but for the one it starts from,
   and proposes the edge on a release over one, through the connection `api` hands it;
   `delete.ts` makes the canvas focusable and, on Delete or Backspace, names what deleting the
-  selection would remove, a node with the edges the engine names at it (`edgesAt`) before anything
-  is removed, and hands it to the deletion `api` hands it; neither asks a veto itself;
+  selection would remove, a node with the edges the engine names at it (`removalOf`), or an edge
+  with the edges that end on it (`edgeRemovalOf`), before anything is removed, and hands it to the
+  deletion `api` hands it; neither asks a veto itself;
   a key held down or pressed with Control, Alt, or Meta deletes nothing beyond its first press. A
   connection's source and what it is over are the store's, written only where they change; the
   world point it is dragged to is interaction's `pointer`, which `attachInteraction` returns, and a
   move signals it with the store's `pointerMoved`, as a drag of a node signals its moves; its
   gesture ends it at a load or a removal of its source. `label-drag.ts`: a press on a label, at the
-  near level, selects its edge and drags the label, held where it was grabbed, which the engine
-  places on every move; its release, or a later press, records `labelMoved` once, and a load, a
-  removal of its edge, or a label the host cleared ends the drag. A drag that moved its node records
-  `nodeMoved` once, when the pointer is released on the canvas or outside it; a load ends a drag.
+  near level, selects its edge and drags that label alone, held where it was grabbed, which the
+  engine places on every move; its release, or a later press, records `labelMoved` once, naming the
+  edge and the label, and a load, a removal of its edge, or labels the host replaced without that
+  label at its place end the drag. `resize.ts`: a press on a resize
+  handle of the selected node, which `targetAt` asks the engine for by the selected slot, hands the
+  engine's `resizeNode` the box the node had at the press and the drag from it on every move, and
+  signals the node and what it holds as dragged, as a drag of a container does; its release
+  records `nodeResized` once, with the nodes that lie directly in it where its left or top side
+  moved, unless no box changed, and of a divided node with the regions whose size changed and the
+  nodes in a region whose top left corner moved. `region-line.ts`: a press on the line between two
+  regions hands the engine's `moveLine` the line's place at the press moved by the drag on every
+  move, signals the divided node and what it holds as dragged, and records `regionsMoved` once at
+  the release where a region's size changed, with the nodes in a region whose top left corner
+  moved; the cursor over a line shows `col-resize` or `row-resize`. The cursor over
+  a handle shows its direction. A drag that moved
+  its node records `nodeMoved` once, when the pointer is released on the canvas or outside it; a
+  load ends a drag. Released on the canvas over a container other than its own, as the engine's
+  `containerAt` finds
+  it, or outside every container while it lies in one, the drag hands the drop to the move into a
+  container `api` hands it, through the `moveInto` of the gestures' `Context`, and where that moves
+  nothing it is taken back by the engine's `place` to where the node lay at the press, relative to
+  its container, unless a change told during the veto's call took the node.
   The engine's `hit` says what the pointer is on, at the level of detail of the scale; the world's
   layers take no events.
   `targetAt` of `gesture.ts` is the one hit test: `attachInteraction` asks it from the store's
@@ -339,33 +481,44 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   Where the viewport puts a screen point beyond any finite world point, `targetAt` answers nothing
   without asking the engine, and a label drag skips a move to such a point.
 - **Render** (`packages/comb/src/render`) — the PixiJS scene (`scene.ts`), which imports nothing
-  from interaction: a `world` render group with the layers `EdgesContainer` (`edges.ts`),
+  from interaction: a `world` render group with the layers `containers`, a container of the node
+  views and the particles of containers, below the edges
+  ([REN-virtualized-nested-scene](adr/REN-virtualized-nested-scene.md)), `EdgesContainer`
+  (`edges.ts`),
   `NodeParticles` (`particles.ts`), `NodesContainer` (`nodes.ts`), `LabelsContainer` (`labels.ts`),
   and `ConnectorsLayer` (`connectors.ts`), the moving layer of a drag and of edits at the far level,
-  `MovingLayer` (`moving.ts`), whose second edges layer stands directly above the edges and whose
-  second `NodeParticles` directly above the particles
-  ([REN-moving-layer-redraws-changes](adr/REN-moving-layer-redraws-changes.md)), which holds the
+  `MovingLayer` (`moving.ts`), whose second edges layer stands directly above the edges, whose
+  second `NodeParticles` directly above the particles, and whose `NodeParticles` of containers
+  directly above the particles of containers
+  ([REN-moving-layer-moves-content](adr/REN-moving-layer-moves-content.md)), which holds the
   state of that drawing, reads the edits through `edits.ts` from the store's arrays against the kept
   query's, tells the scene whether its query survives them, hides in the query's layers what moved
   or was removed, and answers inspection for what it drew, with the connectors of the node under the
   pointer and, while the user connects, of the source and the node under the pointer, and an
   `overlay` with the line of the connection being dragged, to the pointer `api` hands each render
-  from interaction ([REN-virtualized-scene-graph](adr/REN-virtualized-scene-graph.md));
+  from interaction ([REN-virtualized-scene-graph](adr/REN-virtualized-scene-graph.md)), and the
+  resize handles of the selected node where it is resizable, at the near and middle level, white
+  squares of 8 screen pixels outlined in the selection's colour (`handles.ts`); while a resize
+  moves, the moving layer draws the resized node's shape anew at its size, its content where the
+  query placed it, until the release queries; a region's view draws, in place of a node shape, the
+  line after it, solid or dashed, and the band of its name, the name turned at the left of regions
+  one above the other and cut by the engine once the frame has read the engine's buffers;
   `bindings.ts` is the pool of views the nodes and labels layers bind to slots, keeping the layer's
   children in the order a render binds them. The scale chooses the level of detail: near (from 0.6)
   draws node views and edge labels, middle (from 0.3) node views alone, and far nodes as particles
   of one `ParticleContainer` (`render/particles.ts`) and edges as lines one pixel wide. A render
   queries the engine for the viewport grown by the culling margin and binds pooled node views and
-  edge-label views to exactly the slots it found, node views and particles in the order of the
-  nodes' ranks, which the query returns, edge labels in slot order; while the viewport stays within
-  what it last queried, that rectangle within the viewport grown by twice the culling margin, at
-  about its scale and the same level of detail, and the graph and the selection are unchanged, a
+  edge-label views to exactly the slots it found, node views and particles in the order the query
+  returns them, the containers into `containers` and the other nodes into the nodes and particles
+  layers, edge labels in slot order, an edge's in the order of its list; while the viewport stays
+  within what it last queried, that rectangle within the viewport grown by twice the culling margin,
+  at about its scale and the same level of detail, and the graph and the selection are unchanged, a
   render moves the world alone; a drag keeps its query and draws its frames as **How it runs** says.
   The world stands at the screen point of the last query's origin, the edges, labels, and connectors
-  at (0, 0) in it, drawn less the origin, the nodes and particles at minus the origin, so that the
-  GPU sees no far coordinate of edges, labels, and node views. `EdgesContainer` (`render/edges.ts`)
-  draws the edge mesh with a shader that leaves out the gaps of dash patterns; on the Canvas 2D
-  renderer a host application opts into
+  at (0, 0) in it, drawn less the origin, the containers, nodes, and particles at minus the origin,
+  so that the GPU sees no far coordinate of edges, labels, and node views. `EdgesContainer`
+  (`render/edges.ts`) draws the edge mesh with a shader that leaves out the gaps of dash patterns;
+  on the Canvas 2D renderer a host application opts into
   ([REN-webgl2-or-canvas-fallback](adr/REN-webgl2-or-canvas-fallback.md)), which runs no shader,
   `EdgeFill` (`render/edges-canvas.ts`) takes its place, builds no mesh, and fills the same
   triangles into one `Graphics`, one fill per run of one colour, dash patterns solid; both are an
@@ -373,28 +526,34 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   how much of its index buffer the syncs marked for upload until PixiJS next draws it, a hidden
   mesh, which it does not draw, included, so that a later sync and a hide in between keep that mark,
   since WebGL uploads by the range marked last. A node view draws its node shape (`drawShape`, in
-  the pooled `Graphics` that drew a node's box, the content node shapes white and bordered, the
-  filled ones near-black, inspection reading its primitives back) and its content
-  ([REN-node-content-in-rows](adr/REN-node-content-in-rows.md)): each text a pooled `BitmapText` of
-  its role's style where the query placed it, cut where the engine cut it and followed by an
-  ellipsis, a badge's on its pill, which one `Graphics` per view draws of the colour the query hands
-  over, placed by the padding the engine states (`badgePaddingX`, `badgePaddingY`), in white or
-  near-black by WCAG contrast (`badgeTextColor`), inspection reading the pills back from that
-  `Graphics`, and a progress bar's pieces, which another `Graphics` per view fills within the bar's
-  outline, only its outer ends rounded by 4 (`pieceOutline`), the track in `TRACK_COLOR`, inspection
-  reading them back likewise, and a metric's caption in the caption's style, its value in the
-  body's, and its trend's text in the body's font and the trend's colour, each where the query
-  placed its part, and its arrow, which a third `Graphics` per view fills in the trend's colour,
-  inspection reading it back likewise, and an icon as a pooled `Sprite` of the texture the host
-  application registered under its name (`render/icons.ts`), fitted into its square with its aspect
-  kept, none where none is registered, inspection reading the sprites back, what the query placed
-  and nothing of the level; a view draws anew only where its node, which the store replaces when its
-  content changes, its size, its selection, or the number of elements the query placed of it
-  changed; a registration of an icon has every bound view draw its icons anew at once, without a
-  query, so that it draws once the engine is lost too, and destroys the texture it replaced, a view
-  bound later drawing its icons anew; `fontMetricsOf` of `nodes.ts` measures each role's glyph
-  advances, which `createComb` hands the engine once, before the first load, with the line height of
-  each role, which the render layer states rather than measures.
+  the pooled `Graphics` that drew a node's box, the content node shapes white and bordered, their
+  outline left out or stroked in the dash segments the query laid where it is not solid and the node
+  unselected, a note's fold and a frame's tab inside, the tab as `innerOf` hands it over once the
+  frame's views no longer read the engine's buffers, the filled ones near-black, a crossed circle
+  and a cross as lines, an actor's and an hourglass's drawing stroked near-black above their
+  unbordered content, as high as the top of the inner rectangle `innerOf` hands over as it hands a
+  tab over, every polygon's stroke closed, as the Canvas 2D fallback leaves one open that is not
+  told to close, inspection reading its primitives back), the lines of its separators in another
+  `Graphics` and its content ([REN-node-content-in-rows](adr/REN-node-content-in-rows.md)): each
+  text a pooled `BitmapText` of its role's style where the query placed it, cut where the engine cut
+  it and followed by an ellipsis, a badge's on its pill, which one `Graphics` per view draws of the
+  colour the query hands over, placed by the padding the engine states (`badgePaddingX`,
+  `badgePaddingY`), in white or near-black by WCAG contrast (`badgeTextColor`), inspection reading
+  the pills back from that `Graphics`, and a progress bar's pieces, which another `Graphics` per
+  view fills within the bar's outline, only its outer ends rounded by 4 (`pieceOutline`), the track
+  in `TRACK_COLOR`, inspection reading them back likewise, and a metric's caption in the caption's
+  style, its value in the body's, and its trend's text in the body's font and the trend's colour,
+  each where the query placed its part, and its arrow, which a third `Graphics` per view fills in
+  the trend's colour, inspection reading it back likewise, and an icon as a pooled `Sprite` of the
+  texture the host application registered under its name (`render/icons.ts`), fitted into its square
+  with its aspect kept, none where none is registered, inspection reading the sprites back, what the
+  query placed and nothing of the level; a view draws anew only where its node, which the store
+  replaces when its content changes, its size, its selection, or the number of elements the query
+  placed of it changed; a registration of an icon has every bound view draw its icons anew at once,
+  without a query, so that it draws once the engine is lost too, and destroys the texture it
+  replaced, a view bound later drawing its icons anew; `fontMetricsOf` of `nodes.ts` measures each
+  role's glyph advances, which `createComb` hands the engine once, before the first load, with the
+  line height of each role, which the render layer states rather than measures.
 - **API** (`packages/comb/src/api`) — `api/index.ts` imports `pixi.js/unsafe-eval` before PixiJS, so
   that no PixiJS renderer on the page generates code with eval
   ([SEC-pixijs-without-eval](adr/SEC-pixijs-without-eval.md)); `createComb`, which takes the
@@ -406,10 +565,13 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   in `background`; and the `Comb` it returns: the graph data (`load`, `updateNode`, `addNode`,
   `addEdge`, `updateEdge`, `removeNodes`, `removeEdges`), read once into a snapshot
   (`api/snapshot.ts`) and handed to the engine by `api/editors.ts`, which also gives interaction the
-  user's connection and deletion, each after its veto, `CombOptions.canConnect` or
-  `CombOptions.canDelete`, `heightOf`, the height a node's content lays out to in a node shape, the
-  rectangle where none is named, read and checked there as `addNode` reads and checks a node,
-  changing nothing ([API-host-asks-content-height](adr/API-host-asks-content-height.md)), the
+  user's connection, deletion, and move into a container, each after its veto,
+  `CombOptions.canConnect`, `CombOptions.canDelete`, or `CombOptions.canMoveInto`, `heightOf`, the
+  height a node's content lays out to in a node shape, the rectangle where none is named, read and
+  checked there as `addNode` reads and checks a node, changing nothing
+  ([API-host-asks-content-height](adr/API-host-asks-content-height.md), which the proposed
+  [REN-node-content-and-hits](adr/REN-node-content-and-hits.md) supersedes, changing the clause
+  of content without rows, whose height follows the width), the
   viewport (`fitView`, `setViewport`, `viewport`, and `worldPointAt`, the world point under a point
   of the page, which needs no engine), the events to the host application (`onChange`,
   `onSelectionChange`, `onContentClick`, which interaction tells of each click on an element,
@@ -423,28 +585,32 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   is drawn, with one render per animation frame scheduled by `api/frames.ts`. `api/scenes.ts` is the
   one way from a `Comb` to its scene and to the hit test its presses ask, for the testing entry.
 - **Testing entry** (`comb/testing`, `packages/comb/src/testing.ts`) — `inspect` returns what the
-  scene draws, each node view's texts with where they lie and what of them is drawn, its icons'
+  scene draws, the world's layers in drawing order, each node with the layer it is drawn in, each
+  node view's texts with where they lie and what of them is drawn, its icons'
   sprites with their rectangles and the names their textures are registered under, its content and
   the text of its first title, which the engine builds when asked (`content`), its node shape
   (`shape`) and the primitives of its outline (`outline`), a rounded rectangle's with its corner
-  radius, its pills, bars, and arrows, and the labels drawn included, the connectors drawn with
-  where each is centred and how often the layer drew them anew, and the size and detail of the edge
-  mesh, which the host application is not told; `viewport` and `renderCount`, cheap enough for every
-  frame, return its transform and how often it rendered; `screenPoint` and `visibleRect` apply the
-  scene's transform between world and screen; `hitKind` names what a press at a screen point hits,
-  asking interaction's hit test from the viewport a press reads, which is the drawn one once
-  `whenRendered` resolves, connectors only where the Comb lets the user connect; `isDrawn` finds
-  whether one node or edge is drawn without building every drawn view, as `inspect` does, an edge
-  from the slots the scene holds, the query's and the moving layer's, without asking the engine;
-  `showLayers` hides layers for a reference image; `sceneNumbers` gives the numbers the scene draws
-  by (where the levels of detail begin, the culling margin, the label reach, the rescale); `work`
-  counts what the canvas did: GPU buffers created and allocated, bytes uploaded, those of the edge
-  mesh among them, and texture uploads, counted at the WebGL context from its first call, resizes of
-  the edge mesh's buffers, and views the pools made, and refuses with an `UncountedRendererError`
-  where the canvas draws without WebGL; `edgeVertices` gives the screen point of every vertex of the
-  edge mesh as its shader computes it in `f32`, and `gpuEdgeIndices` the indices its GPU buffer
-  holds, read back; for tests, the benchmark, and tooling. Its shape follows the scene and is
-  outside the stable interface of `comb`.
+  radius, how its outline is drawn (`outlined`), the dash segments the engine laid (`dashes`), the
+  lines of its separators (`rules`), its inner rectangle (`inner`), an actor's or an hourglass's
+  drawing (`drawing`), whether it is resizable, a region's line and band (`region`), its pills,
+  bars, and arrows, and the labels drawn included, the connectors drawn with where each is centred
+  and how often the layer drew them anew, the resize handles drawn (`handles`, `handleSquares`), and
+  the size and detail of the edge mesh, which the host application is not told; `viewport` and
+  `renderCount`, cheap enough for every frame, return its transform and how often it rendered;
+  `screenPoint` and `visibleRect` apply the scene's transform between world and screen; `hitKind`
+  names what a press at a screen point hits, asking interaction's hit test from the viewport a press
+  reads, which is the drawn one once `whenRendered` resolves, connectors only where the Comb lets
+  the user connect; `isDrawn` finds whether one node or edge is drawn without building every drawn
+  view, as `inspect` does, an edge from the slots the scene holds, the query's and the moving
+  layer's, without asking the engine; `showLayers` hides layers for a reference image;
+  `sceneNumbers` gives the numbers the scene draws by (where the levels of detail begin, the culling
+  margin, the label reach, the rescale); `work` counts what the canvas did: GPU buffers created and
+  allocated, bytes uploaded, those of the edge mesh among them, and texture uploads, counted at the
+  WebGL context from its first call, resizes of the edge mesh's buffers, and views the pools made,
+  and refuses with an `UncountedRendererError` where the canvas draws without WebGL; `edgeVertices`
+  gives the screen point of every vertex of the edge mesh as its shader computes it in `f32`, and
+  `gpuEdgeIndices` the indices its GPU buffer holds, read back; for tests, the benchmark, and
+  tooling. Its shape follows the scene and is outside the stable interface of `comb`.
 - **Example** (`examples/metric-tree`) — a host application with a metric tree and an HTML sidebar
   (G-9), each type of node told only by the content the example describes from its fields (G-10):
   a bet its hypothesis and status badge, an epic its progress bar and status badge, an input
@@ -459,7 +625,8 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   (G-1); it keeps its own copy of the graph from every kind of change `onChange` tells, in one table
   by kind, the sidebar's edits following from the changes Comb tells, and `window.exampleGraph`
   hands a browser test that copy; it names each edge the user connects after its ends, and hands its
-  vetoes to `window.canConnect` and `window.canDelete` where a browser test sets them;
+  vetoes to `window.canConnect`, `window.canDelete`, and `window.canMoveInto` where a browser test
+  sets them;
   `?connect=none` gives Comb no `canConnect`; `?copies=` sets its size, the copies lie in a grid
   about as wide as tall, and it reports its load time as `window.loadReport`; `?fallback=canvas`
   allows the Canvas 2D fallback; `?loops=allow` sets `allowLoops`, and `?graph=shaped` loads the
@@ -471,108 +638,179 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   of `comb/testing` stand on `window`, bound to its Comb.
 - **UML example** (`examples/uml`) — a second host application, of its own workspace, which imports
   Comb by its entries alone and nothing of the metric tree (G-12, ARCH-one-workspace-per-example); a
-  sidebar chooses between its three diagrams, the class diagram first, and lists the legend of the
+  sidebar chooses between its six diagrams, the class diagram first, and lists the legend of the
   kinds of relationship, each a line drawn in its colour, dash pattern, and arrowhead beside its
   name and label, one legend for the class and the package diagram. Chosen, the state diagram
-  (`src/state-diagram.ts`) shows a Comb's life, its states rounded rectangles of their name, its
-  initial state a circle, its final states ringed circles, and the choice of whether its engine
-  loaded a diamond, placed by the heights `heightOf` gives their node shapes, and its transitions
-  grey edges docked on the outline labelled by their event or guard, and a loop on ready's left side
-  labelled edit, for which the example's Comb allows loops; its legend hidden, it is edited as the
-  others are: the palette drops a state, an initial state, a final state, or a choice, each in its
-  node shape and centred on the drop; the sidebar renames a selected state and names a selected
-  transition's event, its label; a connection adds a transition docked on the outline at both ends,
-  or a loop on the side it left by. Chosen, the package diagram (`src/package-diagram.ts`) shows
-  Comb's modules and crates as nodes of «package» and their name and their dependencies as dashed
-  edges with an arrowhead and the label «import» or «use»; each diagram is kept as it was left, its
-  edits among it, while another is shown, for as long as the page lives. `src/class-diagram.ts`
-  describes Comb's public interface, and the render layer's edges layer for its one realization, as
-  classifiers whose content is a caption for the stereotype, a title for the name, and a body text
-  per member, at most the eight rows Comb lays out and "…" for those left out, placed in rows laid
-  out by hand by the heights `heightOf` gives; both diagrams are held to Comb's source by a Bun test
-  (`src/comb-source.test.ts`), which reads the library's files by path, never by import, and fails
-  where a package, a dependency between the modules of `packages/comb/src` or the crates, or a
-  member of the `Comb` interface is missing from the diagram or drawn there and not in the source,
-  and on a source it reads nothing from; `src/relationships.ts` maps each kind of relationship, the
-  state diagram's transition among them, to the colour, dash pattern, arrowhead, and label
-  `docs/CONVENTIONS.md` records, in one table from which the kinds and the legend's list follow, and
-  builds every edge's label, for the diagrams' data and the sidebar's edits alike, from its kind,
-  its text, and the place it already has. The diagram is edited as the metric tree is, and so is the
-  package diagram: the palette drops a class, an interface, or an abstract class, or on the package
-  diagram a package, centred on the drop; the sidebar (`src/sidebar.ts`) edits the selected
-  classifier's name, stereotype, and members, one per line of two text areas, or a package's name,
-  through `updateNode`, and the selected relationship's kind and label, or a dependency's «import»
-  or «use», through `updateEdge`, an edit Comb refuses staying in its field, which is marked invalid
-  and says why under it until the next edit of the form Comb takes clears every mark of the form,
-  since a classifier's edit sends every field of it, and a change of kind keeping a label the user
-  typed and replacing only the old kind's own label, or none, by the new kind's, or none; a
-  connection becomes an association, on the package diagram a dependency «use», and on the state
-  diagram a transition, where the rules of `src/rules.ts`, a pure function of the kinds of the ends,
-  of the relationship, and of whether it is a loop, allow it: they refuse a transition into an
-  initial state or out of a final state, and every loop but a state's, which Comb offers in every
-  diagram since it allows loops; and Delete removes the selection. Each node keeps its node kind,
-  set when it is created from the diagram's data or the palette: a class, an interface, an abstract
-  class, or a package, kept in its record `Classifier` (which carries a package too, though UML
-  counts no package as a classifier), and changed by no edit of its stereotype; and a state's,
-  state, initial, final, or choice, with its state. What the diagrams share stands in
-  `src/shared.ts`, which imports no diagram's file and no diagram's file imports another's: the
-  diagram as data (`DiagramData`), the kinds of node, which the rules import, the classifier and the
-  state, the classifier's content (`contentOf`), and the layout by rows (`laidOut`) of the class and
-  the package diagram; the lookup of an element of the page stands in `src/element.ts`. Each diagram
-  is described in one place, the descriptor (`DiagramDescriptor`) its file exports: its identifier
-  and name in the choice of diagram, how it is built, its kinds of node with their names in the
-  palette and the form the sidebar edits each in, the kind a connection adds and how it docks, the
-  form the sidebar edits an edge in, the headings of a selection, and whether the legend shows. The
-  host application fills the choice of diagram and the palette from the descriptors, and
-  `src/diagram.ts` and `src/sidebar.ts` read the one of the diagram shown instead of branching on a
-  kind. `src/diagram.ts` keeps the example's copy of the graph, the classifier or the state of each
-  node, and the kind of each edge, each from a change `onChange` tells or after Comb took the call
-  that changes it, and `src/legend.ts` draws the legend. Its hooks stand under `window.uml`, so that
-  it declares nothing on `window` the metric tree declares; Vite serves it on port 5176, the launch
-  configuration **Example: UML** opens it, and its browser tests run in the Playwright project `uml`
-  against it in test mode on a port of their own.
+  (`src/state-diagram.ts`) shows a Comb's life in the notation of UML 2.5.1 (G-20), inside a frame
+  of its state machine that holds every node: states as rounded rectangles of their name and, below
+  a separator, their entry, do, and exit behaviours, internal transitions, and deferred triggers;
+  composite states divided into orthogonal regions by dashed lines, each region a container its
+  states lie in; a submachine state with its connection point references on its border; a state
+  list; the pseudostates and final states in Comb's node shapes, history an ellipse round about `H`
+  or `H*`; entry and exit points as border nodes of a composite state, each with its name in a
+  further border node beside it without an outline; the send and receive signal symbols as a
+  pentagon and a notched rectangle on a transition, which runs as two edges through the symbol; and
+  comments as notes, anchored by a dashed edge on a state or at the middle of a transition. Its
+  nodes are placed by hand by the heights `heightOf` gives their node shapes, and its transitions
+  are grey edges with an open arrowhead, docked on the outline, labelled by their trigger, guard,
+  and effect, and a loop on Ready's left side, for which the example's Comb allows loops. Its legend
+  hidden, it is edited as the others are: the palette drops each notation element, centred on the
+  drop in the deepest container or region under it, which the diagram works out from its copy
+  (`Diagram.box`, `Diagram.deepestAt`), or a point on the nearest side of the node under it it may
+  ride, with its name; the sidebar edits each property the notation shows, a state's name and
+  behaviours, a submachine state's state machine, a comment's lines, the name of a point, a signal,
+  a state list, or the state machine, and a transition's trigger, guard, and effect, which its label
+  shows; a connection adds a transition docked on the outline at both ends, or a loop on the side it
+  left by, and from a comment its anchor; and Delete removes a point's name with its point and
+  refuses it alone. Chosen, the activity diagram (`src/activity-diagram.ts`) shows a load of Comb
+  from `createComb` to the first frame in the notation of UML 2.5.1 (G-20), inside the frame of its
+  activity, which is divided across into the partitions of the host application, the shell, and the
+  engine, named in their bands: actions and call behavior actions, a rake icon the example registers
+  beside a call behavior action's name; send signal, accept event, and accept time event actions as
+  a pentagon, a notched rectangle, and an hourglass; pins as small border nodes of their action with
+  their names beside them, as a state diagram's points; an object node, a data store, and a central
+  buffer; the veto as a decision with guards; a fork and a join as upright bars; an interruptible
+  region and an expansion region as dashed containers, an expansion node three small border nodes
+  side by side; a pair of connectors, round ellipses of their letter; comments; and activity
+  parameter nodes on the frame. Its flows are grey edges with an open arrowhead labelled by guard
+  and weight, its interrupting edge and its exception handler lightning bolts. Its building blocks
+  stand in one table (`ACTIVITY_SHAPES`) of `src/activity.ts`, the notation of an activity that it
+  shares with the notation diagram; a connection adds an object flow where an end is an object node,
+  a control flow otherwise, and from a comment its anchor; the sidebar edits a name, a comment's
+  lines, an expansion region's mode, the names of the frame's partitions, and a flow's guard and
+  weight; Delete removes a pin's name and
+  an expansion node's outer rectangles with their node; and its descriptor's veto of a move
+  (`canMoveInto`), which the host application hands Comb, refuses a move out of the frame onto the
+  canvas. Chosen, the notation diagram (`src/notation-diagram.ts`) shows, in the same notation, the
+  elements of the activity diagram the load does not hold, as Comb drags a node into a container:
+  partitions nested in a partition; an initial node, an activity final, a flow final, and a merge; a
+  loop node and a conditional node divided down into regions, their setup, test, and body, or their
+  clauses; a structured activity node; a value pin and a streaming pin with their value and
+  `{stream}` beside them; and a parameter set, a dashed border node around two pins. Its palette
+  drops each of these elements and an action, a call behavior action, pins, a decision, and a
+  comment, in the deepest container or region under the pointer, a nested partition among them, a
+  parameter set on an action's side around two new pins; and a partition, which divides an empty
+  partition into two nested ones or adds one to the frame, a patch of the frame's regions. Its
+  sidebar edits the name of an action or a call behavior action, a pin's name, a value pin's value,
+  a pin's `{stream}`, a comment's lines, a conditional node's clauses, and the names of the frame's
+  partitions, the nested ones among them; as the activity diagram's, its veto of a move refuses a
+  move out of the frame onto the canvas. Chosen, the use case diagram
+  (`src/use-case-diagram.ts`) shows the developer, the user, and the host application as actors
+  outside the subject Comb, a container that holds the use cases of G-1 to G-17 as ellipses, a use
+  case's extension points below a separator; its associations carry a multiplicity at each end, its
+  include and extend are dashed with an open arrowhead and their keyword, the extend's condition a
+  comment anchored at its middle, and its generalizations, between actors and between use cases, end
+  in a hollow triangle. Its building blocks stand in one table (`USE_CASE_SHAPES`); a connection
+  adds an association between an actor and a use case, a generalization between two actors, an
+  include between two use cases, and from a comment its anchor; the sidebar edits a name, a use
+  case's extension points, a comment's lines, and an association's multiplicities, and changes a
+  relationship among the kinds the rules allow between its ends; a palette's actor lands on the
+  canvas, and its descriptor's veto of a move refuses an actor moved into the subject. Chosen, the
+  package diagram (`src/package-diagram.ts`) shows Comb's modules and crates as nodes of «package»
+  and their name and their dependencies as dashed edges with an arrowhead and the label «import» or
+  «use»; each diagram is kept as it was left, its edits among it, while another is shown, for as
+  long as the page lives. `src/class-diagram.ts` describes Comb's public interface, and the render
+  layer's edges layer for its one realization, as classifiers whose content is a caption for the
+  stereotype, a title for the name, and a body text per member, at most the eight rows Comb lays out
+  and "…" for those left out, placed in rows laid out by hand by the heights `heightOf` gives; both
+  diagrams are held to Comb's source by a Bun test (`src/comb-source.test.ts`), which reads the
+  library's files by path, never by import, and fails where a package, a dependency between the
+  modules of `packages/comb/src` or the crates, or a member of the `Comb` interface is missing from
+  the diagram or drawn there and not in the source, and on a source it reads nothing from;
+  `src/relationships.ts` maps each kind of relationship, the state diagram's transition among them,
+  to the colour, dash pattern, arrowhead, and label `docs/CONVENTIONS.md` records, in one table from
+  which the kinds and the legend's list follow, and builds every edge's label, for the diagrams'
+  data and the sidebar's edits alike, from its kind, its text, and the place it already has. The
+  diagram is edited as the metric tree is, and so is the package diagram: the palette drops a class,
+  an interface, or an abstract class, or on the package diagram a package, centred on the drop; the
+  sidebar (`src/sidebar.ts`) edits the selected classifier's name, stereotype, and members, one per
+  line of two text areas, or a package's name, through `updateNode`, and the selected relationship's
+  kind and label, or a dependency's «import» or «use», through `updateEdge`, an edit Comb refuses
+  staying in its field, which is marked invalid and says why under it until the next edit of the
+  form Comb takes clears every mark of the form, since a classifier's edit sends every field of it,
+  and a change of kind keeping a label the user typed and replacing only the old kind's own label,
+  or none, by the new kind's, or none; a connection becomes an association, on the package diagram a
+  dependency «use», and on the state diagram a transition, or from a comment an anchor, where the
+  rules of `src/rules.ts`, a pure function of the kinds of the ends, of the relationship, and of
+  whether it is a loop, allow it: from a table of refusals, each with why, which the sidebar says
+  where it refuses, they refuse a transition at a comment or the frame, into an initial pseudostate,
+  out of a final state or a terminate, from a fork to a pseudostate, and from a pseudostate to a
+  join, a trigger where UML 2.5.1 gives the transition none, an anchor but one from a comment to a
+  state or a pseudostate, on the activity diagram the flows UML 2.5.1's constraints forbid by the
+  kinds of their ends, on the use case diagram the relationships but between the kinds the human
+  settled, and every loop but a state's, which Comb offers in every diagram since it allows loops;
+  and Delete removes the selection. Each node keeps its node kind, set when it is created from the
+  diagram's data or the palette: a class, an interface, an abstract class, or a package, kept in its
+  record `Classifier` (which carries a package too, though UML counts no package as a classifier),
+  and changed by no edit of its stereotype; and a state diagram's node's, a state or any other
+  notation element of G-20's state diagram, with its state, beside the trigger, guard, and effect of
+  each transition; and an activity diagram's node's, with its activity node, beside the guard and
+  weight of each flow; and a use case diagram's node's, with its node. What the diagrams share
+  stands in `src/shared.ts`, which imports no diagram's file and no diagram's file imports
+  another's: the diagram as data (`DiagramData`), the kinds of node, which the rules import, the
+  classifier, the state, the activity node, and the use case diagram's node, the classifier's
+  content (`contentOf`), the layout by rows (`laidOut`) of the class and the package diagram, and
+  the place of a border node with the node of its name beside it, which the state and the activity
+  diagram share; what the two activity diagrams share stands in `src/activity.ts`, which imports no
+  diagram's file either; the lookup of an element of the page stands in `src/element.ts`. Each
+  diagram is described in one place, the descriptor (`DiagramDescriptor`) its file exports: its
+  identifier and name in the choice of diagram, how it is built, its kinds of node with their names
+  in the palette and the form the sidebar edits each in, the kind a connection adds and how it
+  docks, the veto of a move into a container, the form the sidebar edits an edge in, the headings of
+  a selection, and whether the legend shows. The host application fills the choice of diagram and
+  the palette from the descriptors, and `src/diagram.ts` and `src/sidebar.ts` read the one of the
+  diagram shown instead of branching on a kind. `src/diagram.ts` keeps the example's copy of the
+  graph, the classifier or the state of each node, and the kind of each edge, each from a change
+  `onChange` tells or after Comb took the call that changes it, and `src/legend.ts` draws the
+  legend. Its hooks stand under `window.uml`, so that it declares nothing on `window` the metric
+  tree declares; Vite serves it on port 5176, the launch configuration **Example: UML** opens it,
+  and its browser tests run in the Playwright project `uml` against it in test mode on a port of
+  their own.
 - **Benchmark** (`bench/run.ts`) — the example at 50,010 nodes in Chromium, each node with the
   content of its type, measuring the time to the first frame and p95 frame times over the frames
   Comb rendered of drag, pan, zoom, and edits one a frame, a node and an edge added and removed
-  again, each gesture checked for its effect (Q-1, Q-2): first at the view the example opens with,
-  the whole graph fitted, in the order `bench/fitted.ts` holds, the edits beginning at the fitted
-  view's scale and position again and recording that scale; then at each level of detail, centred in
-  the graph, the pans first, near and middle at the scale where each begins; where the fitted view
-  draws far, as at 50,010 nodes, its gestures are far's and far adds only its zoom. A run records
-  the level the fitted view draws (`fitted`) and the content loaded, nodes by type and elements by
-  kind (`load.content`). It is served from the example's production build by `vite preview` on port
-  4173, in a Chromium started by `bench/chromium.ts`, or attached through its debugging port to a
-  Chrome on the host where `BENCH_CDP` names one (PERF-benchmark-drives-host-chrome);
-  `BENCH_CPU_THROTTLE` slows the measured page's CPU (PERF-benchmark-slows-page-cpu); `BENCH_GRAPH`
-  names the graph, `metric-tree` or `shaped`, which the example loads with `?graph=shaped`: the
-  metric tree's nodes and edges in the same columns and order, the nodes in the node shapes in turn,
-  a node in a filled node shape without content, a circle and a ringed circle 64 wide, each node
-  centred on its row and column, the rows spaced for the tallest node by the gap the metric tree
-  leaves under its own, so that no two nodes overlap, the ends docked on the outline, and a loop on
-  one node in a hundred (`shaped` in `src/graph.ts`, PERF-benchmark-measures-named-graph).
-  `bench/options.ts` reads all three and refuses a value it cannot take; a run records `graph`, and
-  checks that the example loaded it, and the type checker holds the graphs `bench/options.ts` names
-  to the example's `GraphName`, which ARCH-one-workspace-per-example keeps from importing `bench`.
-  After the first frame and before the gestures it times the reference workload of
-  `bench/reference.ts` in the same page, which uses the browser's JavaScript, WebAssembly, and
-  WebGL2 and none of Comb's code. `bench/compare.ts` compares the median of several runs with the
-  baseline of the runner's kind, the CPU model the run records, and of the run's graph, in
-  `bench/baselines/` (`<kind>.json` for the metric tree, `<kind>.shaped.json` for the shaped graph),
-  with a margin of 25 %, reports a gesture the baseline lacks as `no baseline` without judging it,
-  refuses a run on a kind without a baseline of its graph, a run of another graph, a run whose
-  reference differs from its kind's baseline by more than 25 % in a part, a run of another size,
-  mode, or GPU or of none named, a run of an attached browser against a launched baseline or the
-  reverse, a run of another CPU slowdown factor, and a median of runs that differ in these; a kind's
-  baseline is the median of three runs on a GitHub runner of that kind on `main`; the **Benchmark**
-  workflow (`.github/workflows/benchmark.yml`) runs the benchmark three times on each graph and
-  compares each graph's median with its own baseline on a GitHub runner, weekly and on demand,
-  within 90 minutes; the shaped graph's comparison fails the job only where its kind has a baseline,
-  and otherwise reports its median (`bench/compare.ts` exits 3 for a kind without a baseline of the
-  runs' graph, 2 for the other refusals).
+  again, the drag and the edits on the drawn node nearest the canvas centre, each gesture checked
+  for its effect (Q-1, Q-2): first at the view the example opens with, the whole graph fitted, in
+  the order `bench/fitted.ts` holds, the edits beginning at the fitted view's scale and position
+  again and recording that scale; then at each level of detail, centred in the graph, the pans
+  first, near and middle at the scale where each begins; where the fitted view draws far, as at
+  50,010 nodes, its gestures are far's and far adds only its zoom. A run records the level the
+  fitted view draws (`fitted`) and the content loaded, nodes by type and elements by kind
+  (`load.content`). It is served from the example's production build by `vite preview` on port 4173,
+  in a Chromium started by `bench/chromium.ts`, or attached through its debugging port to a Chrome
+  on the host where `BENCH_CDP` names one (PERF-benchmark-drives-host-chrome); `BENCH_CPU_THROTTLE`
+  slows the measured page's CPU (PERF-benchmark-slows-page-cpu); `BENCH_GRAPH` names the graph,
+  `metric-tree` or `shaped`, which the example loads with `?graph=shaped`: the metric tree's nodes
+  and edges in the same columns and order, the nodes in the node shapes in turn, a node in a filled
+  node shape without content, a circle and a ringed circle 64 wide, each node centred on its row and
+  column, the rows spaced for the tallest node by the gap the metric tree leaves under its own, so
+  that no two nodes overlap, the ends docked on the outline, and a loop on one node in a hundred
+  (`shaped` in `src/graph.ts`, PERF-benchmark-measures-named-graph). `bench/options.ts` reads all
+  three and refuses a value it cannot take; a run records `graph`, and checks that the example
+  loaded it, and the type checker holds the graphs `bench/options.ts` names to the example's
+  `GraphName`, which ARCH-one-workspace-per-example keeps from importing `bench`. After the first
+  frame and before the gestures it times the reference workload of `bench/reference.ts` in the same
+  page, which uses the browser's JavaScript, WebAssembly, and WebGL2 and none of Comb's code.
+  `bench/compare.ts` compares the median of several runs with the baseline of the runner's kind, the
+  CPU model the run records, and of the run's graph, in `bench/baselines/` (`<kind>.json` for the
+  metric tree, `<kind>.shaped.json` for the shaped graph), with a margin of 25 %, reports a gesture
+  the baseline lacks as `no baseline` without judging it, refuses a run on a kind without a baseline
+  of its graph, a run of another graph, a run whose reference differs from its kind's baseline by
+  more than 25 % in a part, a run of another size, mode, or GPU or of none named, a run of an
+  attached browser against a launched baseline or the reverse, a run of another CPU slowdown factor,
+  and a median of runs that differ in these; a kind's baseline is the median of three runs on a
+  GitHub runner of that kind on `main`; the **Benchmark** workflow
+  (`.github/workflows/benchmark.yml`) runs the benchmark three times on each graph and compares each
+  graph's median with its own baseline on a GitHub runner, weekly and on demand, within 90 minutes;
+  the shaped graph's comparison fails the job only where its kind has a baseline, and otherwise
+  reports its median (`bench/compare.ts` exits 3 for a kind without a baseline of the runs' graph, 2
+  for the other refusals).
 - **Mutation testing** (`.github/workflows/mutation.yml`) — cargo-mutants mutates `crates/engine`
   on a GitHub runner, weekly and on demand; `scripts/check-mutants.sh` compares the surviving
   mutants with `crates/engine/mutants-missed.txt` by file, function, and replacement, and fails
-  on a survivor the list does not name, and on a run that caught none (DEV-bun-vite-wasm-pack).
+  on a survivor the list does not name, and on a run that caught none (DEV-bun-vite-wasm-pack); like
+  the Benchmark and the Dev Container workflows it measures and is no gate
+  (OPS-measuring-workflows-are-no-gate).
 
 **Test pattern:** Rust unit tests beside the code they test (`#[cfg(test)]`); a property test of the
 bridge crate's validation (`crates/engine-wasm/src/properties.rs`, proptest) that feeds it 10,000
@@ -583,7 +821,8 @@ computes bounds, connectors and their reach clipped by the outline, paths, and l
 the inputs the test gave the graph and reads nothing of it; Bun tests beside their module as
 `*.test.ts`, the bridge's against the built WebAssembly module, the lint's rules for Comb's library
 sources in `packages/comb/src/lint.test.ts`, and those of `bench/compare.ts`, `bench/chromium.ts`,
-`bench/options.ts`, and `bench/fitted.ts` beside them, with
+`bench/options.ts`, and `bench/fitted.ts` beside them, the UML example's beside its modules
+(`examples/uml/src/*.test.ts`), `modules.test.ts` holding that no diagram imports another, with
 `bench/content.test.ts` of the content the benchmark names as loaded and `bench/workflow.test.ts`
 of the Benchmark workflow's gate, its comparison steps run with a stand-in for `bun`; browser
 tests under `examples/*/e2e`, a file for the golden path and one for each concern they verify,
@@ -592,7 +831,9 @@ loaded as the example's own through `useGraph` with what Comb tells recorded, th
 drawn nodes and edges each spec narrows, a node of the size the example's source states, also in
 the page as `window.node`, and the page point of a world point, a click and a drag there; the UML
 example's: opening it, the styles of the kinds of relationship as the conventions record them, and
-the page point, a click, and the drawn place of a node), run by Playwright on Bun against each
+the page point, a click, and the drawn place of a node, the viewport set through Comb
+(`setViewport`), and a diagram's nodes read as placed ones (`placedNodes`), failing on a border
+node), run by Playwright on Bun against each
 example, reading what is drawn through `comb/testing` rather than pixels, apart from one reference
 image of the edges alone.
 
@@ -626,20 +867,25 @@ Container forwards, so WebGL2 runs on SwiftShader instead of PixiJS falling back
 ## How it runs
 
 **Dragging a node.** `interaction` turns the pointer delta into world units and calls
-`bridge.translate`, which moves the slot in the engine's positions buffer and recomputes the node's
-edges and their place in the spatial index; its first move names the slot in the store's `dragged`
-(`dragStarted`), each later one bumps `movesVersion` (`dragMoved`), and the release clears it and
+`bridge.translate`, which moves the node with what it holds and its border nodes in the engine's
+positions buffer and recomputes their edges and their place in the spatial index, or, for a border
+node, `bridge.slide`, which moves it alone along its node's outline; its first move names in the
+store's `dragged` the slots `removalOf` names (`dragStarted`), as a resize and a drag of a line
+between regions do, each later one bumps `movesVersion` (`dragMoved`), and the release clears it and
 bumps `positionsVersion` (`dragEnded`). The store notifies the scene, which renders once per
 animation frame and keeps the query it drew at the press (REN-moving-layer-redraws-changes): the
 first frame leaves the dragged node's edges out of the query's mesh, uploading its indices alone,
-and at the far level its particle; every frame asks the engine for the mesh of the edges at the node
-(`meshAt`), uploads it whole into the moving layer above the edges, and moves the node's view, or
-draws its particle in the moving layer, and its edges' labels where they are now, so edges and
-labels follow the node in the same frame. The release queries once. At the far level an edit of up
-to 256 slots keeps the query too (REN-moving-layer-redraws-changes): the scene reads from the
-store's arrays which slots were added or removed, draws the added nodes' particles and edges in the
-moving layer, hides the removed ones in the query's mesh by the span of their indices, and queries
-anew past the bound, for a slot filled in both by another object, or for a removal that ends a drag.
+and at the far level its particle; every frame asks the engine for the mesh of the edges at the
+dragged nodes and of the edges that end on them (`meshAt`), uploads it whole into the moving layer
+above the edges, and moves the dragged views, a container's among them, or draws their particles in
+the moving layer, a container's in a moving layer of its own above the containers' particles, and
+their edges' labels where they are now, so edges and labels follow the nodes in the same frame. The
+release hands a drop over another container to the move into it, or takes the drag back by `place`,
+and queries once. At the far level an edit of up to 256 slots keeps the query too
+(REN-moving-layer-redraws-changes): the scene reads from the store's arrays which slots were added
+or removed, draws the added nodes' particles and edges in the moving layer, hides the removed ones
+in the query's mesh by the span of their indices, and queries anew past the bound, for a slot filled
+in both by another object, or for a removal that ends a drag.
 
 **Editing.** A method of `Comb` that changes the graph runs through one function of
 `api/editors.ts`, which holds the order: it refuses once the engine is lost, reads the input once,
@@ -649,15 +895,25 @@ it and has the engine add, change, or remove the items in place; the store then 
 records the change, and `api`, subscribed to the store, delivers it to `onChange` as a `GraphChange`
 before the call returns, and the next frame draws it. What the bridge refuses of the data becomes a
 `GraphDataError`; a `SlotError`, the shell's own mistake, an `Error` naming the slot. A user's
-connection and deletion, which `interaction` hands to `api/editors.ts`, are asked of their veto
-there, in one place: only an identifier `canConnect` returns connects and only `true` from
-`canDelete` deletes, and a veto during whose call Comb tells a change to `onChange` ends its gesture
-with nothing done and no error, whatever it returned
-([API-edits-reported-as-typed-changes](adr/API-edits-reported-as-typed-changes.md)). Then they run
-through the same function, the deletion through `removeNodes` where its `Deletion` names nodes, else
-through `removeEdges`, recorded as `by: "user"`, which every store action whose change may be
-either's requires; a dragged node or label writes the engine alone while it moves and records
-`nodeMoved` or `labelMoved` once, at release.
+connection, deletion, and move into a container, which `interaction` hands to `api/editors.ts`,
+are asked of their veto there, in one place: only an identifier `canConnect` returns connects, only
+`true` from `canDelete` deletes and from `canMoveInto` moves, and a veto during whose call Comb
+tells a change to `onChange` ends its gesture with nothing done and no error, whatever it returned
+([API-edits-reported-as-typed-changes](adr/API-edits-reported-as-typed-changes.md)). Then the
+connection and the deletion run through the same function, the deletion through `removeNodes` where
+its `Deletion` names nodes, else through `removeEdges`, recorded as `by: "user"`, which every store
+action whose change may be either's requires; a move into a container calls the bridge's `moveInto`
+directly and records `nodeMoved` with the node's new container; a dragged node or label, a resized
+node, and a dragged line between regions write the engine alone while they move and record
+`nodeMoved`, `labelMoved`, `nodeResized`, or `regionsMoved` once, at release. The store keeps each
+region in its slot as a view marked as a region, with its name, its line, and the direction it lies
+in; `api` refuses a region named where a call names a node, an edge's end as `missingNode`,
+`removeNodes` and `updateNode` as `unknownNode`, and leaves regions out of `nodesRemoved` and
+`canDelete` ([ARCH-regions-are-container-slots](adr/ARCH-regions-are-container-slots.md)). The store
+keeps a border node's `attachedTo`, and the engine its side and offset, which `api` reads as it
+delivers `nodeAdded`, `nodeUpdated`, and `nodeMoved`; `api` refuses an `attachedTo` its map does not
+hold as a node as `missingNode`
+([ARCH-border-nodes-ride-sides](adr/ARCH-border-nodes-ride-sides.md)).
 
 **Panning and zooming.** `interaction` sets the store's viewport. While the viewport stays inside
 the rectangle the scene last queried, and that rectangle within the viewport grown by twice the
@@ -692,14 +948,25 @@ the engine lost for the page and calls the listeners of `onEngineLost` once; fro
 waiters, and input handlers do nothing, so no trap escapes as a page error.
 
 **Holding the shape.** `scripts/check-all.sh` and the **Checks** workflow
-(`.github/workflows/checks.yml`), on every pull request, run the template's checks (the
-documentation, plan modes, traceability, and Dev Container checks, the sensors, the shell lint, and
-the self-tests of the check runner and the hooks), the structural, the dependency, the container,
-the overview, and the comment width checks below, each after its self-test, the self-tests of the
-engine, the bundle, and the mutants checks, and `scripts/check-code.sh`, which runs the build, the
-lint, the tests, and then the bundle check; the `pre-commit` and `pre-push` hooks run
+(`.github/workflows/checks.yml`) run the template's checks (the documentation, plan modes,
+traceability, and Dev Container checks, the sensors, two of them as failing checks with `--require`,
+the plain rules and the actions pinned by SHA (SEC-actions-pinned-by-sha), the shell lint, the
+self-tests of the check runner and the hooks, and those of the scripts run on instruction), the
+structural, the dependency, the container, the overview, and the comment width checks below, the
+self-tests of the engine, the bundle, and the mutants checks, and `scripts/check-code.sh`, which
+runs the build, the lint, the tests, and then the bundle check. `scripts/check-all.sh` runs them
+side by side and, with `--changed`, skips a self-test whose inputs did not change; the workflow runs
+each check after its self-test, on every pull request, on a push to `main`, on demand, and weekly.
+The review-binding sensor runs in a workflow of its own, `.github/workflows/review-binding.yml`, on
+a pull request's hand-off. The `pre-commit` hook runs the documentation check, and all of
+`scripts/check-all.sh --changed` where it concludes a conflicted merge; the `pre-merge-commit` hook
+runs the documentation check on the merged tree; the `pre-push` hook runs
 `scripts/check-all.sh --changed`, as the Git hooks of CONTRIBUTING.md say.
-`scripts/check-engine.sh`, which `bun run test`, `bun run dev`, and the bundle check run first,
+`scripts/check-commits.sh`, on a human's instruction before a branch integrates, runs the checks
+but the browser tests and the examples' builds on each commit of the branch, each in a worktree of
+its own (DEV-commit-checks-on-instruction).
+`scripts/check-engine.sh`, which `bun run test`, `bun run dev`, `bun run dev:uml`, and the bundle
+check run first,
 fails when `engine_bg.wasm` of `packages/comb/wasm/` or of `packages/comb/wasm/test-mode/` is
 missing or older than a file under `crates/` other than those no build reads (the list of surviving
 mutants, proptest's regressions, a run of cargo-mutants, editors' swap files), `Cargo.toml`, or

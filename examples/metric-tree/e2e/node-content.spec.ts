@@ -2,7 +2,7 @@
 // drawn as `BitmapText` where the engine placed them, cut with an ellipsis within their column,
 // each node as high as its rows; read through `comb/testing` rather than pixels.
 import { expect, test, type Page } from "@playwright/test";
-import type { NodeContent, NodeData } from "comb";
+import type { ContentElement, NodeContent, NodeData } from "comb";
 import { loaded, node, NODE_HEIGHT, NODE_WIDTH, open, setViewport, titled, told } from "./shared";
 
 /** A text of `role`, of weight 1 unless given. */
@@ -435,7 +435,9 @@ test("updateNode replaces the content, the canvas shows it, the node's height fo
     "Third",
   ]);
   // The content as Comb keeps it, each weight given, 1 where it was left out.
-  const weighted = TALL.map((row) => row.map((element) => ({ weight: 1, ...element })));
+  const weighted = TALL.map((row) =>
+    (row as ContentElement[]).map((element) => ({ weight: 1, ...element })),
+  );
   expect(await told(page)).toEqual([
     { kind: "nodeUpdated", by: "host", id: "a", patch: { content: weighted } },
   ]);

@@ -140,8 +140,9 @@ export const CLASSIFIERS: Classifier[] = [
       "+targetSide?: Side",
       "+color?: number",
       "+dash?: [number, number]",
-      '+arrow?: "end" | "none"',
-      "+label?: EdgeLabelData",
+      "+arrow?: Arrowhead",
+      "+lightning?: boolean",
+      "+labels?: EdgeLabelData[]",
     ],
     operations: [],
   },
@@ -158,7 +159,13 @@ export const CLASSIFIERS: Classifier[] = [
     kind: "interface",
     stereotype: INTERFACE,
     name: "EdgeLabelData",
-    attributes: ["+text: string", "+t: number", "+offset: number", "+background?: number"],
+    attributes: [
+      "+id: string",
+      "+text: string",
+      "+t?: number",
+      "+offset?: number",
+      "+background?: number",
+    ],
     operations: [],
   },
   {
@@ -289,6 +296,10 @@ export function classDiagram(heightOf: Comb["heightOf"]): DiagramData {
     graph: { nodes: CLASSIFIERS.map(({ id }) => byId.get(id)!), edges },
     classifiers,
     states: new Map(),
+    activities: new Map(),
+    useCases: new Map(),
+    transitions: new Map(),
+    flows: new Map(),
     kinds: new Map(RELATIONSHIPS.map((each, i) => [edges[i]!.id, each.kind])),
   };
 }

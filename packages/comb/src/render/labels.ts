@@ -1,5 +1,6 @@
 // The edge-labels layer at the near level (REN-virtualized-scene-graph, G-6): a pooled pill per
-// edge label in view, centred on the point the engine placed it at.
+// edge label in view, centred on the point the engine placed it at, each label of an edge's list
+// of its own (API-edges-dock-nodes-or-edges).
 import { BitmapText, Container, Graphics } from "pixi.js";
 import type { Bridge, Visible } from "../bridge";
 import type { GraphView } from "../store";
@@ -16,6 +17,13 @@ const PILL_HALF_HEIGHT = 11;
 
 type EdgeView = NonNullable<GraphView["edges"][number]>;
 
+/** How many keys of the layer's pool each edge slot owns: one per place in its list of labels, the
+ *  bridge's limit of 8 labels per edge (API-edges-dock-nodes-or-edges). */
+const KEYS_PER_EDGE = 8;
+
+/** The key of the pool's view of the label at `index` of the edge in `slot`. */
+const keyOf = (slot: number, index: number) => slot * KEYS_PER_EDGE + index;
+
 /** One edge label: a pill with its text, centred on its point. A pooled view. */
 export class LabelView extends Container {
   private readonly pill = new Graphics();
@@ -28,6 +36,8 @@ export class LabelView extends Container {
   private drawn = { text: "", color: -1 };
   seen = 0;
   slot = -1;
+  /** The identifier of the label the view shows, and its edge's in `label`. */
+  labelId = "";
 
   constructor() {
     super();
@@ -39,12 +49,14 @@ export class LabelView extends Container {
     return this.text.text;
   }
 
-  /** Shows the label of `edge`, drawing again only when its text or colour changed; returns
-   *  how far its pill reaches from its point. */
-  bind(edge: EdgeView): number {
+  /** Shows the label at `index` of `edge`, drawing again only when its text or colour changed;
+   *  returns how far its pill reaches from its point. */
+  bind(edge: EdgeView, index: number): number {
     this.label = edge.id;
-    const text = edge.label?.text ?? "";
-    const color = edge.label?.background ?? edgeColor(edge);
+    const label = edge.labels?.[index];
+    this.labelId = label?.id ?? "";
+    const text = label?.text ?? "";
+    const color = label?.background ?? edgeColor(edge);
     if (text !== this.drawn.text || color !== this.drawn.color) {
       this.drawn = { text, color };
       this.text.text = text;
@@ -73,8 +85,9 @@ export class LabelsContainer extends Container {
     return this.views.created;
   }
 
-  /** The edge each slot's pill was last measured for, against the map from edge identifiers to
-   *  slots then: a new map, which an addition, a removal, or a load makes, measures again. */
+  /** The edge each label's pill was last measured for, by its key, against the map from edge
+   *  identifiers to slots then: a new map, which an addition, a removal, or a load makes, measures
+   *  again. */
   private measured = new Map<number, EdgeView>();
   private measuredWith: GraphView["edgeSlots"] | null = null;
 
@@ -82,14 +95,16 @@ export class LabelsContainer extends Container {
    *  the reach the next query uses for labels. */
   reach = LABEL_REACH;
 
-  /** Moves the label views bound to the edges in `slots`, which a drag moves, to their edges'
-   *  points as the engine places them now, relative to `origin` (G-6,
+  /** Moves the label views bound to the labels of the edges in `slots`, which a drag moves, to
+   *  their points as the engine places them now, relative to `origin` (G-6,
    *  REN-moving-layer-redraws-changes). */
   follow(slots: Uint32Array, bridge: Bridge, origin: { x: number; y: number }): void {
     for (const slot of slots) {
-      const view = this.views.boundTo(slot);
-      const point = view && bridge.labelPoint(slot);
-      if (point) view.position.set(point.x - origin.x, point.y - origin.y);
+      for (let index = 0; index < KEYS_PER_EDGE; index++) {
+        const view = this.views.boundTo(keyOf(slot, index));
+        const point = view && bridge.labelPoint(slot, index);
+        if (point) view.position.set(point.x - origin.x, point.y - origin.y);
+      }
     }
   }
 
@@ -101,27 +116,32 @@ export class LabelsContainer extends Container {
     const pills = shown ? this.bindAll(state, visible) : [];
     this.views.end();
     // After the views of `visible` are read: each call into the engine may detach them.
-    for (const [slot, halfWidth] of pills) bridge.setLabelSize(slot, halfWidth, PILL_HALF_HEIGHT);
+    for (const [slot, index, halfWidth] of pills)
+      bridge.setLabelSize(slot, index, halfWidth, PILL_HALF_HEIGHT);
   }
 
-  private bindAll(state: GraphView, visible: Visible): [number, number][] {
+  private bindAll(state: GraphView, visible: Visible): [number, number, number][] {
     if (this.measuredWith !== state.edgeSlots) {
       this.measured.clear();
       this.measuredWith = state.edgeSlots;
     }
-    const pills: [number, number][] = [];
-    visible.labels.forEach((slot, i) => {
+    const pills: [number, number, number][] = [];
+    const { labels, labelPoints } = visible;
+    // A pair per label: its edge's slot and its place in that edge's list.
+    for (let i = 0; i < labels.length / 2; i++) {
+      const [slot, index] = [labels[2 * i]!, labels[2 * i + 1]!];
       const edge = state.edges[slot];
-      if (!edge?.label) return;
-      const view = this.views.bind(slot);
-      const halfWidth = view.bind(edge);
+      if (!edge?.labels?.[index]) continue;
+      const key = keyOf(slot, index);
+      const view = this.views.bind(key);
+      const halfWidth = view.bind(edge, index);
       this.reach = Math.max(this.reach, halfWidth);
-      if (this.measured.get(slot) !== edge) {
-        this.measured.set(slot, edge);
-        pills.push([slot, halfWidth]);
+      if (this.measured.get(key) !== edge) {
+        this.measured.set(key, edge);
+        pills.push([slot, index, halfWidth]);
       }
-      view.position.set(visible.labelPoints[i * 2], visible.labelPoints[i * 2 + 1]);
-    });
+      view.position.set(labelPoints[i * 2], labelPoints[i * 2 + 1]);
+    }
     return pills;
   }
 }

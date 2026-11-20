@@ -76,6 +76,8 @@ impl ContentData {
                     },
                     weight,
                 },
+                // A separator holds no element in the columns the engine keeps.
+                Element::Separator => continue,
                 Element::Text { role, .. } => ContentElement::Text {
                     role: match role {
                         Role::Title => TextRole::Title,
@@ -87,6 +89,12 @@ impl ContentData {
                 },
             });
         }
-        NodeContent(rows)
+        let separators = if count > 0 {
+            let view = self.view();
+            view.rows(node).map(|row| view.separator(row)).collect()
+        } else {
+            Vec::new()
+        };
+        NodeContent(rows, separators)
     }
 }

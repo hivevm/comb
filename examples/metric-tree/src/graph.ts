@@ -158,18 +158,20 @@ export function titled(title: string): NodeContent {
 export function retitled(content: NodeContent, title: string): NodeContent {
   let done = false;
   return content.map((row) =>
-    row.map((element) => {
-      if (done || element.kind !== "text" || element.role !== "title") return element;
-      done = true;
-      return { ...element, text: title };
-    }),
+    row === "separator"
+      ? row
+      : row.map((element) => {
+          if (done || element.kind !== "text" || element.role !== "title") return element;
+          done = true;
+          return { ...element, text: title };
+        }),
   );
 }
 
 /** The title a node of the example shows: the text of its first title, or none. */
 export function titleOf(node: Pick<NodeData, "content">): string {
   for (const row of node.content)
-    for (const element of row)
+    for (const element of row === "separator" ? [] : row)
       if (element.kind === "text" && element.role === "title") return element.text;
   return "";
 }
@@ -278,10 +280,19 @@ function edgesOf(copy: number): EdgeData[] {
       color,
       // Edges without a correlation, from bets to epics to input metrics, are dashed.
       dash: correlation === undefined ? ([6, 4] as const) : undefined,
-      label:
+      // A list of one label, the correlation, in the middle (API-edges-dock-nodes-or-edges).
+      labels:
         correlation === undefined
           ? undefined
-          : { text: correlation.toFixed(3), t: 0.5, offset: 0, background: color },
+          : [
+              {
+                id: "correlation",
+                text: correlation.toFixed(3),
+                t: 0.5,
+                offset: 0,
+                background: color,
+              },
+            ],
     };
   });
 }
@@ -383,11 +394,10 @@ export function shaped(
   const loops = graph.nodes
     .filter((_, i) => i % LOOP_EVERY === 0)
     .map(({ id }) => ({ id: `${id}-loop`, source: id, target: id }));
-  const edges = [...graph.edges, ...loops].map((edge) => ({
-    ...edge,
-    sourceSide: "outline" as const,
-    targetSide: "outline" as const,
-  }));
+  // Every edge of the metric tree ends on nodes, which take a side.
+  const edges = [...graph.edges, ...loops].map(
+    (edge) => ({ ...edge, sourceSide: "outline", targetSide: "outline" }) as EdgeData,
+  );
   return { graph: { nodes: graph.nodes, edges }, fields };
 }
 
@@ -405,7 +415,7 @@ export function countContent(graph: GraphData, fields: Map<string, Fields>): Con
   for (const node of graph.nodes) {
     const type = fields.get(node.id)?.type ?? "untyped";
     nodes[type] = (nodes[type] ?? 0) + 1;
-    for (const element of node.content.flat()) {
+    for (const element of node.content.flatMap((row) => (row === "separator" ? [] : row))) {
       elements[element.kind] = (elements[element.kind] ?? 0) + 1;
     }
   }

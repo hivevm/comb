@@ -169,7 +169,7 @@ comb.load({
       source: "a",
       target: "b",
       color: 0x22a55b,
-      label: { text: "0.998", t: 0.5, offset: 0 },
+      labels: [{ id: "correlation", text: "0.998" }],
     },
   ],
 });
@@ -193,26 +193,111 @@ comb.addNode({
 A node's `content` is rows of weighted columns, each a `text` of role `title`, `body`, or
 `caption` (its `weight`, 1 where left out, shares out the row's width); Comb lays the rows out
 inside the node's `width`, cuts a text too long for its column with an ellipsis, and makes the node
-as high as its rows, at least 64. `updateNode(id, { content })` replaces a node's content whole.
+as high as its rows, at least 64. A node's `height` makes it that high, never less than its
+content needs, and a node without content, `content: []`, as high as its `height` however small,
+or as high as it is wide; `heightOf` still answers the content's height alone.
+`updateNode(id, { content })` replaces a node's content whole, and `updateNode` may also set
+`height`, `resizable`, and `outline`. A row may instead be the string `"separator"`, a line across
+the node between the rows above and below it, with the padding of 10 on each side.
+
+A node's `shape` is one of a closed set, `rectangle` where left out. Besides the shapes of a state
+diagram, a `pentagon` points to the right and a `notched-rectangle` is notched at its left, each
+by half its height and at most a quarter of its width, and a `note` folds its top right corner. A
+`frame` lays its content out in a tab at its top left, as wide as the content needs, and holds
+what lies below. A pentagon or a notch is hit within its outline, and a note or a frame within its
+rectangle. A `crossed-circle` and a `cross` hold no content and are as high as wide; an `actor`
+and an `hourglass` draw a stick figure or two triangles at their top, at most 48 high, and lay
+their content out directly below it, never lower than both and, with content, at least 64 as a
+whole. Its `outline` is `"solid"` where left out, `"none"`, or a dash and a gap, which Comb lays
+along the outline clockwise from its top left; a selected node's outline is drawn solid.
+
+A selected node marked `resizable: true` shows eight resize handles, at its corners and the middles
+of its sides; a drag of one resizes the node from that side or corner, never smaller than 8 a side,
+than its content, or than the boxes of the nodes that lie directly in it, and a circle, a crossed
+circle, and a cross stay as high as wide. What the node holds keeps its place on the canvas, and
+the release is told once as `nodeResized` with the node's `x`, `y`, relative to its container,
+`width`, `height`, and `moved`, the new positions relative to it of the nodes it holds that a
+resize at its left or top moved within it; a resize that changed no box is not told.
+
+A node marked `isContainer: true` is a container, drawn below the edges and the other nodes; a
+node whose `container` names one lies in it, its `x` and `y` relative to the container's top left
+corner, and moves with it. `load` and `addNode` refuse a `container` that names no node of the
+graph, or a node without `isContainer`, as `invalidContainer`. Removing a container, by
+`removeNodes` or by the user's deletion, removes everything it holds at every depth and every edge
+at any of it, and a drag of a container takes everything it holds along.
+
+A node with `divide`, `"across"` or `"down"`, and `regions` is divided below its content into
+regions side by side or one above the other, each `{ id, name?, size, line, divide?, regions? }`:
+its identifier, shared with no node, its size along the division, `line` `"solid"` or a dash and a
+gap for the line after it, and optionally regions of its own. Each region is a container that nodes
+lie in by its identifier, which no edge, `removeNodes`, or `updateNode` names as a node; the node
+grows to what its regions add up to, and the last region takes any rest. A region's name stands in a
+band 24 high at its top, or 24 wide at its left, turned, for regions one above the other, cut to the
+band's length. A drag of the line between two regions changes their sizes, never past the nodes they
+hold, and is told once as `regionsMoved` with the divided `node`, the `regions` whose `size`
+changed, and the nodes `moved` within them; a resize of the node changes the region at the side it
+pulls and tells it in `nodeResized`'s `regions`. A press on an empty region drags the node it
+divides; a drop into a region places the node there. `updateNode(id, { regions })` replaces the
+regions: one kept by its identifier keeps what it holds, or, divided now into regions of its own,
+moves it at its place on the canvas into its first region, told after `nodeUpdated` as a `nodeMoved`
+by the host, and one left out goes with what it holds, told first as `nodesRemoved`, the node laid
+out from its own `width` as a load of it would be; `regions: []`, or a `divide` without regions,
+leaves it undivided. A region's name counts against the budget of content. `load` and `addNode`
+refuse a `container` that names a divided node, or a region divided again, as `invalidContainer`.
+
+A node with `attachedTo`, `side`, and `offset`, and no `x`, `y`, or `container`, is a border node,
+such as a pin of an action: it sits centred on the outline of the node `attachedTo` names, on `side`
+of that node's box, `offset` world units from the side's start, its left end or its top end, where
+the line at right angles to the side there meets the outline, held within the side's length. It
+moves with that node, into a container too, keeps its side and offset through a resize, and is drawn
+and hit directly after that node; edges dock on it as on any node; removing that node removes its
+border nodes and the edges at them, which `nodesRemoved` and `canDelete` name. The user drags a
+border node along the outline, onto another side where that one is nearer, told once as `nodeMoved`
+with its `side` and `offset`, and not where it ends where it began; no `canMoveInto` is asked.
+`updateNode(id, { side, offset })` places it anew; `nodeUpdated` tells the offset Comb held within
+the side, also where the patch set the side alone. `load` and `addNode` refuse a border node
+attached to itself or to another border node, one with `isContainer`, `regions` that are not empty,
+or `resizable`, and one with `x`, `y`, or `container` beside `attachedTo`, as `invalidAttachment`
+naming the node and the field, as `load`, `addNode`, and `updateNode` refuse a `side` or an `offset`
+of a node that is no border node, an `attachedTo` that names no node as `missingNode` with the
+`borderNode`, and an offset that is not finite as `nonFiniteCoordinate`.
 
 `addNode` adds one node at its `x` and `y` without a load, drawn above every node it overlaps. For a
 node dropped from the host application's palette, `comb.worldPointAt(event.clientX, event.clientY)`
 returns the world point under the drop; Comb handles no drag and drop itself, and `worldPointAt`
-throws a `RangeError` on a coordinate that is not finite. `removeNodes(ids)` removes those nodes and
-every edge at them, and `removeEdges(ids)` those edges, without a load. `addEdge(edge)` adds an
-edge between two nodes the graph holds, and `updateEdge(id, patch)` changes an edge's `color`,
-`dash`, `arrow`, `label`, `sourceSide`, or `targetSide`, `null` clearing a dash or a label. An
-edge leaves its source by `sourceSide` and enters its target by `targetSide`, each `top`, `right`,
-`bottom`, `left`, or `outline`, by default `right` and `left`, and `top` for both of a loop, an
-edge from a node back to itself, which is drawn on that side of its node. `onChange` tells every
+throws a `RangeError` on a coordinate that is not finite. `removeNodes(ids)` removes those nodes,
+everything they hold, and every edge at any of them, and `removeEdges(ids)` those edges, each
+removal with every edge that ends on an edge it removes, without a load. `addEdge(edge)` adds an
+edge between two ends the graph holds, and `updateEdge(id, patch)` changes an edge's `color`,
+`dash`, `arrow`, `lightning`, `labels`, `sourceSide`, or `targetSide`, `null` clearing a dash or
+the labels. `arrow` is `"end"`, a filled triangle and the default, `"open"`, two strokes meeting at
+the target, `"hollow"`, a triangle's outline around a white fill, or `"none"`; `lightning: true`
+draws the middle of the edge as a zigzag. An edge carries at most 8 `labels`, each with an `id`
+unique within its edge, its `text`, its path parameter `t` and label offset `offset`, 0.5 and 0
+where it gives none, which Comb fills in as it takes the label, and its `background`; a label
+without one is drawn in the edge's colour, and follows it when the edge is recoloured. A patch's
+`labels` replace the whole list, never merged by `id`, so a label without `t` goes back to the
+middle. An edge that still carries `label`, the one label of before, is refused, by `load` and
+`addEdge` as `invalidField` and by `updateEdge` as `unknownEdgePatchField`. An edge leaves its
+source by `sourceSide` and enters its target by `targetSide`, each `top`, `right`, `bottom`, `left`,
+or `outline`, by default `right` and `left`, and `top` for both of a loop, an edge from a node back
+to itself, which is drawn on that side of its node. Where the host names `sourceEdge` with
+`sourceT` instead of `source`, or `targetEdge` with `targetT` instead of `target`, that end lies on
+another edge, at the path parameter from 0 to 1 of that edge's path, follows it, and takes no side;
+the edge it lies on must itself end on nodes, so that an edge on an edge on an edge, on itself, or
+in a cycle is refused as `invalidEdgeEnd`, and an end on an edge the graph does not hold as
+`missingEdge`. Only the host makes such an edge; the user connects nodes. `onChange` tells every
 change of the graph, a `GraphChange` that `comb` exports, typed by its `kind` and by `by`, `"user"`
-or `"host"`: `loaded` after `load`, `nodeAdded` with the node as Comb took it after `addNode`,
-`nodeUpdated` with the merged patch after `updateNode`, `nodesRemoved` with the nodes and the edges
-that went with them after `removeNodes`, `edgesRemoved` with the edges after `removeEdges`,
-`edgeAdded` with the edge as Comb keeps it, its colour and arrowhead filled, after `addEdge`,
-`edgeUpdated` with the patch as merged after `updateEdge`, nothing
-for a removal that names none, and `nodeMoved` with where the node lies, once, when the user
-releases a node dragged, not per frame and not for a press that moved nothing. Each arrives before
+or `"host"`: `loaded` after `load`, `nodeAdded` with the node as Comb took it after `addNode`, its
+`height` raised to its
+content's, `nodeUpdated` with the merged patch after `updateNode`, `nodesRemoved` with the nodes and
+the edges that went with them after `removeNodes`, `edgesRemoved` with the edges after
+`removeEdges`, `edgeAdded` with the edge as Comb keeps it, its colour, arrowhead, and its labels'
+places filled, after `addEdge`, `edgeUpdated` with the patch as merged after `updateEdge`, nothing
+for a removal that names none, and `nodeMoved` with where the node lies, `x` and `y` relative to
+`container`, the identifier of the container it lies in or `null` on the canvas, once, when the user
+releases a node dragged, not per frame and not for a press that moved nothing; a host that compares
+a `nodeMoved` whole sees `container` on each, `null` for a node on the canvas. Each arrives before
 the call or input event that made it returns, and before `onSelectionChange` reports a selection the
 change cleared; `onChange` returns the function that removes the listener. A change a listener makes
 reaches every listener after the change being delivered, so that each hears the changes in the order
@@ -305,11 +390,12 @@ or an edge selects it, an edge within 4 screen pixels of its path, a drag from a
 pixels pans, and the sidebar edits a node's title text or an edge's colour, line, arrowhead, and
 label.
 With the canvas focused, which a press on it does, Delete or Backspace deletes the selection, a node
-with every edge at it, once `CombOptions.canDelete` returns `true` for the identifiers of everything
-that would go; without `canDelete` a deletion is allowed, and the host application's own
-`removeNodes` and `removeEdges` never ask it. The deletion is told as `nodesRemoved` or
-`edgesRemoved` with `by: "user"`. Where `CombOptions.canConnect` is set, hovering a
-node shows its four connectors, and a drag from one to a connector of another node the source does
+with everything it holds and every edge at any of them, or an edge, each with every edge that ends
+on an edge that goes, once `CombOptions.canDelete` returns `true`
+for the identifiers of everything that would go; without `canDelete` a deletion is allowed, and the
+host application's own `removeNodes` and `removeEdges` never ask it. The deletion is told as
+`nodesRemoved` or `edgesRemoved` with `by: "user"`. Where `CombOptions.canConnect` is set, hovering
+a node shows its four connectors, and a drag from one to a connector of another node the source does
 not reach yet connects them: `canConnect({ source, sourceSide, target, targetSide })` names the
 new edge, checked as `addEdge` checks one, or refuses with `false`; the edge is told as
 `edgeAdded` with `by: "user"`. Where `CombOptions.allowLoops` allows loops, a drag back onto
@@ -319,7 +405,13 @@ Comb tells a change to `onChange` ends its gesture with nothing done, whatever i
 example names each edge after its ends. At the near level a press inside an edge label's pill
 selects its edge and drags the label, which stays where it is dropped: the engine places it at the
 nearest path parameter and the distance along the normal there, and the release is told as
-`labelMoved` with that `t` and `offset`.
+`labelMoved` with the edge, the `label` it moved, the edge's other labels where they were, and that
+`t` and `offset`. A node dropped over a container other than its own, or
+outside every container while it lies in one, asks `CombOptions.canMoveInto({ node, container })`,
+`container` the topmost container under the pointer or `null` for the canvas; on `true` the node
+moves there, keeping its place on the canvas, and is told as `nodeMoved` with that container, and
+otherwise the whole drag is taken back and nothing is told. Without `canMoveInto` the move is
+allowed, and a drop within the node's own container asks nothing.
 
 ## Template
 
