@@ -1,4 +1,4 @@
-# Ticket: Codes and answers cross the bridge as generated types, or the ADR says why not
+# Ticket: Codes and answers cross the bridge as generated types, or a superseding ADR says why not
 
 ## What to build
 
@@ -21,10 +21,15 @@ one array led by a count, which no ADR names. Ticket 07, finding 10: the human p
 the ADR as structured data, and the code kept `Vec<f64>`. Ticket 06, the second review, lesser:
 `beside` 4 and 5 are refused as `invalidAttachment`, not as malformed.
 
-Bring code and ADR together before the ADR is accepted. Where the code moves: generated enums for
-the side, the division, and `beside`, and small generated structs for the removal, the place, the
-inner rectangle, and the place of a label. Where the ADR moves, because a serde call per drag frame
-costs what `slide` and `moveLabel` cannot pay, the ADR names the tuples and why.
+API-bridge-columns-carry-nesting is accepted since PR #106 and changes only by supersession
+(NUC-decisions-are-proposed-then-accepted §6). The human chose on 2026-11-21 to settle each
+departure one of two ways:
+
+- The code moves where it can: generated enums for the side, the division, and `beside`, and small
+  generated structs for the removal, the place, the inner rectangle, and the place of a label.
+- A departure stays only where moving it costs too much, such as a serde call per drag frame in
+  `slide` and `moveLabel`, or the sentinel of `kept`. A superseding ADR, proposed and accepted
+  before the code relies on it, names those tuples and parameters and why.
 
 ## Acceptance criteria
 
@@ -32,14 +37,15 @@ costs what `slide` and `moveLabel` cannot pay, the ADR names the tuples and why.
       codes other than generated enums.
 - [ ] Given `SideCode` reordered in the bridge crate, when the shell builds, then the build or a
       test fails, not the drawing.
-- [ ] Given API-bridge-columns-carry-nesting, when it is read against `lib.rs`, then it names each
-      export's parameters, `kept` among them, and each answer's shape.
+- [ ] Given API-bridge-columns-carry-nesting, or the ADR that supersedes it, when it is read
+      against `lib.rs`, then it names each export's parameters, `kept` among them, and each
+      answer's shape.
 
 ## Read first
 
 - Touches: `crates/engine-wasm/src/lib.rs`, `crates/engine-wasm/src/graph_data/regions.rs`,
   `crates/engine-wasm/src/graph_data/node_columns.rs`, `packages/comb/src/bridge/index.ts`,
-  `packages/comb/src/bridge/columns.ts`, `docs/adr/API-bridge-columns-carry-nesting.md`
+  `packages/comb/src/bridge/columns.ts`, and a superseding ADR under `docs/adr/` if one is due
 - API-bridge-columns-carry-nesting, API-bridge-takes-serde-and-columns, SEC-pixijs-without-eval.
 - The seam: `packages/comb/src/bridge/bridge.test.ts` and the bridge crate's tests.
 
@@ -49,5 +55,5 @@ costs what `slide` and `moveLabel` cannot pay, the ADR names the tuples and why.
 
 ## Mode
 
-with the human: it touches the bridge crate, the bridge, and a proposed ADR, all of which the
-maintainer keeps, and which way each departure is settled is the maintainer's choice.
+with the human: it touches the bridge crate and the bridge, which the maintainer keeps, and a
+superseding ADR is the maintainer's to accept.
