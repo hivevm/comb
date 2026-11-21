@@ -9,12 +9,11 @@
 
 The specification leaves persistence to the host application
 ([Non-Goals](../SPECIFICATION.md#non-goals)), and
-[API-edits-reported-as-typed-changes](API-edits-reported-as-typed-changes.md) has Comb apply each
-edit at once and tell
-the host application every change as a typed `GraphChange` through one listener, so that a host
-that persists keeps its own copy of the graph from `onChange` alone. The convention *A host
-application's copy follows what Comb took* asks that such a copy be written only from what Comb
-tells.
+[API-edits-report-nested-changes](API-edits-report-nested-changes.md) has Comb apply each edit at
+once and tell the host application every change as a typed `GraphChange` through one listener,
+so that a host that persists keeps its own copy of the graph from `onChange` alone. The convention
+*A host application's copy follows what Comb took* asks that such a copy be written only from what
+Comb tells.
 
 Both examples keep such a copy, and both write the same code for it, which
 [ARCH-one-workspace-per-example](ARCH-one-workspace-per-example.md) keeps them from sharing:
@@ -30,11 +29,11 @@ How a patch merges, which fields `nodeUpdated` and `edgeUpdated` carry, and that
 nodes names the edges it took with them are Comb's rules. A host application writes them a second
 time from the documentation, and a change of the merge, such as a further field that `null`
 clears, reaches its copy only where its author reads the change. As with the heights that
-[API-host-asks-content-height](API-host-asks-content-height.md) answered by `heightOf`, the copied
+[REN-node-content-and-hits](REN-node-content-and-hits.md) answers by `heightOf`, the copied
 rule is a public interface nobody declared. The design revision of 2026-11-07, which closed the
 state-diagram feature, found the two copies in its survey of `examples/`.
 
-xyflow, which API-edits-reported-as-typed-changes names for the controlled data flow, exports
+xyflow, which API-edits-report-nested-changes names for the controlled data flow, exports
 `applyNodeChanges(changes,
 nodes)` and `applyEdgeChanges` for the same need, returning the nodes with the changes applied.
 
@@ -44,17 +43,36 @@ its own; and whether it changes the copy in place.
 
 ## Decision
 
-We will export from `comb` a function `applyChange(graph, change)` that applies one `GraphChange`
-to the host application's `GraphData`, in place, as Comb applied it: an added node or edge copied
-in, a patch merged as Comb merges it, a move setting `x` and `y`, a removal dropping the nodes and
-edges it names, a moved label taking its `t` and `offset`, and `loaded` changing nothing.
+We will export from `comb` a function `applyChange(graph, change)`. It applies one `GraphChange`
+to the host application's `GraphData`, in place, as Comb applied it. It handles every kind of
+change that API-edits-report-nested-changes lists:
 
-- It needs no `Comb` and no engine, so that a host application calls it inside its listener, on
-  its own copy, before and after `destroy` alike.
-- It copies what it takes from a change, so that the copy never shares an object with the store
-  (the convention *Hand the host copies*).
-- A change naming a node or an edge the copy does not hold changes nothing for that item.
-- A new kind of `GraphChange` is handled by it in the change that adds the kind.
+- `loaded` changes nothing.
+- `nodeAdded` and `edgeAdded` copy the node or the edge in.
+- `nodeUpdated` and `edgeUpdated` merge the patch as Comb merges it.
+  - `null` clears an edge's dash or labels.
+  - A border node takes `side` and `offset`.
+  - A patch may give `regions`. A region it leaves out goes from the copy, as Comb removed it.
+    Everything the region holds goes with it, with their border nodes and every edge at any of
+    them. Comb reports that removal by the `nodeUpdated` alone, with no `nodesRemoved`, so the
+    function removes them itself.
+- `nodeMoved` sets the node's `x`, `y`, and `container`, or a border node's `side` and `offset`.
+- `nodeResized` sets the node's `x`, `y`, `width`, and `height`. It sets `x` and `y` of each node
+  `moved` names, and the size of each region `regions` names.
+- `regionsMoved` sets the size of each region `regions` names, and `x` and `y` of each node `moved`
+  names.
+- `nodesRemoved` and `edgesRemoved` drop the nodes and the edges they name.
+- `labelMoved` sets the label's `t` and `offset`.
+
+The function obeys these rules:
+
+- It needs no `Comb` and no engine. A host application calls it inside its listener, on its own
+  copy, before and after `destroy` alike.
+- It copies what it takes from a change. The copy never shares an object with the store (the
+  convention *Hand the host copies*).
+- A change naming a node, a region, an edge, or a label the copy does not hold changes nothing for
+  that item.
+- The change that adds a kind of `GraphChange` or a field of a patch extends the function to it.
 
 **Out of scope:** what a host application keeps beside the graph, such as the UML example's kinds
 and classifiers, which it still updates from the same change; applying several changes at once;
@@ -99,8 +117,15 @@ undo; persisting the copy anywhere.
 
 ## Enforcement
 
-A test of `packages/comb/src/api/`, citing `Verifies: API-export-apply-change`,
-drives an edit of every kind of `GraphChange`, by the host application and by the user, and
-asserts after each that a copy kept by `applyChange` from `onChange` alone equals the graph Comb
-holds, field by field, `null` clearing a dash and a label among them; and that a change naming an
-item the copy does not hold leaves the copy as it was.
+A test of `packages/comb/src/api/` cites `Verifies: API-export-apply-change`. It drives an edit of
+every kind of `GraphChange`, by the host application and by the user. The edits include:
+
+- `null` clearing a dash and a label;
+- a node moved into a container and out of it, and a border node moved along a side;
+- a resize at the left that moves the nodes the node holds, and a resize that changes region sizes;
+- a drag of a region's line;
+- a patch of `regions` that leaves out a region holding nodes, border nodes, and edges.
+
+After each edit, the test asserts that a copy kept by `applyChange` from `onChange` alone equals the
+graph Comb holds, field by field. It asserts that a change naming an item the copy does not hold
+leaves the copy as it was.
