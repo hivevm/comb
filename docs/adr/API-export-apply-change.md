@@ -54,7 +54,8 @@ change that API-edits-report-nested-changes lists:
   - A border node takes `side` and `offset`.
   - A patch may give `regions`. A region it leaves out goes from the copy, as Comb removed it.
     Everything the region holds goes with it, with their border nodes and every edge at any of
-    them.
+    them. Comb reports that removal by the `nodeUpdated` alone, with no `nodesRemoved`, so the
+    function removes them itself.
 - `nodeMoved` sets the node's `x`, `y`, and `container`, or a border node's `side` and `offset`.
 - `nodeResized` sets the node's `x`, `y`, `width`, and `height`. It sets `x` and `y` of each node
   `moved` names, and the size of each region `regions` names.
