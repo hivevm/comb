@@ -3,7 +3,7 @@
 ## What to build
 
 The height a node's content needs, and the top below which its regions lie, are put together in the
-bridge crate rather than in the engine:
+bridge crate rather than in `crates/engine`, which holds the graph:
 
 - `crates/engine/src/shape.rs` holds three overlapping functions of a node shape's height
   (`height`, `needed`, `sized`);
@@ -21,12 +21,16 @@ follows its width, keeps a stale top: its regions overlap its drawing until its 
 fonts change. That contradicts ARCH-regions-are-container-slots, whose regions divide the part of a
 node's box below its content.
 
+The human settled on 2026-11-21 that the engine of REN-node-content-and-hits includes the bridge
+crate, as the glossary's **Engine** does. Where the height is put together contradicts no ADR. The
+ticket stands for the stale top and for the three functions of a height.
+
 Evidence: the second review of ticket 08 of uml-diagrams, finding 4 (`content_top` ignored the
 drawing), fixed for a load and an edit in 8bdf7d1d; its hand-off left "a resize does not re-place
 regions, for any node shape" open in *Doubts*, and named the changed meaning of the resize's
 argument. The hand-off of the uml-diagrams branch carries it as a known gap.
 
-Let the engine hold each node's laid content height and its count of rows, put by one call, and
+Let `crates/engine` hold each node's laid content height and its count of rows, put by one call, and
 compute the node's height and its regions' top itself from one function of `shape.rs`. Let
 `Graph::resize` lose its content argument and lay the regions out from the top it computes.
 
