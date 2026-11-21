@@ -43,17 +43,35 @@ its own; and whether it changes the copy in place.
 
 ## Decision
 
-We will export from `comb` a function `applyChange(graph, change)` that applies one `GraphChange`
-to the host application's `GraphData`, in place, as Comb applied it: an added node or edge copied
-in, a patch merged as Comb merges it, a move setting `x` and `y`, a removal dropping the nodes and
-edges it names, a moved label taking its `t` and `offset`, and `loaded` changing nothing.
+We will export from `comb` a function `applyChange(graph, change)`. It applies one `GraphChange`
+to the host application's `GraphData`, in place, as Comb applied it. It handles every kind of
+change that API-edits-report-nested-changes lists:
 
-- It needs no `Comb` and no engine, so that a host application calls it inside its listener, on
-  its own copy, before and after `destroy` alike.
-- It copies what it takes from a change, so that the copy never shares an object with the store
-  (the convention *Hand the host copies*).
-- A change naming a node or an edge the copy does not hold changes nothing for that item.
-- A new kind of `GraphChange` is handled by it in the change that adds the kind.
+- `loaded` changes nothing.
+- `nodeAdded` and `edgeAdded` copy the node or the edge in.
+- `nodeUpdated` and `edgeUpdated` merge the patch as Comb merges it.
+  - `null` clears an edge's dash or labels.
+  - A border node takes `side` and `offset`.
+  - A patch may give `regions`. A region it leaves out goes from the copy, as Comb removed it.
+    Everything the region holds goes with it, with their border nodes and every edge at any of
+    them.
+- `nodeMoved` sets the node's `x`, `y`, and `container`, or a border node's `side` and `offset`.
+- `nodeResized` sets the node's `x`, `y`, `width`, and `height`. It sets `x` and `y` of each node
+  `moved` names, and the size of each region `regions` names.
+- `regionsMoved` sets the size of each region `regions` names, and `x` and `y` of each node `moved`
+  names.
+- `nodesRemoved` and `edgesRemoved` drop the nodes and the edges they name.
+- `labelMoved` sets the label's `t` and `offset`.
+
+The function obeys these rules:
+
+- It needs no `Comb` and no engine. A host application calls it inside its listener, on its own
+  copy, before and after `destroy` alike.
+- It copies what it takes from a change. The copy never shares an object with the store (the
+  convention *Hand the host copies*).
+- A change naming a node, a region, an edge, or a label the copy does not hold changes nothing for
+  that item.
+- The change that adds a kind of `GraphChange` or a field of a patch extends the function to it.
 
 **Out of scope:** what a host application keeps beside the graph, such as the UML example's kinds
 and classifiers, which it still updates from the same change; applying several changes at once;
@@ -98,8 +116,15 @@ undo; persisting the copy anywhere.
 
 ## Enforcement
 
-A test of `packages/comb/src/api/`, citing `Verifies: API-export-apply-change`,
-drives an edit of every kind of `GraphChange`, by the host application and by the user, and
-asserts after each that a copy kept by `applyChange` from `onChange` alone equals the graph Comb
-holds, field by field, `null` clearing a dash and a label among them; and that a change naming an
-item the copy does not hold leaves the copy as it was.
+A test of `packages/comb/src/api/` cites `Verifies: API-export-apply-change`. It drives an edit of
+every kind of `GraphChange`, by the host application and by the user. The edits include:
+
+- `null` clearing a dash and a label;
+- a node moved into a container and out of it, and a border node moved along a side;
+- a resize at the left that moves the nodes the node holds, and a resize that changes region sizes;
+- a drag of a region's line;
+- a patch of `regions` that leaves out a region holding nodes, border nodes, and edges.
+
+After each edit, the test asserts that a copy kept by `applyChange` from `onChange` alone equals the
+graph Comb holds, field by field. It asserts that a change naming an item the copy does not hold
+leaves the copy as it was.
