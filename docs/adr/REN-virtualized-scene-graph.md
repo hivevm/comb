@@ -1,6 +1,6 @@
 # REN-virtualized-scene-graph: A virtualized scene graph with culling by the engine and three levels of detail, nodes bound by rank
 
-- **Status:** 🟢 accepted
+- **Status:** ⚪ superseded by [REN-virtualized-nested-scene](REN-virtualized-nested-scene.md)
 - **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** `packages/comb/src/render/`, and the exports of `crates/engine` and `crates/engine-wasm` that answer spatial queries and compute edge geometry

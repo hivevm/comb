@@ -1,4 +1,4 @@
-// A press hits what the engine says lies on top (REN-node-content-in-rows): a node before an edge,
+// A press hits what the engine says lies on top (REN-node-content-and-hits): a node before an edge,
 // an edge within 4 screen pixels of its path at every level of detail, which it selects (G-5), and
 // nothing beside a curved edge; the example's sidebar edits the selected edge through `updateEdge`
 // (G-9).
@@ -24,7 +24,7 @@ for (const [level, scale] of [
   ["far", 0.1],
 ] as const) {
   test(`a click on an edge's path selects the edge at the ${level} level`, async ({ page }) => {
-    // Verifies: G-5, REN-node-content-in-rows
+    // Verifies: G-5, REN-node-content-and-hits
     await open(page);
     await loaded(page, PAIR, { x: 100, y: 100, scale });
     expect((await page.evaluate(() => window.inspect())).level).toBe(level);
@@ -34,7 +34,7 @@ for (const [level, scale] of [
 }
 
 test("a press on a node over an edge selects the node and drags it", async ({ page }) => {
-  // Verifies: REN-node-content-in-rows
+  // Verifies: REN-node-content-and-hits
   await open(page);
   await loaded(page, { ...PAIR, nodes: [...PAIR.nodes, node("c", 380, 10)] });
   const from = await screenCentre(page, "c");
@@ -51,7 +51,7 @@ test("a press on a node over an edge selects the node and drags it", async ({ pa
 });
 
 test("a click beside a curved edge, within its bounds, selects nothing", async ({ page }) => {
-  // Verifies: REN-node-content-in-rows
+  // Verifies: REN-node-content-and-hits
   await open(page);
   // From a's right middle (220, 32) down to b's left middle (600, 432): the path bends through the
   // middle of its bounds, far from their corners.

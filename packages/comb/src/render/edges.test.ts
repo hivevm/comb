@@ -13,7 +13,7 @@ const mesh = {
 const [edges, starts] = [new Uint32Array([4, 7]), new Uint32Array([0, 6])];
 
 test("a hide after a set keeps the set's mark of the whole index buffer until the draw", () => {
-  // Verifies: REN-moving-layer-redraws-changes
+  // Verifies: REN-moving-layer-moves-content
   const geometry = meshGeometry();
   const buffers = new MeshBuffers(geometry);
   /** The span of the index buffer marked for upload, in indices. */
@@ -34,7 +34,7 @@ test("a hide after a set keeps the set's mark of the whole index buffer until th
 });
 
 test("a set before the draw marks what the sets since the last draw marked", () => {
-  // Verifies: REN-moving-layer-redraws-changes
+  // Verifies: REN-moving-layer-moves-content
   const geometry = meshGeometry();
   const buffers = new MeshBuffers(geometry);
   const marked = () => geometry.indexBuffer._updateSize / 4;
@@ -51,7 +51,7 @@ test("a set before the draw marks what the sets since the last draw marked", () 
 });
 
 test("a mesh's ascending edge slots hold a slot by halving, at either end and in between", () => {
-  // Verifies: REN-moving-layer-redraws-changes
+  // Verifies: REN-moving-layer-moves-content
   const slots = Uint32Array.from([2, 5, 9, 40]);
   expect([0, 2, 3, 5, 9, 39, 40, 41].map((slot) => holds(slots, slot))).toEqual([
     false,

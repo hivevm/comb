@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Self-test of scripts/check-dependencies.sh.
-# Verifies: DEV-bun-vite-wasm-pack, API-bridge-takes-serde-and-columns
+# Verifies: DEV-bun-vite-wasm-pack, API-bridge-columns-carry-nesting
 # Verifies: ARCH-graph-in-zustand-store
 #
 # Each case builds a fixture tree under a temporary directory — bun.lock, the bridge crate's
@@ -111,7 +111,7 @@ printf '\n[dependencies.serde_json]\nversion = "1.0"\n' >> "$d/crates/engine-was
 expect fail "serde_json as a table fails" "$d" "serde_json passes structured data"
 
 d="$(fixture serde-json-comment)"
-echo '# serde_json is not used: API-bridge-takes-serde-and-columns' >> "$d/crates/engine-wasm/Cargo.toml"
+echo '# serde_json is not used: API-bridge-columns-carry-nesting' >> "$d/crates/engine-wasm/Cargo.toml"
 expect pass "serde_json named in a comment passes" "$d"
 
 d="$(fixture redux)"

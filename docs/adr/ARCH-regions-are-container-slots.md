@@ -1,6 +1,6 @@
 # ARCH-regions-are-container-slots: A node's regions are containers the engine keeps in slots of their own, inside the node they divide
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-17
 - **Deciders:** Markus Brigl
 - **Applies to:** the regions of a node in `crates/engine/src/graph.rs`, `crates/engine-wasm/`, and `packages/comb/src/store/`, the drawing of regions in `packages/comb/src/render/`, and the drag of a line between regions in `packages/comb/src/interaction/`

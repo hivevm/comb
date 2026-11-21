@@ -45,7 +45,7 @@ skimmed. The design revision drops what prevented nothing
   decide from the graph as it stands then, not from what was found before the call: a slot looked
   up before host code ran may hold another item after it. A veto during whose call Comb tells a
   change to `onChange` ends its gesture with nothing done, a rule `api/editors.ts` writes once for
-  every veto ([API-edits-reported-as-typed-changes](adr/API-edits-reported-as-typed-changes.md)).
+  every veto ([API-edits-report-nested-changes](adr/API-edits-report-nested-changes.md)).
 - **A refusal added at the bridge is traced to the shell's callers.** Before an export refuses a
   value it took until now, each caller in the shell that can hand it that value from inputs the
   host may give, such as an extreme viewport, either guards it or handles the refusal. A browser
@@ -143,9 +143,9 @@ skimmed. The design revision drops what prevented nothing
   and guard on the first. A comment is a `note`, anchored by a dashed edge on a state, or by
   `targetEdge` at `targetT` 0.5 on a transition. A transition the user connects docks on the outline
   at both ends, as the seeded ones do, so that several transitions leave one state from different
-  directions instead of meeting in the middle of one side (API-edges-dock-side-or-outline); a loop
+  directions instead of meeting in the middle of one side (API-edges-dock-nodes-or-edges); a loop
   docks at both ends on the side the connection left by, since a loop on the outline is drawn above
-  its node (API-edges-dock-side-or-outline) and not where the user dragged it.
+  its node (API-edges-dock-nodes-or-edges) and not where the user dragged it.
 - **The UML example draws an activity diagram in the building blocks settled for it.** Each kind
   takes the building block `ACTIVITY_SHAPES` in `examples/uml/src/activity.ts` names, which the
   activity diagram of a load and the notation diagram share, as tickets 12 and 14 of uml-diagrams

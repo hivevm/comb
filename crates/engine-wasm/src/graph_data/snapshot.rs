@@ -1,4 +1,4 @@
-//! The columns of a load the snapshot of `api` builds (API-bridge-takes-serde-and-columns), written
+//! The columns of a load the snapshot of `api` builds (API-bridge-columns-carry-nesting), written
 //! by the tests: a batch of nodes and edges as the tests write it, each string column cut into
 //! pieces as the shell's writer cuts it.
 
@@ -59,7 +59,7 @@ impl Refusable for EdgeInput {
 }
 
 /// The bound on a piece of a string column the snapshot of `api` passes its writer
-/// (API-bridge-takes-serde-and-columns).
+/// (API-bridge-columns-carry-nesting).
 #[cfg(test)]
 const SNAPSHOT_PIECE: usize = 1 << 28;
 

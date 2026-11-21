@@ -1,8 +1,8 @@
-// The edges layer (REN-virtualized-scene-graph): every edge the query found, drawn as one mesh from
-// the triangles the engine computes, with each edge's colour, dash pattern, and arrowhead (G-11). A
-// small shader leaves out the gaps of a dash pattern by the distance along the path. On the Canvas
-// 2D renderer a host application opts into (REN-webgl2-or-canvas-fallback), which runs no shader,
-// `EdgeFill` in `edges-canvas.ts` draws the layer instead.
+// The edges layer (REN-virtualized-nested-scene): every edge the query found, drawn as one mesh
+// from the triangles the engine computes, with each edge's colour, dash pattern, and arrowhead
+// (G-11). A small shader leaves out the gaps of a dash pattern by the distance along the path. On
+// the Canvas 2D renderer a host application opts into (REN-webgl2-or-canvas-fallback), which runs
+// no shader, `EdgeFill` in `edges-canvas.ts` draws the layer instead.
 import { Container, Geometry, Mesh, Shader } from "pixi.js";
 import type { EdgeMesh } from "../bridge";
 import type { EdgeData } from "../store";
@@ -59,7 +59,7 @@ const ATTRIBUTES = [
 
 /** A mesh an edges layer draws: a query's, which names the edges it found and where each one's
  *  indices start, or the moving layer's of a drag and of edits, which names its edges but not
- *  where their indices start, since nothing is hidden in it (REN-moving-layer-redraws-changes). */
+ *  where their indices start, since nothing is hidden in it (REN-moving-layer-moves-content). */
 export interface DrawnMesh {
   mesh: EdgeMesh;
   edges?: Uint32Array;
@@ -73,7 +73,7 @@ export interface EdgeLayer extends Container {
   /** Draws `drawn`, read before the engine's next call. */
   sync(drawn: DrawnMesh): void;
   /** Leaves the edges in `hidden` out of what the last sync drew
-   *  (REN-moving-layer-redraws-changes). */
+   *  (REN-moving-layer-moves-content). */
   hide(hidden: ReadonlySet<number>): void;
   /** Whether the mesh the last sync drew names the edge in `slot`. */
   names(slot: number): boolean;
@@ -136,7 +136,7 @@ export class MeshBuffers {
   /** How many indices the `set`s since the mesh was last drawn marked for upload, 0 once it was:
    *  WebGL uploads at the draw by the last range marked, so a `set` before that draw marks what
    *  the earlier ones marked too, and a `hide` keeps this mark instead of marking its own span
-   *  (REN-moving-layer-redraws-changes). */
+   *  (REN-moving-layer-moves-content). */
   private wholeMarked = 0;
   private arrays = {
     positions: new Float32Array(0),
@@ -212,7 +212,7 @@ export class MeshBuffers {
 
   /** Leaves the triangles of `ranges` of the indices out, as empty triangles, and marks the one
    *  span of the index buffer that covers them for upload, nothing else
-   *  (REN-moving-layer-redraws-changes); where a `set`
+   *  (REN-moving-layer-moves-content); where a `set`
    *  marked the whole of it since the last draw, it keeps that mark. */
   hide(ranges: readonly [number, number][]): void {
     if (ranges.length === 0) return;
@@ -273,7 +273,7 @@ export class EdgesContainer extends Container implements EdgeLayer {
 
   /** Leaves the edges in `hidden` out of the mesh the last sync drew, uploading the span of indices
    *  they cover, or all of them where a sync since the last draw marked all
-   *  (REN-moving-layer-redraws-changes). */
+   *  (REN-moving-layer-moves-content). */
   hide(hidden: ReadonlySet<number>): void {
     const { edges, starts } = this.found;
     this.buffers.hide(hiddenRanges(edges, starts, this.buffers.indices, hidden));

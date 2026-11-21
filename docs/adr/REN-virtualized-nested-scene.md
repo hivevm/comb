@@ -1,6 +1,6 @@
 # REN-virtualized-nested-scene: A virtualized scene graph with culling by the engine and three levels of detail, containers drawn below the edges, nodes bound in the engine's order
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-17
 - **Deciders:** Markus Brigl
 - **Applies to:** `packages/comb/src/render/`, and the exports of `crates/engine` and `crates/engine-wasm` that answer spatial queries and compute edge geometry

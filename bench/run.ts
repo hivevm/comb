@@ -3,21 +3,21 @@
 // measures the time from handing the graph to Comb until its first frame is drawn, and the p95
 // frame time of each gesture: a node on screen dragged, the viewport panned, the viewport zoomed in
 // and out, and the graph edited one edit a frame, a node and an edge added and removed again
-// (ARCH-engine-edits-graph-in-place). It times them first at the view the example opens with, the
+// (ARCH-engine-edits-nested-graph). It times them first at the view the example opens with, the
 // whole graph fitted, as the baselines recorded before the levels were measured did, the zoom from
 // there crossing every level, the edits from the fitted view again wherever the zoom stopped,
-// recording their scale; then at each level of detail (REN-virtualized-scene-graph), centred in the
-// graph, the pans first: near and middle at the scale where each begins, the least it draws at and
-// so the most it binds. Where the fitted view draws the far level, as at 50,000 nodes, its drag,
-// pan, and edits are far's and far adds only its zoom; otherwise every gesture is timed at far as
-// well. The zoom at a level stays within it. Only frames in which Comb rendered count; each action
-// is checked for its effect, so a gesture that missed fails the run instead of measuring idle
-// frames. Before the gestures it times the reference workload of bench/reference.ts in the same
-// page, by which bench/compare.ts tells whether the runner is in the state its kind's baseline was
-// taken in; the CPU model it records names the runner's kind, the content the example counts names
-// what was loaded, and each gesture records the steps it sent and the frames Comb rendered. It
-// measures the graph BENCH_GRAPH names (PERF-benchmark-measures-named-graph): the metric tree, or
-// the shaped graph, the metric tree's nodes and edges in the same columns and order in the node
+// recording their scale; then at each level of detail (REN-virtualized-nested-scene), centred in
+// the graph, the pans first: near and middle at the scale where each begins, the least it draws at
+// and so the most it binds. Where the fitted view draws the far level, as at 50,000 nodes, its
+// drag, pan, and edits are far's and far adds only its zoom; otherwise every gesture is timed at
+// far as well. The zoom at a level stays within it. Only frames in which Comb rendered count; each
+// action is checked for its effect, so a gesture that missed fails the run instead of measuring
+// idle frames. Before the gestures it times the reference workload of bench/reference.ts in the
+// same page, by which bench/compare.ts tells whether the runner is in the state its kind's baseline
+// was taken in; the CPU model it records names the runner's kind, the content the example counts
+// names what was loaded, and each gesture records the steps it sent and the frames Comb rendered.
+// It measures the graph BENCH_GRAPH names (PERF-benchmark-measures-named-graph): the metric tree,
+// or the shaped graph, the metric tree's nodes and edges in the same columns and order in the node
 // shapes in turn, its rows spaced so that no two nodes overlap, docked on the outline, with a loop
 // on one node in a hundred, which the example loads with `?graph=shaped`; it records the graph's
 // name and checks that the example loaded it. The numbers go to bench-results/latest.json and are
@@ -196,7 +196,7 @@ function expectEffect(ok: boolean, what: string): void {
 
 /** Installs `benchEdit(i)` in the page: edit `i` of the gesture, one of adding a node beside
  *  `near`, adding an edge from `near` to it, removing the edge, and removing the node, over and
- *  over (ARCH-engine-edits-graph-in-place). Before it edits, it counts in `drawnEdits` whether the
+ *  over (ARCH-engine-edits-nested-graph). Before it edits, it counts in `drawnEdits` whether the
  *  canvas drew the edit before it, by a probe cheap enough not to weigh on the frame it falls in,
  *  as `inspect` would at 50,000 nodes; `benchEdit(i + 1, false)` checks edit `i` alone. Every edit
  *  is counted in `told`
@@ -424,7 +424,7 @@ async function restAtLevel(page: Page, middle: Point, level: Level) {
 }
 
 /** A point on the canvas, near its top left, where a press hits nothing, no connector, label,
- *  node or edge, and so pans (REN-node-content-in-rows). */
+ *  node or edge, and so pans (REN-node-content-and-hits). */
 async function emptyPoint(page: Page): Promise<Point> {
   return page.evaluate(() => {
     const rect = document.querySelector("#canvas canvas")!.getBoundingClientRect();

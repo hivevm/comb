@@ -48,7 +48,7 @@ interface Gesture {
   truncated?: boolean;
 }
 
-/** The levels of detail (REN-virtualized-scene-graph), in the order a run lists them. */
+/** The levels of detail (REN-virtualized-nested-scene), in the order a run lists them. */
 export const LEVELS = ["near", "middle", "far"] as const;
 
 /** The gestures timed at a level of detail, in the order a run lists them. An older run timed
@@ -100,7 +100,7 @@ export interface Run {
   zoom: Gesture;
   levels?: Levels<Gesture>;
   /** Edits, one a frame: a node and an edge added and removed again
-   *  (ARCH-engine-edits-graph-in-place); absent in a run
+   *  (ARCH-engine-edits-nested-graph); absent in a run
    *  recorded before the gesture, whose baseline then reports it unjudged. */
   edit?: Gesture;
 }

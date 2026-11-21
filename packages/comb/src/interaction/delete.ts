@@ -45,7 +45,7 @@ function doomed(store: GraphStore, bridge: Bridge): Deletion | undefined {
 }
 
 /** Hands what deleting the selection would remove to `remove`, which asks the veto; an error it
- *  throws is thrown on once nothing has changed (API-edits-reported-as-typed-changes). */
+ *  throws is thrown on once nothing has changed (API-edits-report-nested-changes). */
 export function deleteSelection(store: GraphStore, bridge: Bridge, remove: Delete): void {
   refuseIfLost();
   const found = doomed(store, bridge);

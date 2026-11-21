@@ -1,6 +1,6 @@
 # API-host-asks-content-height: The host application asks Comb the height a node's content lays out to
 
-- **Status:** 🟢 accepted
+- **Status:** ⚪ superseded by [REN-node-content-and-hits](REN-node-content-and-hits.md)
 - **Date:** 2026-10-31
 - **Deciders:** Markus Brigl
 - **Applies to:** the `Comb` interface in `packages/comb/src/api/`, its export in `crates/engine-wasm/`, the height the engine computes in `crates/engine/src/content.rs`, and every host application that places nodes by their height, `examples/metric-tree` among them

@@ -1,6 +1,6 @@
-// The PixiJS scene (REN-virtualized-scene-graph): a `world` render group with its layers in drawing
-// order, and an `overlay` in screen coordinates. This render reads the store and never writes it
-// (ARCH-one-workspace-per-example).
+// The PixiJS scene (REN-virtualized-nested-scene): a `world` render group with its layers in
+// drawing order, and an `overlay` in screen coordinates. This render reads the store and never
+// writes it (ARCH-one-workspace-per-example).
 //
 // After every change, the scene asks the engine which nodes, edges, and edge labels meet the
 // viewport and a margin around it, and binds pooled node views and edge-label views to exactly
@@ -9,12 +9,12 @@
 // role title; far draws nodes as particles and edges as thin lines, without text.
 //
 // A drag, and at the far level an edit of a few slots, keep the query
-// (REN-moving-layer-redraws-changes): the moving layer of `moving.ts` leaves what they move or
+// (REN-moving-layer-moves-content): the moving layer of `moving.ts` leaves what they move or
 // remove out of what it drew, and draws what they move or add above it, from the engine's mesh of
 // the edges at the dragged nodes and of the added edges; dragged views and their edges' labels move
 // where the query bound them. A drag's release queries once.
 //
-// The world is drawn relative to the origin of the last query (API-bridge-takes-serde-and-columns):
+// The world is drawn relative to the origin of the last query (API-bridge-columns-carry-nesting):
 // the `world` render group stands at the screen point of the origin, the edges and the edge labels,
 // which the engine hands over relative to it, at (0, 0) in it, and the nodes and particles, placed
 // by the positions buffer, at minus the origin. The GPU, which takes PixiJS's transforms as `f32`,
@@ -49,7 +49,7 @@ import { ResizeHandles, type DrawnHandle } from "./handles";
 import { MovingLayer, type KeptQuery } from "./moving";
 import { levelAt, toScreen, worldRect } from "../store/viewport";
 
-/** The level of detail the scene draws at (REN-virtualized-scene-graph); the engine strokes edges
+/** The level of detail the scene draws at (REN-virtualized-nested-scene); the engine strokes edges
  *  for it. */
 export type { Level };
 
@@ -128,7 +128,7 @@ export interface SceneSnapshot {
   edgeTriangles: number;
   /** How many vertices and indices the edge mesh draws, how many its buffers hold before they
    *  grow, and its detail: complete, or coarsened where the engine's mesh budget or memory ran
-   *  short (REN-virtualized-scene-graph). */
+   *  short (REN-virtualized-nested-scene). */
   edgeMesh: MeshSize & { detail: Detail };
   /** Every display object under the world, the layers themselves included. */
   displayObjects: number;
@@ -136,7 +136,7 @@ export interface SceneSnapshot {
   renders: number;
   /** How many of the renders queried the engine; the others moved the world alone. */
   queries: number;
-  /** The connectors the connectors layer draws (API-edges-dock-side-or-outline). */
+  /** The connectors the connectors layer draws (API-edges-dock-nodes-or-edges). */
   connectors: DrawnConnector[];
   /** Where each connector the layer draws is centred, in world units, in the order of
    *  `connectors`. */
@@ -196,7 +196,7 @@ export class Scene {
   readonly nodes = new NodesContainer();
   readonly labels = new LabelsContainer();
   /** What a drag or an edit at the far level moved or added, above the kept query
-   *  (REN-moving-layer-redraws-changes). */
+   *  (REN-moving-layer-moves-content). */
   readonly moving: MovingLayer;
   readonly connectors = new ConnectorsLayer();
   readonly overlay = new Container();
@@ -253,7 +253,7 @@ export class Scene {
       this.labels,
       this.connectors,
     );
-    // The engine answers every hit test (REN-node-content-in-rows); interaction listens on the
+    // The engine answers every hit test (REN-node-content-and-hits); interaction listens on the
     // stage alone. The world and its layers take no events, so that PixiJS's event system walks
     // none of them, and hit-tests no edge mesh, on a pointer move.
     this.world.eventMode = "none";

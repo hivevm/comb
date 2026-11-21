@@ -1,6 +1,6 @@
 # ARCH-engine-edits-graph-in-place: The engine edits its graph in place, one node or edge at a time, reuses freed slots, and draws a node added last on top
 
-- **Status:** 🟢 accepted
+- **Status:** ⚪ superseded by [ARCH-engine-edits-nested-graph](ARCH-engine-edits-nested-graph.md)
 - **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/engine/src/graph.rs`, `crates/engine/src/spatial.rs`, the exports of `crates/engine-wasm` that add and remove nodes and edges, the order in which `packages/comb/src/render/` binds node views and particles, and the map from identifiers to slots and the per-slot lists of `packages/comb/src/store/`

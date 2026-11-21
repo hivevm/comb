@@ -1,5 +1,5 @@
 // The height a host application asks Comb for before it places a node
-// (API-host-asks-content-height): the height the engine gives a node of that content and width, one
+// (REN-node-content-and-hits): the height the engine gives a node of that content and width, one
 // per shape of content, refused as `addNode` refuses the node.
 import { expect, test } from "@playwright/test";
 import type { ContentElement, NodeContent } from "comb";
@@ -11,7 +11,7 @@ const EACH_TYPE = ["0:0.0", "0:1.1", "0:2.1", "0:3.0", "0:4.1"];
 test("each type of node is drawn as high as heightOf gives its content and width", async ({
   page,
 }) => {
-  // Verifies: API-host-asks-content-height
+  // Verifies: REN-node-content-and-hits
   await open(page);
   const heights = await page.evaluate((ids) => {
     const drawn = new Map(window.inspect().nodes.map(({ id, height }) => [id, height]));
@@ -27,7 +27,7 @@ test("each type of node is drawn as high as heightOf gives its content and width
 });
 
 test("content of one shape has one height, whatever its texts and its width", async ({ page }) => {
-  // Verifies: API-host-asks-content-height
+  // Verifies: REN-node-content-and-hits
   await open(page);
   const heights = await page.evaluate((ids) => {
     // Every text of the content another, a metric's caption, value, and trend's text among them,
@@ -55,7 +55,7 @@ test("content of one shape has one height, whatever its texts and its width", as
 test("heightOf refuses what addNode refuses of content and width, naming the node the empty string", async ({
   page,
 }) => {
-  // Verifies: API-host-asks-content-height, Q-7
+  // Verifies: REN-node-content-and-hits, Q-7
   await open(page);
   const outcomes = await page.evaluate(() => {
     const { comb } = window;

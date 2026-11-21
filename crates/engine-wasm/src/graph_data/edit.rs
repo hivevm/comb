@@ -30,7 +30,7 @@ use super::{
 };
 
 /// Why an edit of an edge was refused: its data, which the host application handed over, or a
-/// slot that holds nothing, which is the shell's mistake (ARCH-engine-edits-graph-in-place), and
+/// slot that holds nothing, which is the shell's mistake (ARCH-engine-edits-nested-graph), and
 /// crosses as `SlotError` as from the removals, `edgesAt`, `setLabelSize`, and `moveLabel`.
 #[derive(Debug, PartialEq)]
 pub enum EdgeRefusal {
@@ -67,7 +67,7 @@ fn not_added(edge: &str, error: AddEdgeError) -> EdgeRefusal {
 
 /// Checks the edge `addEdge` hands over as a load checks an edge, the only one of its batch at
 /// index 0, and refuses one from a node to itself unless `loops` allows loops
-/// (API-edges-dock-side-or-outline) and one past `MAX_ITEMS` edges in use; adds it to `graph`
+/// (API-edges-dock-nodes-or-edges) and one past `MAX_ITEMS` edges in use; adds it to `graph`
 /// between the slots `source` and `target`, each of a node or, where its end names an edge, of an
 /// edge, which `api` resolved against the maps only it keeps, and returns the slot the engine
 /// chose. An end on an edge that itself ends on an edge is refused as `invalidEdgeEnd`
@@ -253,7 +253,7 @@ pub(crate) fn update_edge_in(
 }
 
 /// The attributes `updateNode` changes on a node, by name: its content, which it replaces whole
-/// (REN-node-content-in-rows), its height, whether it is resizable
+/// (REN-node-content-and-hits), its height, whether it is resizable
 /// (API-edits-report-nested-changes), and how its outline is drawn (REN-node-shapes-cover-uml).
 /// Read from a plain object alone: `api` hands over a copy of a plain object's fields up to the
 /// first it does not know, its content as plain data; a patch that is no plain object, a `Map` or
@@ -459,8 +459,8 @@ fn attachment(node: &str, field: &str) -> GraphDataProblem {
     }
 }
 
-// The malformed-data tests of graph data verify API-bridge-takes-serde-and-columns (see
-// `graph_data::tests`). Verifies: API-bridge-takes-serde-and-columns
+// The malformed-data tests of graph data verify API-bridge-columns-carry-nesting (see
+// `graph_data::tests`). Verifies: API-bridge-columns-carry-nesting
 #[cfg(test)]
 mod tests {
     use super::super::tests::{content, invalid_text, titled};
@@ -860,7 +860,7 @@ mod tests {
 
     #[test]
     fn an_edge_the_engine_cannot_number_is_refused_as_a_node_it_cannot_number() {
-        // Verifies: ARCH-engine-edits-graph-in-place
+        // Verifies: ARCH-engine-edits-nested-graph
         let node = GraphDataProblem::from(TooManySlots);
         assert_eq!(
             not_added("e", AddEdgeError::TooManySlots(TooManySlots)),

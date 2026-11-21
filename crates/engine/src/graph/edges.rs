@@ -2,7 +2,7 @@
 //! edge, an addition into the free slot freed last or a new one, a change of an edge's label
 //! placements, style, and sides, a removal, which takes the edges that end on a removed edge along,
 //! and the path of each edge, its bounds, and the point of each of its labels
-//! (ARCH-engine-edits-graph-in-place, API-edges-dock-nodes-or-edges).
+//! (ARCH-engine-edits-nested-graph, API-edges-dock-nodes-or-edges).
 
 use super::slots::put;
 use super::{AddEdgeError, EdgeSpec, End, Graph, LabelPlacement, SlotError, Which};
@@ -21,7 +21,7 @@ impl Graph {
     }
 
     /// Refuses `slots` where one holds no edge, beyond the slots or free, naming the first: the
-    /// one check of the edge slots a call names (ARCH-engine-edits-graph-in-place).
+    /// one check of the edge slots a call names (ARCH-engine-edits-nested-graph).
     pub(super) fn edges_held(&self, slots: &[u32]) -> Result<(), SlotError> {
         match slots.iter().find(|&&s| !self.holds_edge(s)) {
             Some(&slot) => Err(SlotError::NoEdge { slot }),
@@ -96,7 +96,7 @@ impl Graph {
 
     /// The slots of the edges at the nodes in `slots`, each once, in ascending order: what a
     /// removal of those nodes would take along, named before anything is removed
-    /// (ARCH-engine-edits-graph-in-place). A slot that holds no node refuses the call.
+    /// (ARCH-engine-edits-nested-graph). A slot that holds no node refuses the call.
     pub fn edges_at(&self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
         self.nodes_held(slots)?;
         let mut edges: Vec<u32> = slots
@@ -110,7 +110,7 @@ impl Graph {
 
     /// Adds the edge `spec` and returns its slot: the free slot freed last, or a new one after the
     /// highest. It goes into the lists of its ends and into the index in place, which the rule of
-    /// ARCH-engine-edits-graph-in-place then builds again where it asks for it. An end on a slot
+    /// ARCH-engine-edits-nested-graph then builds again where it asks for it. An end on a slot
     /// that holds no node, or no edge, refuses the edge, and so does an end on an edge that itself
     /// ends on an edge (API-edges-dock-nodes-or-edges, *Ends*); a slot past those a `u32` numbers
     /// refuses it as it refuses a node. Either way, nothing changes.
@@ -151,7 +151,7 @@ impl Graph {
 
     /// Gives the edge in `slot` the label placements `labels`, the whole list, its pills unmeasured
     /// again, the style `style`, and the sides `sides`, and places it again in place
-    /// (ARCH-engine-edits-graph-in-place, API-edges-dock-nodes-or-edges). A slot that holds no
+    /// (ARCH-engine-edits-nested-graph, API-edges-dock-nodes-or-edges). A slot that holds no
     /// edge refuses the change.
     pub fn update_edge(
         &mut self,
@@ -174,12 +174,12 @@ impl Graph {
     /// Removes the edges in `slots` and every edge that ends on one of them, and returns the slots
     /// of all of them as `edge_removal` names them (API-edges-dock-nodes-or-edges, *Ends*). Their
     /// slots go onto the free list in that order, and they leave the index and the lists of edges
-    /// at their ends (ARCH-engine-edits-graph-in-place). A slot that holds no edge refuses the
+    /// at their ends (ARCH-engine-edits-nested-graph). A slot that holds no edge refuses the
     /// call, which then changes nothing.
     pub fn remove_edges(&mut self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
         let removed = self.edge_removal(slots)?;
         // A removal builds nothing: the index is built again after growth and moves
-        // (ARCH-engine-edits-graph-in-place).
+        // (ARCH-engine-edits-nested-graph).
         self.free_edges_at(&removed);
         Ok(removed)
     }
@@ -418,7 +418,7 @@ impl Graph {
         clippy::cast_possible_truncation,
         reason = "an end is the middle of a side of a node or a point of its outline, within the \
                   node, whose position and size the engine keeps as f32; the ends cross without \
-                  an origin, rounded by their distance from the world's origin (API-bridge-takes-serde-and-columns); a \
+                  an origin, rounded by their distance from the world's origin (API-bridge-columns-carry-nesting); a \
                   node lies within `WORLD_LIMIT`, its far side included, so an end does too, \
                   far within f32"
     )]
@@ -450,7 +450,7 @@ mod tests {
 
     #[test]
     fn an_edge_from_a_node_to_itself_is_placed_as_a_loop_and_follows_its_node() {
-        // Verifies: API-edges-dock-side-or-outline
+        // Verifies: API-edges-dock-nodes-or-edges
         // A loop on `a` of each dock, labelled at the middle parameter, and an edge from `a` to
         // `b`: the loop is drawn on the side it names, the top for the outline, by a load, an
         // addition, a move, and a change of node shape, which its ends follow onto the outline,
@@ -787,7 +787,7 @@ mod tests {
 
     #[test]
     fn an_edge_to_a_slot_that_holds_no_node_or_a_change_of_a_free_edge_is_refused() {
-        // Verifies: ARCH-engine-edits-graph-in-place
+        // Verifies: ARCH-engine-edits-nested-graph
         let mut graph = paired(4);
         graph.remove_nodes(&[7]).unwrap();
         let spec = |source, target| EdgeSpec {
@@ -819,7 +819,7 @@ mod tests {
 
     #[test]
     fn an_edge_past_the_slots_a_u32_numbers_is_refused_as_a_node_past_them_and_nothing_changes() {
-        // Verifies: ARCH-engine-edits-graph-in-place
+        // Verifies: ARCH-engine-edits-nested-graph
         let spec = EdgeSpec {
             sides: Sides::default(),
             source: End::Node(0),

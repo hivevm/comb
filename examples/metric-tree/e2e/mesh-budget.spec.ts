@@ -1,4 +1,4 @@
-// A query's edge mesh within its budget (REN-virtualized-scene-graph): graph data the bridge
+// A query's edge mesh within its budget (REN-virtualized-nested-scene): graph data the bridge
 // accepts never runs the engine out of memory, at any viewport.
 import { expect, test } from "@playwright/test";
 import { open } from "./shared";
@@ -6,7 +6,7 @@ import { open } from "./shared";
 test("20,000 edges between two nodes far apart draw zoomed in, and a later graph draws", async ({
   page,
 }) => {
-  // Verifies: Q-7, REN-virtualized-scene-graph
+  // Verifies: Q-7, REN-virtualized-nested-scene
   test.setTimeout(120_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));

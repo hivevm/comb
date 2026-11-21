@@ -253,7 +253,7 @@ describe("the user's deletion", () => {
     [{ kind: "edge", id: "a-b" }, "edges"],
   ] as const) {
     test(`of ${list} removes as the host's removal does, and tells the same change but for by`, () => {
-      // Verifies: API-edits-reported-as-typed-changes
+      // Verifies: API-edits-report-nested-changes
       const hostCalls: string[] = [];
       const byHost = editing(recording(hostCalls));
       hostCalls.length = 0;
@@ -287,7 +287,7 @@ describe("a slot the shell names that holds nothing", () => {
     }));
 
   test("is thrown as an Error naming the slot, no GraphDataError, and changes nothing", () => {
-    // Verifies: ARCH-engine-edits-graph-in-place
+    // Verifies: ARCH-engine-edits-nested-graph
     for (const [name, kind, item, call] of [
       ["removeNodes", "noNode", "node", (comb: Editing["host"]) => comb.removeNodes(["a"])],
       ["removeEdges", "noEdge", "edge", (comb: Editing["host"]) => comb.removeEdges(["a-b"])],
@@ -312,7 +312,7 @@ describe("a slot the shell names that holds nothing", () => {
 
 describe("a node's node shape", () => {
   test("is a rectangle where left out, kept by the store, and heightOf answers for it", () => {
-    // Verifies: REN-closed-set-of-node-shapes
+    // Verifies: REN-node-shapes-cover-uml
     const { store, bridge, host } = editing();
     const heightAt = (slot: number) => bridge.nodeBuffers().sizes[slot * 2 + 1];
     // A node loaded without one is a rectangle, as high as before.
@@ -332,7 +332,7 @@ describe("a node's node shape", () => {
   });
 
   test("of another type or naming none is refused naming the node and the field, and content in a filled one naming the node", () => {
-    // Verifies: REN-closed-set-of-node-shapes, Q-7
+    // Verifies: REN-node-shapes-cover-uml, Q-7
     const { store, host } = editing();
     const before = store.getState();
     const field = (id: string) => ({

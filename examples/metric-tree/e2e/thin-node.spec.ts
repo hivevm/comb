@@ -1,4 +1,4 @@
-// A node thin on screen (REN-node-content-in-rows): within its rectangle a connector reaches at
+// A node thin on screen (REN-node-content-and-hits): within its rectangle a connector reaches at
 // most a quarter of the node's extent across its side, so a press at the centre of a bar, 8 world
 // units high, drags the bar at the near and the middle level, and a press on each of its four
 // connectors still begins a connection (G-3, G-5).
@@ -50,7 +50,7 @@ for (const level of ["near", "middle"] as const) {
   test(`at the ${level} level, a bar pressed at its centre and dragged moves and starts no connection`, async ({
     page,
   }) => {
-    // Verifies: REN-node-content-in-rows, G-5
+    // Verifies: REN-node-content-and-hits, G-5
     await atLevel(page, level);
     const connection = await drag(page, CENTRE, [CENTRE[0] + 100, CENTRE[1] + 150]);
     expect(connection).toBeNull();
@@ -69,7 +69,7 @@ for (const level of ["near", "middle"] as const) {
     test(`at the ${level} level, a press on the bar's ${side} connector starts a connection from it`, async ({
       page,
     }) => {
-      // Verifies: REN-node-content-in-rows, G-3
+      // Verifies: REN-node-content-and-hits, G-3
       await atLevel(page, level);
       const connection = await drag(page, at, B_TOP);
       expect(connection).not.toBeNull();

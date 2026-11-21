@@ -1,5 +1,5 @@
-// The host application adds a node through `addNode` (ARCH-engine-edits-graph-in-place,
-// API-edits-reported-as-typed-changes): the canvas draws it where it was placed, above every node
+// The host application adds a node through `addNode` (ARCH-engine-edits-nested-graph,
+// API-edits-report-nested-changes): the canvas draws it where it was placed, above every node
 // it overlaps, without a load, and `onChange` tells every change of the graph before the call that
 // made it returns. A node a load would refuse, or one of an identifier the graph holds already, is
 // refused, and nothing changes (ARCH-one-workspace-per-example, Q-7).
@@ -25,7 +25,7 @@ async function pressOn(page: Page, id: string): Promise<string | null> {
 test("addNode draws the node where the host placed it in the next frame, without a load", async ({
   page,
 }) => {
-  // Verifies: ARCH-engine-edits-graph-in-place, API-edits-reported-as-typed-changes
+  // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-nested-changes
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -59,7 +59,7 @@ test("addNode draws the node where the host placed it in the next frame, without
 test("a node added over others is drawn and selected above them, and a load stacks by slot", async ({
   page,
 }) => {
-  // Verifies: ARCH-engine-edits-graph-in-place, REN-virtualized-scene-graph
+  // Verifies: ARCH-engine-edits-nested-graph, REN-virtualized-nested-scene
   await open(page);
   // Three nodes at the same place: a load draws them in slot order, c on top.
   await loaded(page, { nodes: [node("a"), node("b"), node("c")], edges: [] });
@@ -80,7 +80,7 @@ test("a node added over others is drawn and selected above them, and a load stac
 test("onChange receives one nodeAdded before addNode returns, and one loaded for each load", async ({
   page,
 }) => {
-  // Verifies: API-edits-reported-as-typed-changes
+  // Verifies: API-edits-report-nested-changes
   await open(page);
   const result = await page.evaluate(
     (nodes) => {
@@ -127,7 +127,7 @@ test("onChange receives one nodeAdded before addNode returns, and one loaded for
 });
 
 test("a load that clears the selection tells its change before the selection", async ({ page }) => {
-  // Verifies: API-edits-reported-as-typed-changes
+  // Verifies: API-edits-report-nested-changes
   await open(page);
   await loaded(page, { nodes: [node("a")], edges: [] });
   expect(await pressOn(page, "a")).toBe("a");
@@ -217,7 +217,7 @@ const REFUSED: { name: string; added: unknown; problem: unknown }[] = [
 
 for (const { name, added, problem } of REFUSED) {
   test(`addNode refuses ${name} with a GraphDataError, and nothing changes`, async ({ page }) => {
-    // Verifies: Q-7, ARCH-one-workspace-per-example, API-edits-reported-as-typed-changes
+    // Verifies: Q-7, ARCH-one-workspace-per-example, API-edits-report-nested-changes
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
@@ -375,7 +375,7 @@ test("addNode refuses a node whose identifier passes the budget of a load, and n
 test("a change a listener makes reaches every listener after the change being delivered", async ({
   page,
 }) => {
-  // Verifies: API-edits-reported-as-typed-changes
+  // Verifies: API-edits-report-nested-changes
   await open(page);
   const result = await page.evaluate(
     (nodes) => {
@@ -398,7 +398,7 @@ test("a change a listener makes reaches every listener after the change being de
 test("a listener that throws keeps no other listener from being told, and its error is thrown on", async ({
   page,
 }) => {
-  // Verifies: API-edits-reported-as-typed-changes
+  // Verifies: API-edits-report-nested-changes
   await open(page);
   await loaded(page, { nodes: [node("a")], edges: [] });
   expect(await pressOn(page, "a")).toBe("a");

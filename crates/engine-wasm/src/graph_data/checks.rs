@@ -179,7 +179,7 @@ pub(crate) fn outline_of(
 }
 
 /// Refuses content of `rows` rows in the node `id` of the filled node shape `shape`, which holds
-/// none (REN-closed-set-of-node-shapes).
+/// none (REN-node-shapes-cover-uml).
 pub(crate) fn content_fits_shape(
     id: &str,
     shape: NodeShape,
@@ -559,8 +559,8 @@ pub(super) fn label_ids_of(
     Ok(units)
 }
 
-// The malformed-data tests of graph data verify API-bridge-takes-serde-and-columns (see
-// `graph_data::tests`). Verifies: API-bridge-takes-serde-and-columns
+// The malformed-data tests of graph data verify API-bridge-columns-carry-nesting (see
+// `graph_data::tests`). Verifies: API-bridge-columns-carry-nesting
 #[cfg(test)]
 mod tests {
     use super::super::tests::{add, added, batch, beyond, d_and, label_in, load_edges, titled};
@@ -902,7 +902,7 @@ mod tests {
 
     #[test]
     fn every_rule_of_an_edge_refuses_its_columns_with_its_kind_and_names() {
-        // Verifies: API-bridge-takes-serde-and-columns
+        // Verifies: API-bridge-columns-carry-nesting
         let e = || "e".to_owned();
         let text = |value: &str| Field(Some(value.to_owned()));
         // The rules, after every field's type.

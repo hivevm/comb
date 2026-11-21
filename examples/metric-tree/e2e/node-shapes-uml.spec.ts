@@ -72,7 +72,7 @@ function offRounded(width: number, height: number, x: number, y: number) {
 test("a pentagon, a notched rectangle, a note, and a frame lay their content out in their inner rectangle, as high as heightOf gives", async ({
   page,
 }) => {
-  // Verifies: REN-node-shapes-cover-uml, API-host-asks-content-height
+  // Verifies: REN-node-shapes-cover-uml, REN-node-content-and-hits
   await open(page);
   const graph: GraphData = { nodes: SHAPES.map(shapedNode), edges: [] };
   await loaded(page, graph, { x: 20, y: 20, scale: 1 });

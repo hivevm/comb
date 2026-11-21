@@ -1,4 +1,4 @@
-//! Node content as the engine's layout and hit test read it (REN-node-content-in-rows): each
+//! Node content as the engine's layout and hit test read it (REN-node-content-and-hits): each
 //! element of a node with its text, laid out to a width in the fonts handed over, the height a node
 //! lays out to, and the element a point hits.
 
@@ -10,7 +10,7 @@ use tsify::Tsify;
 
 use super::{ContentData, KindCode, numbered, role_of};
 
-/// The kind of an element a click reports (REN-node-content-in-rows): one of the kinds the bridge
+/// The kind of an element a click reports (REN-node-content-and-hits): one of the kinds the bridge
 /// accepts.
 #[derive(Tsify, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -23,8 +23,8 @@ pub enum ElementKind {
     Icon,
 }
 
-/// The element of a node a press hits (REN-node-content-in-rows): its row and column, its kind, and
-/// for an action its identifier.
+/// The element of a node a press hits (REN-node-content-and-hits): its row and column, its kind,
+/// and for an action its identifier.
 #[derive(Tsify, Serialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ElementHit {
@@ -161,7 +161,7 @@ impl ContentData {
     /// The element of the node at `node`, of the node shape and size of `frame` and laid out in
     /// `fonts`, whose rectangle
     /// holds the point `(x, y)` relative to the node's top-left corner, of the elements drawn at
-    /// `level` (`layout::drawn_at`, REN-node-content-in-rows); `cells`, `rows`, and `placed` are
+    /// `level` (`layout::drawn_at`, REN-node-content-and-hits); `cells`, `rows`, and `placed` are
     /// the caller's to reuse.
     #[expect(
         clippy::too_many_arguments,

@@ -1,6 +1,6 @@
 # API-edits-report-nested-changes: Comb applies edits at once, reports every change through one listener as a typed change, and lets the host application refuse a user's connection, deletion, or move into a container, a veto during whose call Comb tells a change ending the gesture with nothing done
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-17
 - **Deciders:** Markus Brigl
 - **Applies to:** `CombOptions` and the `Comb` interface in `packages/comb/src/api/`, the change types `comb` exports, the store's actions in `packages/comb/src/store/`, the gestures of `packages/comb/src/interaction/` that change the graph, and the fields of `NodeData` for containers, regions, border nodes, and resizing

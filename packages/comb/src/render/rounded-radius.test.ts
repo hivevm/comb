@@ -1,6 +1,6 @@
 // The shell draws a rounded rectangle's corners by the radius the engine hits them by: the two
 // copies of `ROUNDED_RADIUS`, in the node views and in `crates/engine/src/shape.rs`, agree
-// (REN-closed-set-of-node-shapes).
+// (REN-node-shapes-cover-uml).
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
@@ -12,7 +12,7 @@ function constant(path: string, pattern: RegExp): number {
 }
 
 test("a rounded rectangle's corners are drawn by the radius the engine hits them by", () => {
-  // Verifies: REN-closed-set-of-node-shapes
+  // Verifies: REN-node-shapes-cover-uml
   const engine = constant(
     "../../../../crates/engine/src/shape.rs",
     /pub const ROUNDED_RADIUS: f64 = ([0-9.]+);/,

@@ -1,6 +1,6 @@
 // The drag of an edge's label along its edge (G-6): the engine places the one label pressed, of the
 // edge's list, nearest the pointer, and the release records, once, where the drag left it
-// (API-edits-reported-as-typed-changes, API-edges-dock-nodes-or-edges).
+// (API-edits-report-nested-changes, API-edges-dock-nodes-or-edges).
 import type { Hit } from "../bridge";
 import type { GraphView } from "../store";
 import type { Context, Gesture } from "./gesture";

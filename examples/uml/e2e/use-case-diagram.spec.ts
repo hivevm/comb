@@ -579,7 +579,7 @@ test("a use case at an end of the extend moved, the condition stays anchored at 
 test("an extend changed to another kind loses its condition, the comment and its anchor removed as Comb tells", async ({
   page,
 }) => {
-  // Verifies: G-20, G-4, API-edits-reported-as-typed-changes
+  // Verifies: G-20, G-4, API-edits-report-nested-changes
   await page.goto("/");
   await open(page);
   await chooseUseCase(page);

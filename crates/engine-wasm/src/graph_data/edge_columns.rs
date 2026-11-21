@@ -169,7 +169,7 @@ pub enum ArrowCode {
 }
 
 /// The code of a side of an edge, or its outline, in its column
-/// (API-bridge-takes-serde-and-columns, API-edges-dock-side-or-outline): `Unnamed` for a string
+/// (API-bridge-columns-carry-nesting, API-edges-dock-nodes-or-edges): `Unnamed` for a string
 /// that names none of the five, which the first pass refuses at its place, and `Absent` for a side
 /// left out, which an end on an edge takes and an end on a node is refused for
 /// (API-edges-dock-nodes-or-edges).
@@ -484,8 +484,8 @@ impl EdgeColumns<'_> {
     }
 }
 
-// The malformed-data tests of graph data verify API-bridge-takes-serde-and-columns (see
-// `graph_data::tests`). Verifies: API-bridge-takes-serde-and-columns
+// The malformed-data tests of graph data verify API-bridge-columns-carry-nesting (see
+// `graph_data::tests`). Verifies: API-bridge-columns-carry-nesting
 #[cfg(test)]
 mod tests {
     use super::super::tests::{d_and, label_in, label_named, labelled, labels_in, load_edges};
@@ -494,7 +494,7 @@ mod tests {
 
     #[test]
     fn every_refusal_of_an_edge_crosses_as_columns_with_its_kind_and_names() {
-        // Verifies: API-bridge-takes-serde-and-columns
+        // Verifies: API-bridge-columns-carry-nesting
         let e = || "e".to_owned();
         let field =
             |field: &str, id: Option<String>, expected: &str| GraphDataProblem::InvalidField {
@@ -627,7 +627,7 @@ mod tests {
 
     #[test]
     fn each_of_the_four_sides_and_the_outline_crosses_as_where_the_end_docks() {
-        // Verifies: API-edges-dock-side-or-outline
+        // Verifies: API-edges-dock-nodes-or-edges
         let given = |value: &str| Field(Some(Some(value.to_owned())));
         for (name, dock) in [
             ("top", Side::Top.into()),
@@ -656,7 +656,7 @@ mod tests {
 
     #[test]
     fn edge_columns_that_do_not_fit_together_are_refused_as_malformed() {
-        // Verifies: API-bridge-takes-serde-and-columns
+        // Verifies: API-bridge-columns-carry-nesting
         let changes: [fn(&mut OwnedEdgeColumns); 27] = [
             |c| _ = c.color.pop(),
             // A presence or validity byte is 1 or 0.
@@ -731,7 +731,7 @@ mod tests {
 
     #[test]
     fn a_later_edge_refused_by_its_type_is_named_before_an_earlier_one_refused_by_a_rule() {
-        // Verifies: API-bridge-takes-serde-and-columns
+        // Verifies: API-bridge-columns-carry-nesting
         // Edge `d`'s label text holds a lone surrogate, which the snapshot hands over as no text
         // and its rule refuses; edge `e`'s colour is of another type, which the first pass
         // refuses, before any rule.

@@ -53,7 +53,7 @@ docs/ARCHITECTURE.md  # the system as it currently stands
 docs/adr/             # Architecture Decision Records (+ template): the template's NUC- base,
                       # held by its blob list NUC.blobs, and the project's own
 crates/engine/        # the engine's pure Rust core: geometry over values and buffers (ARCH-one-workspace-per-example)
-crates/engine-wasm/   # the bridge's Rust side: every WebAssembly export (API-bridge-takes-serde-and-columns)
+crates/engine-wasm/   # the bridge's Rust side: every WebAssembly export (API-bridge-columns-carry-nesting)
 packages/comb/        # the library: api, store, interaction, render, bridge
 examples/metric-tree/ # the example host application, with its browser tests (G-9)
 bench/                # the benchmark: the example in Chromium against Q-1 and Q-2, and the baselines

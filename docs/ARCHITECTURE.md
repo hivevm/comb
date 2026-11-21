@@ -72,7 +72,7 @@ does not hold (`unknownNode`), one `updateEdge` or `removeEdges` names (`unknown
 edge ends on that it does not hold (`missingEdge`). The bridge crate checks the node `addNode` and
 the edge `addEdge` hand over as a load checks one, refuses an edge from a node to itself
 (`selfEdge`) unless `CombOptions.allowLoops` allows loops, which a load accepts either way
-(API-edges-dock-side-or-outline), and an addition past the 1,000,000 nodes or edges a load may hold,
+(API-edges-dock-nodes-or-edges), and an addition past the 1,000,000 nodes or edges a load may hold,
 and `api` has it check the code units of identifiers the store counts with the new ones. The engine
 keeps the count of the code units of the strings of content its nodes hold, set by a load and moved
 by every addition, patch, and removal of a node, and refuses an addition or a patch whose strings
@@ -114,7 +114,7 @@ role as byte codes, the boundaries of each node's rows and each row's elements a
 labels as `Uint32Array`, whether a label's background, a dash, and a lightning bolt are present as
 bytes, and the first value refused by its type as its position, a shape of content the snapshot
 cannot flatten with its row and column, a field of a label with the label's place in its edge's list
-([API-bridge-takes-serde-and-columns](adr/API-bridge-takes-serde-and-columns.md));
+([API-bridge-columns-carry-nesting](adr/API-bridge-columns-carry-nesting.md));
 serde-wasm-bindgen converts nothing of a load. A string with a lone surrogate, which the bridge
 would read as U+FFFD, `api` hands over as `false`, so that it is refused. `updateNode` and
 `updateEdge` read their patch the same way, every own key of a plain object, before they look up the
@@ -139,7 +139,7 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   leave and re-enter the one side their source's dock names, the top for the outline, a quarter of
   its length either side of its middle, clockwise, pulled out as far as the side is long, and moved
   inward as a whole along the side's normal until their ends meet the outline of the node's node
-  shape ([API-edges-dock-side-or-outline](adr/API-edges-dock-side-or-outline.md)), their exact
+  shape ([API-edges-dock-nodes-or-edges](adr/API-edges-dock-nodes-or-edges.md)), their exact
   bounds, the point and normal at a path parameter, edge-label placement, and the parts of a
   lightning bolt's path either side of its zigzag and the zigzag's two turns. `shape` holds the
   closed set of node shapes ([REN-node-shapes-cover-uml](adr/REN-node-shapes-cover-uml.md)):
@@ -164,7 +164,7 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   with an overflow list for items that cover many cells) that loads, additions, and moves keep
   current and that is built again once many items have moved or been added beyond its extent, or the
   nodes or the edges in use pass twice the count it was built for
-  ([ARCH-engine-edits-graph-in-place](adr/ARCH-engine-edits-graph-in-place.md)). Its modules under
+  ([ARCH-engine-edits-nested-graph](adr/ARCH-engine-edits-nested-graph.md)). Its modules under
   `graph/` follow its concepts: `slots`, the free slots of a kind, one type kept once for nodes and
   once for edges; `nodes` and `edges`, the edits of each, each with the one check that the slots a
   call names hold one, and `nodes` with the moves of the positions buffer; `index`, the grids and
@@ -226,7 +226,7 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   slot that holds nothing (`SlotError`). Its query returns the slots a rectangle meets, each node
   by its own box, the containers in their order and the other node slots in ascending rank, and
   `hit_at` what a press at a point hits
-  ([REN-node-content-in-rows](adr/REN-node-content-in-rows.md)): the node that is no container
+  ([REN-node-content-and-hits](adr/REN-node-content-and-hits.md)): the node that is no container
   drawn on top there, the one of the highest rank, else the edge in the highest slot within 4
   screen pixels of its path as the stroke of the level flattens it, the parts of the path far from
   the point as chords, else the last container in their order; where the
@@ -240,7 +240,7 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   at the path parameter nearest a point and its distance along the normal there; `mesh_at` meshes
   every edge at given node slots and of given edge slots, found by a query or not, as the query
   meshes the edges it found, what a drag redraws of the nodes it moves and an edit of what it added
-  ([REN-moving-layer-redraws-changes](adr/REN-moving-layer-redraws-changes.md)). `stroke` flattens
+  ([REN-moving-layer-moves-content](adr/REN-moving-layer-moves-content.md)). `stroke` flattens
   the found edges within a tolerance and strokes them into the triangles of one mesh, with each
   edge's colour, dash pattern, and arrowhead, a filled triangle, two open strokes the edge's stroke
   runs on between to the tip, or a white triangle inside its outline, a lightning bolt's middle as
@@ -255,7 +255,7 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   floor and the mesh is coarsened; its vectors grow by `try_reserve`, so that memory running short
   coarsens the mesh instead of trapping; the mesh records where each edge's indices start, so that
   the shell can leave an edge out of a mesh it keeps. `content` lays a node's content out
-  ([REN-node-content-in-rows](adr/REN-node-content-in-rows.md)): from each role's font, the glyph
+  ([REN-node-content-and-hits](adr/REN-node-content-and-hits.md)): from each role's font, the glyph
   advances and the line height the shell hands over, an action in the font of role body, a badge in
   it on a pill at its column's left that hugs the drawn text with 8 either side and 3 above and
   below, the pill being the badge's rectangle and every other element of its row 3 lower, a progress
@@ -287,7 +287,7 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   keeps the content of the nodes, gives each node its node shape,
   refusing content in a filled one, and makes each node as high as its node shape needs for its
   content laid out in its inner rectangle in the fonts `setFont` handed over
-  ([REN-closed-set-of-node-shapes](adr/REN-closed-set-of-node-shapes.md)), or as the height its
+  ([REN-node-shapes-cover-uml](adr/REN-node-shapes-cover-uml.md)), or as the height its
   data gives where that is more, and a node without content as high as that height or as wide
   (`NodeShape::sized` of `shape`, [REN-node-shapes-cover-uml](adr/REN-node-shapes-cover-uml.md)),
   refusing a height that is not finite or not above 0 as `f32` holds it, and keeps whether each node
@@ -298,8 +298,8 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   the node the new content and its height, never less than its content, old or new, needs,
   `addNode` checks one node as a load would and returns the slot the engine chose for it, `heightOf`
   checks a node named `""` at the origin as `addNode` does and returns the height its content lays
-  out to, adding nothing (API-host-asks-content-height, which the proposed REN-node-content-and-hits
-  supersedes, changing the clause of content without rows, whose height follows the width),
+  out to, adding nothing (REN-node-content-and-hits, under which the height of content without
+  rows follows the width),
   `addEdge` checks one edge as a load would, refuses one from a node to itself unless it is handed
   that loops are allowed, and adds it between the node slots `api` resolved, `updateEdge` checks a
   patch of an edge's colour, dash, arrowhead, lightning bolt, labels, which replace the whole list,
@@ -334,13 +334,13 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   name whole, as one string `contentTexts` returns, cut by `contentTextBounds…`, the found edge
   slots, and the edge mesh into buffers the engine owns, the label points and the mesh's positions
   relative to the query's origin, which `originX` and `originY` read
-  ([API-bridge-takes-serde-and-columns](adr/API-bridge-takes-serde-and-columns.md)), and returns the
+  ([API-bridge-columns-carry-nesting](adr/API-bridge-columns-carry-nesting.md)), and returns the
   mesh's detail, complete or coarsened, and refuses a pixel that is not a finite number above zero,
   with where each found edge's indices start in the mesh (`meshEdgeStarts…`); `meshAt` meshes the
   edges at given node slots and the given edge slots, each once, in the rectangle, at the level, and
   at the pixel of the query the scene keeps, relative to its origin, into a mesh of their own, their
   slots in `movingEdges…`, refuses a slot that holds no node or no edge and a pixel as `query` does,
-  and returns the mesh's detail (REN-moving-layer-redraws-changes); `meshPtr` and `meshLen` read a
+  and returns the mesh's detail (REN-moving-layer-moves-content); `meshPtr` and `meshLen` read a
   buffer of either mesh, named by a `MeshOf`, the query's or the moving layer's, by a `MeshBuffer`,
   so that the shell reads both through one function; `drawnEdges` computes the ends of the found
   edges and of the moving mesh's when inspection asks, as they lie then, and `hit` names what a
@@ -402,7 +402,7 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   (`ContentStore`) and the buffers of what a query places of it (`Drawn`).
   `packages/comb/src/bridge` is the one module that imports the WebAssembly package and reads those
   buffers through fresh typed-array views per read
-  ([API-bridge-takes-serde-and-columns](adr/API-bridge-takes-serde-and-columns.md)): its
+  ([API-bridge-columns-carry-nesting](adr/API-bridge-columns-carry-nesting.md)): its
   `columns.ts` holds the writers of a load's columns and the codes they cross as, its `index.ts` the
   facade of the engine, which re-exports them.
 - **Store** (`packages/comb/src/store`) — a vanilla Zustand store with the graph's structure, its
@@ -496,7 +496,7 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   or was removed, and answers inspection for what it drew, with the connectors of the node under the
   pointer and, while the user connects, of the source and the node under the pointer, and an
   `overlay` with the line of the connection being dragged, to the pointer `api` hands each render
-  from interaction ([REN-virtualized-scene-graph](adr/REN-virtualized-scene-graph.md)), and the
+  from interaction ([REN-virtualized-nested-scene](adr/REN-virtualized-nested-scene.md)), and the
   resize handles of the selected node where it is resizable, at the near and middle level, white
   squares of 8 screen pixels outlined in the selection's colour (`handles.ts`); while a resize
   moves, the moving layer draws the resized node's shape anew at its size, its content where the
@@ -534,7 +534,7 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   unbordered content, as high as the top of the inner rectangle `innerOf` hands over as it hands a
   tab over, every polygon's stroke closed, as the Canvas 2D fallback leaves one open that is not
   told to close, inspection reading its primitives back), the lines of its separators in another
-  `Graphics` and its content ([REN-node-content-in-rows](adr/REN-node-content-in-rows.md)): each
+  `Graphics` and its content ([REN-node-content-and-hits](adr/REN-node-content-and-hits.md)): each
   text a pooled `BitmapText` of its role's style where the query placed it, cut where the engine cut
   it and followed by an ellipsis, a badge's on its pill, which one `Graphics` per view draws of the
   colour the query hands over, placed by the padding the engine states (`badgePaddingX`,
@@ -569,9 +569,8 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   `CombOptions.canConnect`, `CombOptions.canDelete`, or `CombOptions.canMoveInto`, `heightOf`, the
   height a node's content lays out to in a node shape, the rectangle where none is named, read and
   checked there as `addNode` reads and checks a node, changing nothing
-  ([API-host-asks-content-height](adr/API-host-asks-content-height.md), which the proposed
-  [REN-node-content-and-hits](adr/REN-node-content-and-hits.md) supersedes, changing the clause
-  of content without rows, whose height follows the width), the
+  ([REN-node-content-and-hits](adr/REN-node-content-and-hits.md), under which the height of
+  content without rows follows the width), the
   viewport (`fitView`, `setViewport`, `viewport`, and `worldPointAt`, the world point under a point
   of the page, which needs no engine), the events to the host application (`onChange`,
   `onSelectionChange`, `onContentClick`, which interaction tells of each click on an element,
@@ -579,7 +578,7 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   and an image Comb would fetch, cannot draw, that has not loaded, or whose pixels the page may not
   read, and copies the image into a canvas of its own (`api/icons.ts`), and `destroy`; `onChange`
   delivers each change the store records as a `GraphChange`
-  ([API-edits-reported-as-typed-changes](adr/API-edits-reported-as-typed-changes.md)), its positions
+  ([API-edits-report-nested-changes](adr/API-edits-report-nested-changes.md)), its positions
   read from the engine's buffer, synchronously from one subscription to the store that tells a
   change before the selection it cleared (`api/changes.ts`); `whenRendered` resolves once a change
   is drawn, with one render per animation frame scheduled by `api/frames.ts`. `api/scenes.ts` is the
@@ -873,7 +872,7 @@ node, `bridge.slide`, which moves it alone along its node's outline; its first m
 store's `dragged` the slots `removalOf` names (`dragStarted`), as a resize and a drag of a line
 between regions do, each later one bumps `movesVersion` (`dragMoved`), and the release clears it and
 bumps `positionsVersion` (`dragEnded`). The store notifies the scene, which renders once per
-animation frame and keeps the query it drew at the press (REN-moving-layer-redraws-changes): the
+animation frame and keeps the query it drew at the press (REN-moving-layer-moves-content): the
 first frame leaves the dragged node's edges out of the query's mesh, uploading its indices alone,
 and at the far level its particle; every frame asks the engine for the mesh of the edges at the
 dragged nodes and of the edges that end on them (`meshAt`), uploads it whole into the moving layer
@@ -882,7 +881,7 @@ the moving layer, a container's in a moving layer of its own above the container
 their edges' labels where they are now, so edges and labels follow the nodes in the same frame. The
 release hands a drop over another container to the move into it, or takes the drag back by `place`,
 and queries once. At the far level an edit of up to 256 slots keeps the query too
-(REN-moving-layer-redraws-changes): the scene reads from the store's arrays which slots were added
+(REN-moving-layer-moves-content): the scene reads from the store's arrays which slots were added
 or removed, draws the added nodes' particles and edges in the moving layer, hides the removed ones
 in the query's mesh by the span of their indices, and queries anew past the bound, for a slot filled
 in both by another object, or for a removal that ends a drag.
@@ -899,7 +898,7 @@ connection, deletion, and move into a container, which `interaction` hands to `a
 are asked of their veto there, in one place: only an identifier `canConnect` returns connects, only
 `true` from `canDelete` deletes and from `canMoveInto` moves, and a veto during whose call Comb
 tells a change to `onChange` ends its gesture with nothing done and no error, whatever it returned
-([API-edits-reported-as-typed-changes](adr/API-edits-reported-as-typed-changes.md)). Then the
+([API-edits-report-nested-changes](adr/API-edits-report-nested-changes.md)). Then the
 connection and the deletion run through the same function, the deletion through `removeNodes` where
 its `Deletion` names nodes, else through `removeEdges`, recorded as `by: "user"`, which every store
 action whose change may be either's requires; a move into a container calls the bridge's `moveInto`
@@ -977,7 +976,7 @@ the render layer reaches the store instead of the action-free `GraphView`, or wh
 imports past the library's entries and its engine file or imports another example
 (ARCH-one-workspace-per-example, API-host-hands-comb-engine), and when the render layer names
 PixiJS's `Text`, `HTMLText`, or `SplitText` or the edges layer a `Graphics`
-(REN-virtualized-scene-graph), and when its Canvas 2D fallback names `Graphics` outside its imports
+(REN-virtualized-nested-scene), and when its Canvas 2D fallback names `Graphics` outside its imports
 and its one field (REN-webgl2-or-canvas-fallback); it also fails a render file that imports from
 interaction by a relative path, a boundary no ADR decides, which the check holds as its own rule and
 this overview describes. `scripts/check-overview.sh` fails, naming each, where this overview holds
@@ -992,14 +991,14 @@ its gzipped JavaScript and the engine file reach the 300 kB of Q-3, when no engi
 when the JavaScript inlines the engine (API-host-hands-comb-engine), and when the bundle carries
 either seam of the bridge's test mode, each by a mark of its own the bridge's source names once,
 `DETACHING_MARK` in the message of `detaching` and `TRAP_EXPORT`, the name of the trap's export
-(API-bridge-takes-serde-and-columns, API-trapped-engine-is-lost); it fails too when it does not
+(API-bridge-columns-carry-nesting, API-trapped-engine-is-lost); it fails too when it does not
 recognise each in the library built in test mode, and the trap in the engine of
 `packages/comb/wasm/test-mode/`, and when that engine's generated glue differs from the production
 engine's, which the example hands it over with. The benchmark and the browser test of the built
 example fail where `testMode()` says the build runs the bridge in test mode.
 `scripts/check-dependencies.sh` fails on a lockfile of another package manager beside `bun.lock`
 (DEV-bun-vite-wasm-pack), on tsify's default or `json` features or `serde_json` in the bridge
-crate (API-bridge-takes-serde-and-columns), in whatever form the entry takes, and on a listed state
+crate (API-bridge-columns-carry-nesting), in whatever form the entry takes, and on a listed state
 library other than zustand in the library's dependency lists (ARCH-graph-in-zustand-store).
 `scripts/check-devcontainer.sh`, the template's, which `scripts/check-all.sh` and the **Checks**
 workflow run beside `scripts/check-code.sh`, fails on a host Docker socket mounted, a Feature not

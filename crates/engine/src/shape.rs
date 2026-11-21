@@ -983,7 +983,7 @@ fn rounded_distance(a: f64, b: f64, ux: f64, uy: f64) -> f64 {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    // Verifies: REN-closed-set-of-node-shapes
+    // Verifies: REN-node-shapes-cover-uml
     use super::*;
 
     /// Directions around the full turn, the axes and the diagonals among them.

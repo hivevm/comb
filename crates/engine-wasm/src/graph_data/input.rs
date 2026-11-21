@@ -15,7 +15,7 @@ use super::{ContentInput, Field};
 
 /// A node as the host application hands it over: its identifier, the position of its top-left
 /// corner, its width, its node shape, and its content, from which and its node shape the engine
-/// computes its height (REN-node-content-in-rows, REN-closed-set-of-node-shapes).
+/// computes its height (REN-node-content-and-hits, REN-node-shapes-cover-uml).
 // The tests read each `Field` of it through `Refusable` in `snapshot`, which names them all.
 #[derive(Tsify, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -32,7 +32,7 @@ pub struct NodeInput {
     pub y: Field<Option<f64>>,
     #[tsify(type = "number")]
     pub width: Field<f64>,
-    /// Its node shape; `api` fills in `rectangle` (REN-closed-set-of-node-shapes).
+    /// Its node shape; `api` fills in `rectangle` (REN-node-shapes-cover-uml).
     /// The height it is given, never less than its content needs; none where its content or
     /// its node shape alone sets it (REN-node-shapes-cover-uml).
     #[tsify(type = "number", optional)]
@@ -79,7 +79,7 @@ pub struct NodeInput {
 }
 
 /// The node shape a node is drawn and hit in, from the closed set the engine owns
-/// (REN-closed-set-of-node-shapes).
+/// (REN-node-shapes-cover-uml).
 #[derive(Tsify, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum NodeShape {
@@ -160,7 +160,7 @@ impl<'de> Visitor<'de> for OutlineVisitor {
     }
 }
 
-/// The role of a text, which chooses its font (REN-node-content-in-rows).
+/// The role of a text, which chooses its font (REN-node-content-and-hits).
 #[derive(Tsify, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum TextRole {
@@ -169,7 +169,7 @@ pub enum TextRole {
     Caption,
 }
 
-/// One segment of a progress bar (REN-node-content-in-rows): the fraction of the bar it fills,
+/// One segment of a progress bar (REN-node-content-and-hits): the fraction of the bar it fills,
 /// finite and not negative, and its colour as `0xRRGGBB`.
 #[derive(Tsify, Serialize, Debug, PartialEq)]
 pub struct Segment {
@@ -177,7 +177,7 @@ pub struct Segment {
     pub color: u32,
 }
 
-/// The direction of a metric's trend (REN-node-content-in-rows), drawn as an arrow: up ▲, down ▼,
+/// The direction of a metric's trend (REN-node-content-and-hits), drawn as an arrow: up ▲, down ▼,
 /// or flat ▶.
 #[derive(Tsify, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -187,7 +187,7 @@ pub enum TrendDirection {
     Flat,
 }
 
-/// The trend of a metric (REN-node-content-in-rows): its text, its direction, and its colour as
+/// The trend of a metric (REN-node-content-and-hits): its text, its direction, and its colour as
 /// `0xRRGGBB`, in which its arrow and its text are drawn.
 #[derive(Tsify, Serialize, Debug, PartialEq)]
 pub struct Trend {
@@ -196,14 +196,14 @@ pub struct Trend {
     pub color: u32,
 }
 
-/// One element of node content (REN-node-content-in-rows): a text in a role; an action, a text
+/// One element of node content (REN-node-content-and-hits): a text in a role; an action, a text
 /// whose click reports its identifier `id` to the host application; a badge, a text on a pill of
 /// the colour `color`, `0xRRGGBB`; a progress bar, a bar the width of its column divided into
 /// `segments` from its left, the rest of it the track; a metric, a `caption` above a `value` and
 /// its `trend`; or an icon, the image the host application registered under `name`, which draws
 /// nothing while none is registered; each in a column that takes its share of the row's width by
 /// `weight`, 1 where it is left out. This type names exactly the six kinds of
-/// REN-node-content-in-rows. Its reading is `ContentInput`'s, which takes any value, so that what
+/// REN-node-content-and-hits. Its reading is `ContentInput`'s, which takes any value, so that what
 /// it refuses is named.
 #[derive(Tsify, Serialize, Debug, PartialEq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -301,7 +301,7 @@ pub enum Arrow {
     Hollow,
 }
 
-/// A side of a node, at whose middle its connector sits (API-edges-dock-side-or-outline).
+/// A side of a node, at whose middle its connector sits (API-edges-dock-nodes-or-edges).
 #[derive(Tsify, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum Side {
@@ -339,7 +339,7 @@ impl From<Side> for graph_side::Side {
 }
 
 /// Where an end of an edge docks: at the connector of one of the four sides, or on the node's
-/// outline (API-edges-dock-side-or-outline).
+/// outline (API-edges-dock-nodes-or-edges).
 #[derive(Tsify, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum Dock {

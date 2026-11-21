@@ -32,7 +32,7 @@ test("the UML example draws the class diagram beside its sidebar, the class diag
 test("each class or interface is a node of its stereotype, name, and members, placed by heightOf", async ({
   page,
 }) => {
-  // Verifies: G-12, G-10, API-host-asks-content-height
+  // Verifies: G-12, G-10, REN-node-content-and-hits
   await page.goto("/");
   await open(page);
   const { graph, heights, drawn } = await page.evaluate(() => {

@@ -12,7 +12,7 @@ type Placed = { nodes: PlacedNodeData[]; edges: GraphData["edges"] };
 import { open } from "./shared";
 
 /** The node shapes in the order the nodes take them, written here rather than read from the
- *  example: the content node shapes first, then the filled ones (REN-closed-set-of-node-shapes). */
+ *  example: the content node shapes first, then the filled ones (REN-node-shapes-cover-uml). */
 const SHAPES = [
   "rectangle",
   "rounded-rectangle",

@@ -1,6 +1,6 @@
 # REN-moving-layer-moves-content: A drag, or an edit at the far level, redraws what it changed in a moving layer, a dragged container with what it contains, and the scene keeps its query
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-17
 - **Deciders:** Markus Brigl
 - **Applies to:** the scene's culling and binding in `packages/comb/src/render/`, the edge meshes of `crates/engine` and `crates/engine-wasm` and their export in `packages/comb/src/bridge/`, the store's signals of a move and of an added node in `packages/comb/src/store/`, and the node drag of `packages/comb/src/interaction/`

@@ -11,7 +11,7 @@ export const NEAR_SCALE = 0.6;
  *  longer read, so nodes become particles. */
 export const FAR_SCALE = 0.3;
 
-/** The level of detail at `scale` (REN-virtualized-scene-graph), which the scene draws and a press
+/** The level of detail at `scale` (REN-virtualized-nested-scene), which the scene draws and a press
  *  hits at. */
 export function levelAt(scale: number): Level {
   if (scale >= NEAR_SCALE) return "near";

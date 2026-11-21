@@ -1,6 +1,6 @@
 // The pan of the viewport by a drag: from the empty canvas at once, and from an edge only once
 // the pointer has moved beyond the slop, so that a press on an edge selects it
-// (REN-node-content-in-rows).
+// (REN-node-content-and-hits).
 import type { Hit } from "../bridge";
 import { SLOP, type Context, type Gesture } from "./gesture";
 import { panBy } from "../store/viewport";

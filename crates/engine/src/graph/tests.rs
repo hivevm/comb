@@ -1,6 +1,6 @@
 //! The graphs the tests of the graph's modules build, and the tests that hold the whole graph to
 //! a scan: queries, hits, and the lists of edges at each node after random additions, removals,
-//! and moves (ARCH-engine-edits-graph-in-place), and the refusals of a load and of a slot that
+//! and moves (ARCH-engine-edits-nested-graph), and the refusals of a load and of a slot that
 //! holds nothing.
 
 use super::*;
@@ -8,7 +8,7 @@ use crate::geometry::{Dock, Side, WORLD_LIMIT};
 use crate::stroke::Arrowhead;
 
 /// Sides of an edge, mostly the default, now and then any pair of the four sides and the
-/// outline (API-edges-dock-side-or-outline).
+/// outline (API-edges-dock-nodes-or-edges).
 pub(super) fn random_sides(rng: &mut Lcg) -> Sides {
     if rng.next() < 0.5 {
         return Sides::default();
@@ -77,7 +77,7 @@ pub(super) fn random_inputs(
 
 /// The path of the edge `spec` between `source` and `target`, the rectangles of its ends, from
 /// the geometry alone: a loop's where it leads a node back to itself, else `between`'s
-/// (API-edges-dock-side-or-outline).
+/// (API-edges-dock-nodes-or-edges).
 pub(super) fn path_of(spec: &EdgeSpec, source: &Rect, target: &Rect) -> EdgePath {
     if spec.source == spec.target {
         EdgePath::looped(
@@ -165,10 +165,11 @@ impl Model {
     }
 
     /// The connector a press at `p` hits where a connector reaches `reach` world units, written
-    /// from REN-node-content-in-rows alone: of the nodes with a connector within its reach, the one
-    /// of the highest slot, and its nearest connector there. Within the node's outline a connector
-    /// reaches at most a quarter of the node's height for the top and the bottom side, of its width
-    /// for the right and the left; beside the outline, within its rectangle too, the whole reach.
+    /// from REN-node-content-and-hits alone: of the nodes with a connector within its reach, the
+    /// one of the highest slot, and its nearest connector there. Within the node's outline a
+    /// connector reaches at most a quarter of the node's height for the top and the bottom side, of
+    /// its width for the right and the left; beside the outline, within its rectangle too, the
+    /// whole reach.
     pub(super) fn connector_at(&self, p: Point, reach: f64) -> Option<(u32, Side, f64)> {
         self.nodes()
             .filter_map(|n| {
@@ -204,7 +205,7 @@ impl Model {
     }
 
     /// The label whose measured pill holds `p`, of the edge in the highest slot and the last of
-    /// its labels, by testing every label (REN-node-content-in-rows).
+    /// its labels, by testing every label (REN-node-content-and-hits).
     pub(super) fn label_at(&self, p: Point) -> Option<(u32, u32)> {
         self.edges()
             .flat_map(|e| (0..self.specs[e as usize].labels.len() as u32).map(move |i| (e, i)))
@@ -428,7 +429,7 @@ fn random_node(rng: &mut Lcg) -> [f32; 4] {
 
 #[test]
 fn queries_and_hits_find_what_a_scan_finds_after_each_addition_and_move() {
-    // Verifies: ARCH-engine-edits-graph-in-place
+    // Verifies: ARCH-engine-edits-nested-graph
     for seed in 1..=10 {
         let mut rng = Lcg(seed);
         // Now and then from an empty graph, which the first addition indexes.
@@ -527,7 +528,7 @@ fn random_edge(rng: &mut Lcg, drawn: &Drawn) -> EdgeSpec {
 
 #[test]
 fn queries_hits_and_lists_find_what_a_scan_finds_after_additions_removals_and_moves() {
-    // Verifies: ARCH-engine-edits-graph-in-place, G-4
+    // Verifies: ARCH-engine-edits-nested-graph, G-4
     for seed in 1..=12 {
         let mut rng = Lcg(seed);
         let mut graph = random_graph(&mut rng, 60, 80);
@@ -589,7 +590,7 @@ fn queries_hits_and_lists_find_what_a_scan_finds_after_additions_removals_and_mo
 
 #[test]
 fn a_slot_that_holds_nothing_refuses_a_removal_and_a_move_which_change_nothing() {
-    // Verifies: ARCH-engine-edits-graph-in-place
+    // Verifies: ARCH-engine-edits-nested-graph
     let mut rng = Lcg(3);
     let mut graph = random_graph(&mut rng, 4, 3);
     let (_, removed) = graph.remove_nodes(&[3]).unwrap();

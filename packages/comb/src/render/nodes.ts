@@ -1,6 +1,6 @@
-// The nodes layer at the near and the middle level (REN-virtualized-scene-graph): a pooled view per
-// node in view, its node shape (REN-closed-set-of-node-shapes) and its content
-// (REN-node-content-in-rows), every text as `BitmapText`. The engine lays the content out and the
+// The nodes layer at the near and the middle level (REN-virtualized-nested-scene): a pooled view
+// per node in view, its node shape (REN-node-shapes-cover-uml) and its content
+// (REN-node-content-and-hits), every text as `BitmapText`. The engine lays the content out and the
 // view draws each text where the engine placed it, cut where it was cut, an action's in the link
 // colour, a badge's on its pill, each progress bar as the segments and the track the engine cut its
 // bar into, and each metric as its caption, its value, and its trend's text and arrow, the last two
@@ -40,7 +40,7 @@ const TEXT_COLOR = 0x1f2430;
 const CAPTION_COLOR = 0x6b7280;
 const LINK_COLOR = 0x2563eb;
 /** The radius of a rectangle's corners, the shell's alone: the engine hits a rectangle as its
- *  bounding rectangle, its corners included (REN-closed-set-of-node-shapes). */
+ *  bounding rectangle, its corners included (REN-node-shapes-cover-uml). */
 const RECTANGLE_RADIUS = 6;
 /** The radius of a rounded rectangle's corners, the engine's `ROUNDED_RADIUS`, which it hits them
  *  by. */
@@ -96,7 +96,7 @@ function luminance(color: number): number {
 
 /** The colour of a badge's text on a pill of `color`: white or the near-black of the node's texts,
  *  whichever contrasts more with the pill by WCAG's ratio of relative luminances, white where
- *  both contrast alike, as on an edge label's pill (REN-node-content-in-rows). */
+ *  both contrast alike, as on an edge label's pill (REN-node-content-and-hits). */
 export function badgeTextColor(color: number): number {
   const pill = luminance(color) + 0.05;
   const white = (luminance(0xffffff) + 0.05) / pill;
@@ -142,7 +142,7 @@ const WIDE = "漢字ＷＭ한글😀📈🚀🔥💡🎯🧭🌍";
 
 /** The metrics of the font `role`'s texts are drawn in, as the `BitmapText` of PixiJS lays a
  *  line out: each measured glyph's advance at the font's size, the widest for every other
- *  character, and the role's line height (REN-node-content-in-rows). */
+ *  character, and the role's line height (REN-node-content-and-hits). */
 export function fontMetricsOf(role: TextRole): FontMetrics {
   const style = TEXT_STYLES[role];
   const font = BitmapFontManager.getFont(MEASURED + WIDE, new TextStyle(style));
@@ -396,7 +396,7 @@ interface PooledText {
 /** The text objects and the sprites the node views of one layer share: a view holds those it
  *  draws while it is bound and returns them here once it draws fewer or is released, so that the
  *  layer makes one only where more are drawn at once than ever before, whichever view draws them
- *  (REN-virtualized-scene-graph). */
+ *  (REN-virtualized-nested-scene). */
 class ElementPool {
   readonly texts: PooledText[] = [];
   readonly sprites: Sprite[] = [];
@@ -962,7 +962,7 @@ export class NodeGraphic extends Container {
     text.rotation = across ? 0 : -Math.PI / 2;
     text.position.set(across ? width / 2 : t / 2, across ? t / 2 : height / 2);
     // Cut by the engine once the layer has read the views of its buffers, which a call into the
-    // engine may detach (API-bridge-takes-serde-and-columns).
+    // engine may detach (API-bridge-columns-carry-nesting).
     this.unnamed = { name, length: across ? width : height };
     const band = across ? { x: 0, y: 0, width, height: t } : { x: 0, y: 0, width: t, height };
     return { ...band, name: "", rotation: text.rotation };
@@ -1152,7 +1152,7 @@ export class NodesContainer extends Container {
 
   /** Moves the views bound to `slots`, the nodes a drag moves, to their places in `positions`,
    *  keeping their content and their place among the views, and draws the node shape of one a
-   *  resize changed anew at its size in `sizes` (REN-moving-layer-redraws-changes). */
+   *  resize changed anew at its size in `sizes` (REN-moving-layer-moves-content). */
   place(slots: readonly number[], positions: Float32Array, sizes: Float32Array): void {
     for (const slot of slots) {
       const view = this.views.boundTo(slot);

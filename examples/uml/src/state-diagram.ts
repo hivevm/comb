@@ -238,7 +238,7 @@ export function labelTextOf({ trigger, guard, effect }: Transition): string | nu
 
 /** The sides of a transition the user connected: docked on the outline at both ends, or for a
  *  loop the side it left by at both, since a loop leaves and re-enters one side
- *  (API-edges-dock-side-or-outline). */
+ *  (API-edges-dock-nodes-or-edges). */
 export function dockingOf(edge: AddedEdge): EdgePatch {
   if ("source" in edge && "target" in edge && edge.source === edge.target)
     return { targetSide: edge.sourceSide };

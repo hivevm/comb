@@ -1,6 +1,6 @@
 # ARCH-border-nodes-ride-sides: A border node sits on a side of the node it is attached to, at an offset along that side, and moves with it
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-17
 - **Deciders:** Markus Brigl
 - **Applies to:** border nodes in `crates/engine/src/graph.rs`, `crates/engine/src/shape.rs`, `crates/engine-wasm/`, and `packages/comb/src/store/`, their drawing in `packages/comb/src/render/`, and their drag in `packages/comb/src/interaction/`

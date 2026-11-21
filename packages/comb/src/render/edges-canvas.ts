@@ -1,8 +1,8 @@
 // The edges layer on PixiJS's Canvas 2D renderer, where the host application opts in
 // (REN-webgl2-or-canvas-fallback): the triangles of the engine's edge mesh filled into one drawing
-// of the layer, never one per edge (REN-virtualized-scene-graph). Canvas 2D runs no shader, so dash
-// patterns draw solid; and no WebGL mesh is built, so nothing is uploaded, but the mesh is kept, so
-// that a drag fills it again without the edges it moves (REN-moving-layer-redraws-changes).
+// of the layer, never one per edge (REN-virtualized-nested-scene). Canvas 2D runs no shader, so
+// dash patterns draw solid; and no WebGL mesh is built, so nothing is uploaded, but the mesh is
+// kept, so that a drag fills it again without the edges it moves (REN-moving-layer-moves-content).
 import { Container, Graphics } from "pixi.js";
 import { hiddenRanges, holds, type DrawnMesh, type EdgeLayer, type MeshSize } from "./edges";
 
@@ -50,7 +50,7 @@ export class EdgeFill extends Container implements EdgeLayer {
   }
 
   /** Fills the mesh the last sync drew again without the edges in `hidden`
-   *  (REN-moving-layer-redraws-changes). */
+   *  (REN-moving-layer-moves-content). */
   hide(hidden: ReadonlySet<number>): void {
     const { indices, edges, starts } = this.kept;
     const ranges = hiddenRanges(edges, starts, indices.length, hidden);

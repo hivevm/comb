@@ -67,7 +67,7 @@ async function resized(page: Page) {
 test("a node is as high as its content with a height below it, as high as given above it, and heightOf answers its content", async ({
   page,
 }) => {
-  // Verifies: REN-node-shapes-cover-uml, REN-node-content-and-hits, API-host-asks-content-height
+  // Verifies: REN-node-shapes-cover-uml, REN-node-content-and-hits
   // Verifies: G-15
   await open(page);
   const graph: GraphData = {
@@ -297,7 +297,7 @@ async function resizeFrames(page: Page, copies: number) {
 test("a resize at the middle level of 50,010 nodes queries in no frame before its release, and uploads per frame what it does at 15", async ({
   page,
 }) => {
-  // Verifies: REN-moving-layer-moves-content, REN-moving-layer-redraws-changes
+  // Verifies: REN-moving-layer-moves-content
   test.setTimeout(180_000);
   const small = await resizeFrames(page, 1);
   const large = await resizeFrames(page, 3334);

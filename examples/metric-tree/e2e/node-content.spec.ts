@@ -1,4 +1,4 @@
-// Node content (REN-node-content-in-rows): rows of TALL columns of texts, laid out by the engine,
+// Node content (REN-node-content-and-hits): rows of TALL columns of texts, laid out by the engine,
 // drawn as `BitmapText` where the engine placed them, cut with an ellipsis within their column,
 // each node as high as its rows; read through `comb/testing` rather than pixels.
 import { expect, test, type Page } from "@playwright/test";
@@ -32,7 +32,7 @@ async function drawnNode(page: Page, id: string) {
 }
 
 test("a node of one title shows one text view where its title was drawn", async ({ page }) => {
-  // Verifies: REN-node-content-in-rows
+  // Verifies: REN-node-content-and-hits
   await open(page);
   await loaded(page, {
     nodes: [{ ...node("a"), content: titled("Launch push notifications") }],
@@ -59,7 +59,7 @@ test("a node of one title shows one text view where its title was drawn", async 
 test("rows of texts are drawn where the engine places them, and a node is as high as its rows", async ({
   page,
 }) => {
-  // Verifies: REN-node-content-in-rows, Q-4
+  // Verifies: REN-node-content-and-hits, Q-4
   await open(page);
   await loaded(page, {
     nodes: [node("a"), { ...node("b", 300), content: TALL }],
@@ -96,7 +96,7 @@ test("rows of texts are drawn where the engine places them, and a node is as hig
 });
 
 test("a text wider than its column is cut with an ellipsis within the column", async ({ page }) => {
-  // Verifies: REN-node-content-in-rows
+  // Verifies: REN-node-content-and-hits
   await open(page);
   const long = "An input metric whose name runs on far past the width of its node";
   await loaded(page, { nodes: [{ ...node("a"), content: [[text("title", long)]] }], edges: [] });
@@ -112,7 +112,7 @@ test("a text wider than its column is cut with an ellipsis within the column", a
 test("the middle level draws the texts of role title alone, and the far level none", async ({
   page,
 }) => {
-  // Verifies: REN-node-content-in-rows, REN-virtualized-scene-graph
+  // Verifies: REN-node-content-and-hits, REN-virtualized-nested-scene
   await open(page);
   await loaded(page, { nodes: [{ ...node("b"), content: TALL }], edges: [] });
   const at = async (scale: number) => {
@@ -136,7 +136,7 @@ test("the middle level draws the texts of role title alone, and the far level no
 test("a badge is drawn near as a pill of its colour around its text, and the middle and far level draw none", async ({
   page,
 }) => {
-  // Verifies: REN-node-content-in-rows, REN-virtualized-scene-graph
+  // Verifies: REN-node-content-and-hits, REN-virtualized-nested-scene
   // A title, then a green badge beside a blue one, each in a column of 94: the pill hugs its text,
   // 8 either side, and is 22 high, the body's line of 16 and 3 above and below; the row is 22.
   const content: NodeContent = [
@@ -211,7 +211,7 @@ function expectPieces(
 test("a progress bar is drawn near as its segments from its column's left and its track after them, and the middle and far level draw none", async ({
   page,
 }) => {
-  // Verifies: REN-node-content-in-rows, REN-virtualized-scene-graph, Q-4
+  // Verifies: REN-node-content-and-hits, REN-virtualized-nested-scene, Q-4
   // A title, then a bar of 0.3 green and 0.2 grey alone in its row, its column 196 wide from 12,
   // then a caption beside a bar of 0.5 blue weighted 3, its column 141 wide from 67. Each bar is
   // 8 high in the middle of a body's line of 16: from 32 in the row from 28, from 48 in the row
@@ -314,7 +314,7 @@ const METRIC_CELLS = [
 test("a metric is drawn near as its caption over its value, its trend's arrow and text in the trend's colour", async ({
   page,
 }) => {
-  // Verifies: REN-node-content-in-rows, Q-4
+  // Verifies: REN-node-content-and-hits, Q-4
   // On each value's line the value lies at the column's left, the arrow 8 after it, a square of
   // 10 3 below the line's top, and the trend's text 4 after the arrow, to the column's end.
   await open(page);
@@ -361,7 +361,7 @@ test("a metric is drawn near as its caption over its value, its trend's arrow an
 test("the middle and far level draw no metric, and near draws it until updateNode takes it away", async ({
   page,
 }) => {
-  // Verifies: REN-node-content-in-rows, REN-virtualized-scene-graph
+  // Verifies: REN-node-content-and-hits, REN-virtualized-nested-scene
   await open(page);
   await loaded(page, { nodes: [{ ...node("b"), content: METRICS }], edges: [] });
   const at = async (scale: number) => {
@@ -385,7 +385,7 @@ test("the middle and far level draw no metric, and near draws it until updateNod
 test("a trend's text takes each new colour on its pooled text object, and no text object is made for one", async ({
   page,
 }) => {
-  // Verifies: REN-node-content-in-rows
+  // Verifies: REN-node-content-and-hits
   // One metric whose trend's colour changes 200 times: its pooled text object is drawn in each
   // colour in turn, and no further text object is bound for any of them.
   await open(page);
@@ -421,7 +421,7 @@ test("a trend's text takes each new colour on its pooled text object, and no tex
 test("updateNode replaces the content, the canvas shows it, the node's height follows, and nodeUpdated carries it", async ({
   page,
 }) => {
-  // Verifies: REN-node-content-in-rows, API-edits-reported-as-typed-changes, G-5
+  // Verifies: REN-node-content-and-hits, API-edits-report-nested-changes, G-5
   await open(page);
   await loaded(page, { nodes: [node("a")], edges: [] });
   await page.evaluate((content) => window.comb.updateNode("a", { content }), TALL);
@@ -449,7 +449,7 @@ test("updateNode replaces the content, the canvas shows it, the node's height fo
 test("content past a limit or malformed is refused naming the node, and the graph stays as it was", async ({
   page,
 }) => {
-  // Verifies: Q-7, REN-node-content-in-rows
+  // Verifies: Q-7, REN-node-content-and-hits
   await open(page);
   await loaded(page, { nodes: [node("a")], edges: [] });
   const refused = await page.evaluate(() => {
@@ -490,7 +490,7 @@ test("content past a limit or malformed is refused naming the node, and the grap
 });
 
 test("a text of characters beyond the measured ones is cut within its column", async ({ page }) => {
-  // Verifies: REN-node-content-in-rows
+  // Verifies: REN-node-content-and-hits
   await open(page);
   const texts = [
     "数据驱动的增长指标与留存率的关系",
@@ -513,7 +513,7 @@ test("a text of characters beyond the measured ones is cut within its column", a
 });
 
 test("a node's connectors follow the height its content lays out to", async ({ page }) => {
-  // Verifies: REN-node-content-in-rows, API-edges-dock-side-or-outline
+  // Verifies: REN-node-content-and-hits, API-edges-dock-nodes-or-edges
   await open(page);
   await loaded(page, { nodes: [{ ...node("b"), content: TALL }], edges: [] });
   /** The connectors drawn while the pointer is over the node, by side. */
