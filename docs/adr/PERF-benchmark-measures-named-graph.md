@@ -50,7 +50,7 @@ A run records that name, and is compared only with baselines of its runner kind 
   - Its rows are spaced for the tallest node of the shaped graph, and each node is centred on
     its row and its column. A circle and a ringed circle are as wide as the metric tree's least
     node is high (64); a bar keeps the node's width; a content node keeps its content, and its
-    height is the one its node shape gives it (REN-closed-set-of-node-shapes).
+    height is the one its node shape gives it (REN-node-shapes-cover-uml).
   - Without the query, the example is the metric tree as today.
 - **Recording:** a run records `graph` beside its size, mode, GPU, attachment, and CPU slowdown.
 - **Comparing:**

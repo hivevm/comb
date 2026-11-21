@@ -9,12 +9,11 @@
 
 The specification leaves persistence to the host application
 ([Non-Goals](../SPECIFICATION.md#non-goals)), and
-[API-edits-reported-as-typed-changes](API-edits-reported-as-typed-changes.md) has Comb apply each
-edit at once and tell
-the host application every change as a typed `GraphChange` through one listener, so that a host
-that persists keeps its own copy of the graph from `onChange` alone. The convention *A host
-application's copy follows what Comb took* asks that such a copy be written only from what Comb
-tells.
+[API-edits-report-nested-changes](API-edits-report-nested-changes.md) has Comb apply each edit at
+once and tell the host application every change as a typed `GraphChange` through one listener,
+so that a host that persists keeps its own copy of the graph from `onChange` alone. The convention
+*A host application's copy follows what Comb took* asks that such a copy be written only from what
+Comb tells.
 
 Both examples keep such a copy, and both write the same code for it, which
 [ARCH-one-workspace-per-example](ARCH-one-workspace-per-example.md) keeps them from sharing:
@@ -30,11 +29,11 @@ How a patch merges, which fields `nodeUpdated` and `edgeUpdated` carry, and that
 nodes names the edges it took with them are Comb's rules. A host application writes them a second
 time from the documentation, and a change of the merge, such as a further field that `null`
 clears, reaches its copy only where its author reads the change. As with the heights that
-[API-host-asks-content-height](API-host-asks-content-height.md) answered by `heightOf`, the copied
+[REN-node-content-and-hits](REN-node-content-and-hits.md) answers by `heightOf`, the copied
 rule is a public interface nobody declared. The design revision of 2026-11-07, which closed the
 state-diagram feature, found the two copies in its survey of `examples/`.
 
-xyflow, which API-edits-reported-as-typed-changes names for the controlled data flow, exports
+xyflow, which API-edits-report-nested-changes names for the controlled data flow, exports
 `applyNodeChanges(changes,
 nodes)` and `applyEdgeChanges` for the same need, returning the nodes with the changes applied.
 
