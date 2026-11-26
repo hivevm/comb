@@ -1,4 +1,4 @@
-//! The node content of graph data (REN-node-content-and-hits, API-bridge-columns-carry-nesting),
+//! The node content of graph data (REN-node-content-and-hits, API-bridge-columns-keep-no-size),
 //! split by concept: `codes` holds its codes and limits, `check` the one check of a load's content
 //! columns and of a single node's content, `data` the content the engine keeps and where its
 //! strings lie, `layout` the content as the engine's layout and hit test read it, `node_content`

@@ -76,7 +76,7 @@ impl Graph {
     }
 
     /// `add_node_in` past its check of `container`, which is `CANVAS` or holds a container.
-    fn add_nested(
+    pub(super) fn add_nested(
         &mut self,
         container: u32,
         is_container: bool,
@@ -290,7 +290,7 @@ impl Graph {
     /// Puts the node in `slot` at the world position `(x, y)`, and what it holds, at every depth,
     /// at the sum along its chain, as `translate` moves them, so that a drag taken back puts the
     /// node and its content where they were and not where a sum of the drag's `f32` deltas would
-    /// (API-edits-report-nested-changes, *Vetoes*). A slot that holds no node, or a point that is
+    /// (API-edits-report-division-moves, *Vetoes*). A slot that holds no node, or a point that is
     /// not finite, refuses the call, which then changes nothing.
     pub fn place(&mut self, slot: u32, x: f64, y: f64) -> Result<(), MoveError> {
         self.shift(&[slot], Shift::To([x, y]))
@@ -377,7 +377,7 @@ impl Graph {
 }
 
 /// Moves the nodes in `slots`, slots that hold a node, by `(dx, dy)` within `positions`, `x, y`
-/// per node slot (API-bridge-columns-carry-nesting), each as far as keeps it, of the size `sizes`
+/// per node slot (API-bridge-columns-keep-no-size), each as far as keeps it, of the size `sizes`
 /// holds for it, within `limit` of the origin on each axis, as `f32` rounds it. Nothing is written
 /// unless the delta is finite, so a refused move leaves the buffer as it was.
 fn translate_positions(

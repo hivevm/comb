@@ -4,7 +4,7 @@
 // (REN-moving-layer-moves-content, ARCH-engine-edits-nested-graph). Released over a container
 // other than its own, or outside every container while it lies in one, it hands the drop to the
 // host application's veto, which moves the node there or has the whole drag taken back; else it
-// records once, where it moved it, where the release left it (API-edits-report-nested-changes).
+// records once, where it moved it, where the release left it (API-edits-report-division-moves).
 // A press released on the canvas within the slop is a click: where the release point lies on an
 // element of the content of the node pressed, it tells the host application which
 // (REN-node-content-and-hits). A border node is dragged along its node's outline instead, to the

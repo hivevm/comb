@@ -10,8 +10,9 @@ bridge crate rather than in `crates/engine`, which holds the graph:
 - `crates/engine-wasm/src/graph_data/checks.rs` combines them with the laid content in
   `node_height` and `content_top`;
 - the bridge crate pushes the result into the engine through `Graph::set_top` and the `top` of
-  `Graph::divide`, from a load (`graph_data/load.rs`), from `addNode`, and from `updateNode`
-  (`crates/engine-wasm/src/lib.rs`, `lay_out_heights`);
+  `Graph::divide`, from a load and from `addNode` (`graph_data/load.rs`), from `updateNode`
+  (`graph_data/update.rs`), and on a change of the fonts (`lay_out_heights` in
+  `crates/engine-wasm/src/lib.rs`);
 - `Graph::resize` in `crates/engine/src/graph/resize.rs` takes the content's height as an argument,
   whose meaning ticket 08 of uml-diagrams changed, and never computes the regions' top anew, since
   the engine does not hold the content.
@@ -48,7 +49,8 @@ compute the node's height and its regions' top itself from one function of `shap
 
 - Touches: `crates/engine/src/shape.rs`, `crates/engine/src/graph/resize.rs`,
   `crates/engine/src/graph/regions.rs`, `crates/engine-wasm/src/graph_data/checks.rs`,
-  `crates/engine-wasm/src/graph_data/load.rs`, `crates/engine-wasm/src/lib.rs`
+  `crates/engine-wasm/src/graph_data/load.rs`, `crates/engine-wasm/src/graph_data/update.rs`,
+  `crates/engine-wasm/src/lib.rs`
 - ARCH-regions-are-container-slots, REN-node-content-and-hits, REN-node-shapes-cover-uml.
 - `.scratch/uml-diagrams-08-symbol-node-shapes.md` where it still exists; else the commit message
   of b9550b3e.

@@ -8,7 +8,7 @@
 //!
 //! The data starts as a value of any shape, as the host application hands it over. A load's nodes
 //! and edges cross as the columns the snapshot of `api` builds of it
-//! (API-bridge-columns-carry-nesting), its strings in pieces of a bound generated with it, each
+//! (API-bridge-columns-keep-no-size), its strings in pieces of a bound generated with it, each
 //! node read as the node of `addNode` is and each edge as the edge of `addEdge` is, but for an
 //! arrowhead and the sides, any string of which crosses as its code, so that a value of the wrong
 //! type or a missing field at any position among them, a string that names no arrowhead or side,
@@ -16,9 +16,16 @@
 //! second oracle, written on that value alone, says which field of which node or edge is missing
 //! or of another type, and whether the value has the shape of graph data at all: the bridge names
 //! such a field (`invalidField`), and refuses as malformed only what has no such shape, and no
-//! message names a Rust type or crate. A last property holds the engine's count of the code units
-//! of content to what the graph holds through loads, additions, updates, and removals.
-// Verifies: Q-7, ARCH-one-workspace-per-example, API-bridge-columns-carry-nesting
+//! message names a Rust type or crate. A property holds the engine's count of the code units of
+//! content to what the graph holds through loads, additions, updates, and removals.
+//!
+//! One generator builds nested graph data: containers at any depth, regions, border nodes, node
+//! shapes, and ends on edges. Beside it, a node of every field of a node is loaded, added by
+//! `addNode` with its container or the node it rides, and given its patchable fields by
+//! `updateNode`, and the three accept or refuse it alike; and a patch of any field of `NodePatch`
+//! given to a node of such data is accepted and refused alike with a load of the node it makes,
+//! and lays it out as that load does.
+// Verifies: Q-7, ARCH-one-workspace-per-example, API-bridge-columns-keep-no-size
 // Verifies: API-edges-dock-nodes-or-edges
 
 use std::cell::Cell;
@@ -323,7 +330,7 @@ fn sometimes(
 }
 
 /// Mostly a height above 0, now and then null, which is none, or one the bridge refuses; loose,
-/// also a value of another type (API-bridge-columns-carry-nesting).
+/// also a value of another type (API-bridge-columns-keep-no-size).
 fn given_height(loose: bool) -> BoxedStrategy<Value> {
     let good = prop_oneof![10 => (1.0..500.0f64).prop_map(Value::Number), 1 => Just(Value::Null), 1 => num()];
     if !loose {
@@ -1570,7 +1577,7 @@ fn the_items_after_one_with_a_refused_field_are_left_unread() {
 
 #[test]
 fn content_read_through_serde_names_its_first_shape_and_reads_the_rest() {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     // A row that is no list and an element that is no object, as `addNode` and `updateNode`
     // read content: the first named, each read as empty in its place.
     let read = |rows: Vec<Value>| ContentInput::deserialize(Value::List(rows)).unwrap();
@@ -1598,7 +1605,7 @@ fn content_read_through_serde_names_its_first_shape_and_reads_the_rest() {
 
 #[test]
 fn a_progress_bar_read_through_serde_names_its_segments_shape_and_reads_the_rest() {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     // Segments that are no list, and a segment that is no object, as `addNode` and `updateNode`
     // read content: the first named, the segments read as none and the segment as NaN.
     let read = |segments: Value| {
@@ -1637,7 +1644,7 @@ fn a_progress_bar_read_through_serde_names_its_segments_shape_and_reads_the_rest
 
 #[test]
 fn a_metric_read_through_serde_fills_its_trend_and_a_trend_that_is_no_object_holds_none() {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     // As `addNode` and `updateNode` read content: a metric's caption, value, and trend's text
     // among the texts, its direction by its code and its colour; a trend that is no object, and
     // a direction or a colour of another type, read as none, which their rules refuse, and no
@@ -1682,7 +1689,7 @@ fn a_metric_read_through_serde_fills_its_trend_and_a_trend_that_is_no_object_hol
 
 #[test]
 fn an_icon_read_through_serde_fills_its_name_among_the_names_and_no_text() {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     // As `addNode` and `updateNode` read content: an icon's name among the names, read as a text
     // is, an `id` or a `text` beside it read as none of its fields; a name of another type crosses
     // empty and marked as none, which its rule refuses.
@@ -1719,7 +1726,7 @@ fn an_icon_read_through_serde_fills_its_name_among_the_names_and_no_text() {
 
 #[test]
 fn a_trend_read_through_serde_reads_its_text_direction_and_colour_alone() {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     // A trend that holds a trend of its own and segments, as a host application may hand one:
     // read for its text, its direction, and its colour, the rest ignored and not read as content.
     let text = |value: &str| Value::Text(value.to_owned());
@@ -1784,9 +1791,9 @@ pub(super) fn titled(title: &str) -> Value {
     Value::List(vec![Value::List(vec![element])])
 }
 
-/// A patch of `updateNode`: mostly content of any value, now and then another field of a node or
-/// none, and now and then a value of any shape at all.
-fn patch() -> impl Strategy<Value = Value> {
+/// A patch of `updateNode` of content: mostly content of any value, now and then another field of
+/// a node or none, and now and then a value of any shape at all; the oracle of content judges it.
+fn content_patch() -> impl Strategy<Value = Value> {
     let key = prop::sample::select(vec![
         "content", "content", "content", "id", "width", "x", "",
     ]);
@@ -1829,7 +1836,7 @@ fn two_nodes(edges: Vec<Value>) -> Value {
     ])
 }
 
-/// The bound on a piece of a string column (API-bridge-columns-carry-nesting): mostly a few code
+/// The bound on a piece of a string column (API-bridge-columns-keep-no-size): mostly a few code
 /// units, so that a column crosses in many pieces, now and then around the longest values, and now
 /// and then the snapshot's.
 fn piece_bound() -> impl Strategy<Value = usize> {
@@ -2342,7 +2349,7 @@ fn graph_data_case(
 /// of an end of an edge are asserted once, after its last case, from counts this test alone holds.
 #[test]
 fn any_graph_data_ends_in_a_typed_error_or_a_graph() {
-    // Verifies: API-bridge-columns-carry-nesting, API-edges-dock-nodes-or-edges
+    // Verifies: API-bridge-columns-keep-no-size, API-edges-dock-nodes-or-edges
     // A panic anywhere below fails the case; the runner catches it and shrinks the input. The load
     // crosses as columns, its strings in pieces of the bound generated with it, and is held to the
     // oracles of the value it was built of.
@@ -2497,7 +2504,7 @@ proptest! {
         patch in edge_patch(),
         bound in piece_bound(),
     ) {
-        // Verifies: ARCH-one-workspace-per-example, API-edits-report-nested-changes, Q-7
+        // Verifies: ARCH-one-workspace-per-example, API-edits-report-division-moves, Q-7
         let mut graph = loaded(bound, two_nodes(vec![Value::Object(base_edge())])).unwrap();
         let before = graph.edge(0).cloned();
         let other = patch
@@ -2564,7 +2571,7 @@ proptest! {
             .map_err(unshaped)
             .and_then(|node| add_node_to(&mut graph, &node, (None, None), &Fonts::default(), 0));
         match (added, as_load) {
-            (Ok((slot, _)), Ok((positions, sizes))) => {
+            (Ok(super::load::Added { slot, .. }), Ok((positions, sizes))) => {
                 prop_assert_eq!(slot, 1);
                 prop_assert_eq!(&graph.positions()[2..], &positions[..]);
                 prop_assert_eq!(&graph.sizes()[2..], &sizes[..]);
@@ -2579,7 +2586,7 @@ proptest! {
     }
 
     #[test]
-    fn any_patch_ends_in_a_typed_error_or_is_accepted(value in patch()) {
+    fn any_patch_ends_in_a_typed_error_or_is_accepted(value in content_patch()) {
         // Verifies: REN-node-content-and-hits, Q-7
         // A patch is accepted exactly where each of its fields is content a load of the node
         // accepts, up to the first field of another name, after which nothing is read.
@@ -2741,7 +2748,7 @@ proptest! {
         budget in 0..48_u64,
         edits in prop::collection::vec(edit(), 1..12),
     ) {
-        // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting, Q-7
+        // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size, Q-7
         // The budget lowered so that edits pass it; each edit is taken exactly where the code
         // units the graph holds besides the node, and the node's, stay within it, and the engine's
         // count is the sum of what the nodes it holds were given, counted apart from the bridge.
@@ -2858,7 +2865,7 @@ fn random_nesting() -> impl Strategy<Value = NestingInput> {
 
 #[test]
 fn a_load_s_nesting_is_refused_exactly_where_an_oracle_finds_a_node_out_of_place() {
-    // Verifies: API-bridge-columns-carry-nesting, ARCH-engine-edits-nested-graph, Q-7
+    // Verifies: API-bridge-columns-keep-no-size, ARCH-engine-edits-nested-graph, Q-7
     let cases = NestingCases::default();
     let mut config = ProptestConfig::with_cases(CASES);
     config.source_file = Some(file!());
@@ -3075,7 +3082,7 @@ fn region_value(k: usize, case: &RegionCase, holds: bool, mistyped: Option<usize
 #[test]
 fn a_load_of_random_regions_crosses_them_unchanged_and_refuses_a_value_of_another_type_by_its_field()
  {
-    // Verifies: API-bridge-columns-carry-nesting, ARCH-regions-are-container-slots
+    // Verifies: API-bridge-columns-keep-no-size, ARCH-regions-are-container-slots
     let (crossed, refused) = (Cell::new(0), Cell::new(0));
     let mut config = ProptestConfig::with_cases(2_000);
     config.source_file = Some(file!());
@@ -3170,4 +3177,1274 @@ fn titled_node(id: &str) -> Value {
         ("shape".to_owned(), Value::Text("rectangle".to_owned())),
         ("content".to_owned(), titled("t")),
     ])
+}
+
+/// The boxes and the marks of the node in slot 0 and of its regions, at every depth, in the order
+/// `regions_of` gives them: each slot with its box, whether it is a region, a container, and
+/// divided, and in which direction.
+type Laid = Vec<(u32, [f32; 4], bool, bool, Option<comb_engine::graph::Axis>)>;
+
+/// What `engine` holds of the node in slot 0 and its regions, as `Laid` says.
+fn laid_out(engine: &Engine) -> Laid {
+    let graph = &engine.graph;
+    std::iter::once(0)
+        .chain(graph.regions_of(0))
+        .map(|slot| {
+            let i = slot as usize * 2;
+            let (at, size) = (graph.positions(), graph.sizes());
+            let bounds = [at[i], at[i + 1], size[i], size[i + 1]];
+            let marks = (graph.is_region(slot), graph.is_container(slot));
+            (slot, bounds, marks.0, marks.1, graph.divided(slot))
+        })
+        .collect()
+}
+
+#[test]
+fn a_random_division_by_a_load_by_add_node_and_by_update_node_gives_equal_boxes_and_marks() {
+    // Verifies: ARCH-regions-are-container-slots, ARCH-engine-edits-nested-graph
+    // The division of a node is one operation of the engine, whichever of the three paths
+    // hands it over, so that all three lay the node and its regions out alike.
+    let compared = Cell::new(0);
+    let mut config = ProptestConfig::with_cases(1_000);
+    config.source_file = Some(file!());
+    let mut runner = TestRunner::new(proptest::test_runner::contextualize_config(config));
+    let strategy = (
+        random_regions(),
+        any::<bool>(),
+        any::<bool>(),
+        20.0..400.0f64,
+    );
+    let result = runner.run(&strategy, |((mut cases, _), across, marked, width)| {
+        for (k, case) in cases.iter_mut().enumerate() {
+            case.0 = case.0.filter(|_| k > 0).map(|pick| pick % k);
+        }
+        let mut holds = vec![false; cases.len()];
+        for parent in cases.iter().filter_map(|case| case.0) {
+            holds[parent] = true;
+        }
+        let regions = Value::List(
+            cases
+                .iter()
+                .enumerate()
+                .map(|(k, case)| region_value(k, case, holds[k], None))
+                .collect(),
+        );
+        let divide = Value::Text(if across { "across" } else { "down" }.to_owned());
+        let mut plain = match titled_node("act") {
+            Value::Object(fields) => fields,
+            _ => unreachable!("a node is an object"),
+        };
+        plain.retain(|(key, _)| key != "width");
+        plain.push(("width".to_owned(), Value::Number(width)));
+        plain.push(("isContainer".to_owned(), Value::Bool(marked)));
+        let mut divided = plain.clone();
+        divided.push(("divide".to_owned(), divide.clone()));
+        divided.push(("regions".to_owned(), regions.clone()));
+        let node = |fields: Vec<(String, Value)>| {
+            NodeInput::deserialize(Value::Object(fields)).expect("a node of the right shape")
+        };
+        let (plain, divided) = (node(plain), node(divided));
+        // By a load.
+        let mut loaded = Engine::new();
+        let columns = OwnedColumns::of([Some(&divided)]);
+        load_into(&mut loaded, &columns, &OwnedEdgeColumns::of([])).expect("a valid load");
+        // By `addNode`.
+        let mut added = Engine::new();
+        added.add(&divided, (None, None)).expect("a valid node");
+        // By `updateNode` of the node added undivided.
+        let mut updated = Engine::new();
+        let slot = updated.add(&plain, (None, None)).expect("a valid node");
+        let patch = NodePatch::deserialize(Value::Object(vec![
+            ("divide".to_owned(), divide),
+            ("regions".to_owned(), regions),
+        ]))
+        .expect("a patch of the right shape");
+        updated.update(slot, "act", &patch).expect("a valid patch");
+        let laid = laid_out(&loaded);
+        prop_assert_eq!(laid.len(), cases.len() + 1);
+        prop_assert_eq!(&laid_out(&added), &laid);
+        prop_assert_eq!(&laid_out(&updated), &laid);
+        compared.set(compared.get() + 1);
+        Ok(())
+    });
+    if let Err(error) = result {
+        panic!("{error}\n{runner}");
+    }
+    // The cases run, and before them the seeds `proptest-regressions/properties.txt` keeps for
+    // this file, which proptest replays and which pass as any case does: so at least the cases.
+    assert!(compared.get() >= 1_000, "{compared:?}");
+}
+
+/// What a node of nested graph data is: a node that holds nothing, a container, a node divided
+/// into regions, or a border node (ARCH-engine-edits-nested-graph,
+/// ARCH-regions-are-container-slots, ARCH-border-nodes-ride-sides).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Kind {
+    Plain,
+    Container,
+    Divided,
+    Border,
+}
+
+/// A node of the nested graph data `nested_data` builds before it is placed: its kind; which of the
+/// nodes before it it lies in or rides, by a pick, and whether it lies on the canvas; its position
+/// and width; its node shape; per region, the pick of the region before it that it lies in; and,
+/// as a border node, its side and its offset as a fraction of 250 world units, now and then past
+/// its side.
+type Drawn = (
+    Kind,
+    (prop::sample::Index, bool),
+    [f64; 3],
+    Value,
+    Vec<Option<prop::sample::Index>>,
+    (Value, f64),
+);
+
+/// The four sides of a node's box a border node may sit on.
+const SIDES: [&str; 4] = ["top", "right", "bottom", "left"];
+
+/// A node of nested graph data before it is placed, of any kind, mostly in what it may lie in.
+fn drawn() -> impl Strategy<Value = Drawn> {
+    let kind = prop::sample::select(vec![
+        Kind::Plain,
+        Kind::Container,
+        Kind::Container,
+        Kind::Divided,
+        Kind::Border,
+    ]);
+    let side = prop::sample::select(SIDES.map(|s| Value::Text(s.to_owned())).to_vec());
+    (
+        kind,
+        (any::<prop::sample::Index>(), prop::bool::weighted(0.25)),
+        [0.0..60.0f64, 0.0..60.0f64, 60.0..200.0f64],
+        node_shape(false),
+        prop::collection::vec(
+            proptest::option::weighted(0.4, any::<prop::sample::Index>()),
+            1..=3,
+        ),
+        (side, 0.0..1.0f64),
+    )
+}
+
+/// Nested graph data of no value refused, built of `drawn` nodes `c0`, `c1`, … in order: a node
+/// that is no border node lies on the canvas, or in a container or a region of one before it, so
+/// at any depth; a border node rides one before it that is no border node; and what it builds of
+/// them for the node generated beside it to name.
+#[derive(Clone, Debug, Default)]
+struct Nested {
+    nodes: Vec<Value>,
+    edges: Vec<Value>,
+    /// Each container and each region that holds no region, by its identifier, with the depth of
+    /// what it holds: a node on the canvas is at depth 0.
+    holders: Vec<(String, usize)>,
+    /// Each node a border node may ride, with its depth.
+    riders: Vec<(String, usize)>,
+    /// Each border node, which no border node may ride.
+    borders: Vec<String>,
+    /// Each node that is no container and each region that holds regions, which hold no node.
+    closed: Vec<String>,
+    /// Each identifier with its slot in a load of the nodes alone.
+    slots: Vec<(String, u32)>,
+}
+
+/// The region `k` of the node `owner`, `{owner}r{k}`, `of` the region it lies in: 30 along its
+/// division, but the second 80, so that regions grow what they divide now and then.
+fn region_of(owner: &str, k: usize, of: Option<usize>, holds: bool) -> Value {
+    let text = |s: &str| Value::Text(s.to_owned());
+    let mut fields = vec![
+        ("id".to_owned(), text(&format!("{owner}r{k}"))),
+        (
+            "size".to_owned(),
+            Value::Number(if k == 1 { 80.0 } else { 30.0 }),
+        ),
+        ("line".to_owned(), text("solid")),
+    ];
+    if holds {
+        fields.push(("divide".to_owned(), text("down")));
+    }
+    if let Some(of) = of {
+        fields.push(("of".to_owned(), Value::Number(of as f64)));
+    }
+    Value::Object(fields)
+}
+
+/// The regions of the node `owner`, each lying in the one its pick names among those before it.
+fn regions_drawn(owner: &str, picks: &[Option<prop::sample::Index>]) -> (Vec<Value>, Vec<bool>) {
+    let of: Vec<Option<usize>> = picks
+        .iter()
+        .enumerate()
+        .map(|(k, pick)| pick.filter(|_| k > 0).map(|pick| pick.index(k)))
+        .collect();
+    let mut holds = vec![false; of.len()];
+    for &parent in of.iter().flatten() {
+        holds[parent] = true;
+    }
+    let regions = (0..of.len())
+        .map(|k| region_of(owner, k, of[k], holds[k]))
+        .collect();
+    (regions, holds)
+}
+
+/// The nested graph data of the nodes `drawn`, each placed in order as `Nested` says, and the
+/// edges `edges` between them.
+fn place_drawn(drawn: Vec<Drawn>, edges: Vec<EdgeDrawn>) -> Nested {
+    let mut nested = Nested::default();
+    let text = |s: &str| Value::Text(s.to_owned());
+    let mut depth_of = Vec::new();
+    let mut region_slots = Vec::new();
+    for (i, (kind, (pick, canvas), [x, y, width], shape, picks, (side, along))) in
+        drawn.into_iter().enumerate()
+    {
+        let id = format!("c{i}");
+        let mut fields = vec![
+            ("id".to_owned(), text(&id)),
+            ("width".to_owned(), Value::Number(width)),
+            ("shape".to_owned(), shape),
+            ("content".to_owned(), Value::List(Vec::new())),
+        ];
+        let kind = if kind == Kind::Border && nested.riders.is_empty() {
+            Kind::Plain
+        } else {
+            kind
+        };
+        let depth = if kind == Kind::Border {
+            let (on, depth) = nested.riders[pick.index(nested.riders.len())].clone();
+            fields.push(("attachedTo".to_owned(), text(&on)));
+            fields.push(("side".to_owned(), side));
+            fields.push(("offset".to_owned(), Value::Number(along * 250.0)));
+            depth
+        } else {
+            fields.push(("x".to_owned(), Value::Number(x)));
+            fields.push(("y".to_owned(), Value::Number(y)));
+            match nested.holders.get(pick.index(nested.holders.len().max(1))) {
+                Some((holder, depth)) if !canvas => {
+                    fields.push(("container".to_owned(), text(holder)));
+                    *depth
+                }
+                _ => 0,
+            }
+        };
+        depth_of.push(depth);
+        nested.slots.push((id.clone(), i as u32));
+        match kind {
+            Kind::Container => {
+                fields.push(("isContainer".to_owned(), Value::Bool(true)));
+                nested.holders.push((id.clone(), depth + 1));
+            }
+            Kind::Divided => {
+                let (regions, holds) = regions_drawn(&id, &picks);
+                fields.push(("divide".to_owned(), text("across")));
+                fields.push(("regions".to_owned(), Value::List(regions)));
+                nested.closed.push(id.clone());
+                for (k, holds) in holds.into_iter().enumerate() {
+                    let region = format!("{id}r{k}");
+                    region_slots.push(region.clone());
+                    if holds {
+                        nested.closed.push(region);
+                    } else {
+                        nested.holders.push((region, depth + 1));
+                    }
+                }
+            }
+            Kind::Plain | Kind::Border => nested.closed.push(id.clone()),
+        }
+        if kind == Kind::Border {
+            nested.borders.push(id);
+        } else {
+            nested.riders.push((id, depth));
+        }
+        nested.nodes.push(Value::Object(fields));
+    }
+    let count = nested.nodes.len() as u32;
+    nested
+        .slots
+        .extend((count..).zip(region_slots).map(|(slot, id)| (id, slot)));
+    let ids: Vec<String> = (0..count).map(|i| format!("c{i}")).collect();
+    nested.edges = edges_drawn(&ids, edges);
+    nested
+}
+
+/// The edges `edges` draw between the nodes `ids`, an end on an edge on one whose ends both lie on
+/// nodes (API-edges-dock-nodes-or-edges, *Ends*).
+fn edges_drawn(ids: &[String], edges: Vec<EdgeDrawn>) -> Vec<Value> {
+    let mut docked = Vec::new();
+    let mut drawn = Vec::new();
+    for (m, ends) in edges.into_iter().enumerate() {
+        let (edge, on_nodes) = edge_drawn(m, ids, &docked, ends);
+        if on_nodes {
+            docked.push(m);
+        }
+        drawn.push(edge);
+    }
+    drawn
+}
+
+/// An end of an edge as `nested_data` draws it: on a node by a pick and on a side of it, or, where
+/// the flag says so and an edge comes before it, on one of those by a pick, at a parameter.
+type EndDrawn = (prop::sample::Index, Value, bool, f64);
+type EdgeDrawn = (EndDrawn, EndDrawn);
+
+/// An end of an edge as `EndDrawn` says, on any side of a node, the outline among them.
+fn end_drawn() -> impl Strategy<Value = EndDrawn> {
+    let side = prop::sample::select(
+        ["top", "right", "bottom", "left", "outline"]
+            .map(|s| Value::Text(s.to_owned()))
+            .to_vec(),
+    );
+    (
+        any::<prop::sample::Index>(),
+        side,
+        prop::bool::weighted(0.4),
+        0.0..=1.0f64,
+    )
+}
+
+/// The edge `e{m}` between the nodes `ids` and the edges `docked` before it, whose ends lie on
+/// nodes, as `ends` draw it, and whether its own ends lie on nodes (API-edges-dock-nodes-or-edges,
+/// *Ends*).
+fn edge_drawn(
+    m: usize,
+    ids: &[String],
+    docked: &[usize],
+    (source, target): EdgeDrawn,
+) -> (Value, bool) {
+    let mut on_nodes = true;
+    let mut fields = vec![
+        ("id".to_owned(), Value::Text(format!("e{m}"))),
+        ("color".to_owned(), Value::Number(0.0)),
+        ("arrow".to_owned(), Value::Text("end".to_owned())),
+    ];
+    for ((pick, side, on_edge, t), names) in [(source, SOURCE), (target, TARGET)] {
+        if on_edge && !docked.is_empty() {
+            on_nodes = false;
+            let edge = Value::Text(format!("e{}", docked[pick.index(docked.len())]));
+            fields.push((names[1].to_owned(), edge));
+            fields.push((names[2].to_owned(), Value::Number(t)));
+        } else {
+            let node = Value::Text(ids[pick.index(ids.len())].clone());
+            fields.push((names[0].to_owned(), node));
+            fields.push((names[3].to_owned(), side));
+        }
+    }
+    (Value::Object(fields), on_nodes)
+}
+
+/// Nested graph data of one to six nodes, containers at any depth, regions, border nodes, node
+/// shapes, and up to four edges, ends on edges among them, none of a value refused.
+fn nested_data() -> impl Strategy<Value = Nested> {
+    (
+        prop::collection::vec(drawn(), 1..=6),
+        prop::collection::vec((end_drawn(), end_drawn()), 0..=4),
+    )
+        .prop_map(|(drawn, edges)| place_drawn(drawn, edges))
+}
+
+/// What the node taken beside nested graph data, as a border node, names by its `attachedTo`: a
+/// node a border node may ride, a border node, which none may ride, or a value of another type,
+/// each by the pick beside it.
+#[derive(Clone, Copy, Debug)]
+enum Ride {
+    Node,
+    Border,
+    Mistyped,
+}
+
+/// What the node taken beside nested graph data names as its container: none, a container or a
+/// region that holds no region by a pick, a node or a region that holds none by a pick, an
+/// identifier no node has, or a value of another type.
+#[derive(Clone, Debug)]
+enum Lies {
+    Canvas,
+    In(prop::sample::Index),
+    Closed(prop::sample::Index),
+    Missing,
+    Mistyped,
+}
+
+/// A field of the node taken, or none where it is left out.
+type Taken = Vec<(&'static str, Option<Value>)>;
+
+/// A field holding what `value` makes, given where `usual` says so but now and then, by `odd`,
+/// left out where it is usually given or given where it is usually left out.
+fn given_now_and_then(
+    value: BoxedStrategy<Value>,
+    usual: bool,
+    odd: f64,
+) -> BoxedStrategy<Option<Value>> {
+    (prop::bool::weighted(odd), value)
+        .prop_map(move |(flip, value)| (usual != flip).then_some(value))
+        .boxed()
+}
+
+/// Where the node taken lies: a border node mostly nowhere, any other mostly in a container or a
+/// region, now and then in a node that holds none, in one no node is, or of another type.
+fn taken_lies(border: bool) -> BoxedStrategy<Lies> {
+    let pick = any::<prop::sample::Index>;
+    if border {
+        return prop_oneof![30 => Just(Lies::Canvas), 1 => pick().prop_map(Lies::In)].boxed();
+    }
+    prop_oneof![
+        8 => Just(Lies::Canvas),
+        16 => pick().prop_map(Lies::In),
+        2 => pick().prop_map(Lies::Closed),
+        1 => Just(Lies::Missing),
+        1 => Just(Lies::Mistyped),
+    ]
+    .boxed()
+}
+
+/// The division and the regions of the node taken: of a node of `kind` divided, mostly regions as
+/// a patch gives them; of any other, mostly none, now and then an empty list, which is none, of a
+/// border node too, nulls, or a region.
+fn taken_division(kind: Kind) -> BoxedStrategy<(Option<Value>, Option<Value>)> {
+    if kind == Kind::Divided {
+        return (patch_value("divide"), regions_value("t"))
+            .prop_map(|(divide, regions)| (Some(divide), Some(regions)))
+            .boxed();
+    }
+    let one = Value::List(vec![region_of("t", 0, None, false)]);
+    prop_oneof![
+        8 => Just((None, None)),
+        2 => Just((None, Some(Value::List(Vec::new())))),
+        1 => Just((Some(Value::Null), Some(Value::Null))),
+        1 => Just((None, Some(one))),
+    ]
+    .boxed()
+}
+
+/// The fields of a node of `kind` taken beside nested graph data, every field of a node among them,
+/// each mostly of a value its kind accepts and now and then of one the bridge refuses, or left out
+/// or given against its kind; with where it lies and what it rides, as `Ride` says, by a pick.
+fn taken_fields(
+    kind: Kind,
+) -> impl Strategy<Value = (Kind, Taken, Lies, (prop::sample::Index, Ride))> {
+    let border = kind == Kind::Border;
+    let id = prop_oneof![
+        30 => Just(Value::Text("t".to_owned())),
+        1 => Just(Value::Text(long_id("t", 257))),
+        1 => Just(Value::Number(1.0)),
+    ];
+    let coordinate = || {
+        let value = prop_oneof![
+            20 => (0.0..60.0f64).prop_map(Value::Number),
+            1 => num(),
+            1 => Just(Value::Null),
+            1 => Just(Value::Bool(false)),
+        ];
+        given_now_and_then(value.boxed(), !border, 0.04)
+    };
+    let mark = if kind == Kind::Container {
+        let odd = Value::Text("yes".to_owned());
+        prop_oneof![20 => Just(Some(Value::Bool(true))), 1 => Just(Some(odd))].boxed()
+    } else {
+        given_now_and_then(flag(true), false, if border { 0.05 } else { 0.3 })
+    };
+    let attachment = (
+        given_now_and_then(patch_value("side"), border, 0.05),
+        given_now_and_then(patch_value("offset"), border, 0.05),
+        any::<prop::sample::Index>(),
+        prop_oneof![20 => Just(Ride::Node), 5 => Just(Ride::Border), 1 => Just(Ride::Mistyped)],
+    );
+    let sizing = (
+        size(),
+        given_now_and_then(given_height(true), false, 0.3),
+        node_shape(true),
+        given_now_and_then(outline(true), false, 0.3),
+        given_now_and_then(flag(true), false, if border { 0.05 } else { 0.3 }),
+    );
+    let lying = (taken_lies(border), mark, taken_division(kind));
+    let fields = (
+        (id, coordinate(), coordinate()),
+        sizing,
+        lying,
+        attachment,
+        patch_value("content"),
+    );
+    fields.prop_map(
+        move |(
+            (id, x, y),
+            (width, height, shape, outline, resizable),
+            (lies, mark, (divide, regions)),
+            (side, offset, rides, ride),
+            content,
+        )| {
+            let fields = vec![
+                ("id", Some(id)),
+                ("x", x),
+                ("y", y),
+                ("width", Some(width)),
+                ("height", height),
+                ("shape", Some(shape)),
+                ("outline", outline),
+                ("isContainer", mark),
+                ("resizable", resizable),
+                ("divide", divide),
+                ("regions", regions),
+                ("side", side),
+                ("offset", offset),
+                ("content", Some(content)),
+            ];
+            (kind, fields, lies, (rides, ride))
+        },
+    )
+}
+
+/// A node taken beside nested graph data, of any kind, its fields as `taken_fields` makes them.
+fn taken_node() -> impl Strategy<Value = (Kind, Taken, Lies, (prop::sample::Index, Ride))> {
+    prop::sample::select(vec![
+        Kind::Plain,
+        Kind::Container,
+        Kind::Divided,
+        Kind::Divided,
+        Kind::Border,
+        Kind::Border,
+    ])
+    .prop_flat_map(taken_fields)
+}
+
+/// The fields of the node taken, `fields`, placed in `nested`: its container as `lies` names it,
+/// and, as a border node, the node `rides` picks, or a value of another type; with the depth it
+/// lies at, where it lies in or rides a node of `nested`.
+fn placed_taken(
+    nested: &Nested,
+    kind: Kind,
+    mut fields: Taken,
+    lies: &Lies,
+    (rides, ride): (prop::sample::Index, Ride),
+) -> (Value, Option<usize>) {
+    let text = |s: &str| Some(Value::Text(s.to_owned()));
+    let mut depth = None;
+    let container = match lies {
+        Lies::Canvas => None,
+        Lies::In(pick) if !nested.holders.is_empty() => {
+            let (holder, at) = &nested.holders[pick.index(nested.holders.len())];
+            depth = Some(*at);
+            text(holder)
+        }
+        Lies::Closed(pick) if !nested.closed.is_empty() => {
+            text(&nested.closed[pick.index(nested.closed.len())])
+        }
+        Lies::In(_) | Lies::Closed(_) => None,
+        Lies::Missing => text("zz"),
+        Lies::Mistyped => Some(Value::Number(1.0)),
+    };
+    fields.push(("container", container));
+    if kind == Kind::Border {
+        let (on, at) = &nested.riders[rides.index(nested.riders.len())];
+        depth = Some(*at);
+        let on = match ride {
+            Ride::Border if !nested.borders.is_empty() => {
+                text(&nested.borders[rides.index(nested.borders.len())])
+            }
+            Ride::Node | Ride::Border => text(on),
+            Ride::Mistyped => Some(Value::Number(0.0)),
+        };
+        fields.push(("attachedTo", on));
+    }
+    let fields = fields
+        .into_iter()
+        .filter_map(|(name, value)| Some((name.to_owned(), value?)))
+        .collect();
+    (Value::Object(fields), depth)
+}
+
+/// The columns of a load of `nodes` and `edges`, each an object, as the snapshot of `api` builds
+/// them (API-bridge-columns-keep-no-size).
+fn columns_of(nodes: &[Value], edges: &[Value]) -> (OwnedColumns, OwnedEdgeColumns) {
+    let nodes: Vec<NodeInput> = nodes
+        .iter()
+        .map(|node| NodeInput::deserialize(node.clone()).expect("a node is an object"))
+        .collect();
+    let edges: Vec<EdgeCells> = edges
+        .iter()
+        .map(|edge| EdgeCells::deserialize(edge.clone()).expect("an edge is an object"))
+        .collect();
+    (
+        OwnedColumns::of(nodes.iter().map(Some)),
+        OwnedEdgeColumns::of(edges.iter().map(Some)),
+    )
+}
+
+/// An engine that holds a load of `nested`, which refuses no value.
+fn engine_of(nested: &Nested) -> Engine {
+    let mut engine = Engine::new();
+    let (nodes, edges) = columns_of(&nested.nodes, &nested.edges);
+    load_into(&mut engine, &nodes, &edges).expect("nested data of no value refused loads");
+    engine
+}
+
+/// The slots of a node's container and of the node it rides, each none where it names none.
+type Nest = (Option<u32>, Option<u32>);
+
+/// The slots `api` hands `addNode` beside `node`, as it resolves them against the identifiers of
+/// `nested`: its container's, past every slot where none has that identifier, and the slot of the
+/// node it rides; each none where the field holds no string.
+fn nest_of(nested: &Nested, node: &Value) -> Nest {
+    let fields = fields_of(node).expect("a node is an object");
+    let slot = |name: &str| match get(fields, name) {
+        Some(Value::Text(id)) => Some(
+            nested
+                .slots
+                .iter()
+                .find(|(of, _)| of == id)
+                .map_or(u32::MAX, |&(_, slot)| slot),
+        ),
+        _ => None,
+    };
+    (slot("container"), slot("attachedTo"))
+}
+
+/// What a node's box and marks are: its box in the world, whether it is a region and a container,
+/// its division, its place as a border node, its node shape and outline, its given height, and
+/// whether it is resizable.
+type Described = (
+    [f32; 4],
+    bool,
+    bool,
+    Option<comb_engine::graph::Axis>,
+    Option<comb_engine::graph::Place>,
+    comb_engine::shape::NodeShape,
+    comb_engine::shape::Outline,
+    Option<f32>,
+    bool,
+);
+
+/// What `engine` holds of the node in `slot` and its regions, at every depth, as `Described` says,
+/// and the code units of content it holds.
+fn described(engine: &Engine, slot: u32) -> (Vec<Described>, u64) {
+    let graph = &engine.graph;
+    let nodes = std::iter::once(slot)
+        .chain(graph.regions_of(slot))
+        .map(|slot| {
+            let i = slot as usize * 2;
+            let (at, size) = (graph.positions(), graph.sizes());
+            (
+                [at[i], at[i + 1], size[i], size[i + 1]],
+                graph.is_region(slot),
+                graph.is_container(slot),
+                graph.divided(slot),
+                graph.place_of(slot),
+                graph.shape(slot),
+                graph.outline(slot),
+                graph.given_height(slot),
+                graph.is_resizable(slot),
+            )
+        })
+        .collect();
+    (nodes, engine.content.units())
+}
+
+/// What a load, `addNode`, or `updateNode` makes of a node: as `described` gives it, or its
+/// refusal as `at_index_zero` names it.
+type Outcome = Result<(Vec<Described>, u64), GraphDataProblem>;
+
+/// Whether `a` and `b`, two outcomes of a node as `described` and `at_index_zero` give them, are
+/// alike: refused alike, or accepted alike with each box within two units in the last place of an
+/// `f32` at its far corner, which a world position summed in `f32` or in `f64` may differ by, and
+/// a region's extent, taken between two such positions, with it.
+fn alike(a: &Outcome, b: &Outcome) -> bool {
+    let (Ok((a, units)), Ok((b, other))) = (a, b) else {
+        return a == b;
+    };
+    let near = |p: &[f32; 4], q: &[f32; 4]| {
+        let far = (p[0].abs() + p[2].abs())
+            .max(p[1].abs() + p[3].abs())
+            .max(1.0);
+        p.iter()
+            .zip(q)
+            .all(|(p, q)| (p - q).abs() <= 2.0 * f32::EPSILON * far)
+    };
+    let boxed = |d: &Described| {
+        let mut d = *d;
+        d.0 = [0.0; 4];
+        d
+    };
+    units == other
+        && a.len() == b.len()
+        && a.iter()
+            .zip(b)
+            .all(|(p, q)| boxed(p) == boxed(q) && near(&p.0, &q.0))
+}
+
+/// `problem` as `addNode` or `updateNode` names it, the only node of its batch at index 0.
+fn at_index_zero(problem: GraphDataProblem) -> GraphDataProblem {
+    match problem {
+        GraphDataProblem::InvalidField {
+            list,
+            id,
+            field,
+            expected,
+            ..
+        } => GraphDataProblem::InvalidField {
+            list,
+            index: 0,
+            id,
+            field,
+            expected,
+        },
+        GraphDataProblem::InvalidContentShape {
+            id,
+            row,
+            column,
+            expected,
+            ..
+        } => GraphDataProblem::InvalidContentShape {
+            index: 0,
+            id,
+            row,
+            column,
+            expected,
+        },
+        GraphDataProblem::IdTooLong {
+            list, field, limit, ..
+        } => GraphDataProblem::IdTooLong {
+            list,
+            index: 0,
+            field,
+            limit,
+        },
+        problem => problem,
+    }
+}
+
+/// The fields of `updateNode`'s patch, in the order a load reads them.
+const PATCHABLE: [&str; 8] = [
+    "height",
+    "outline",
+    "resizable",
+    "divide",
+    "regions",
+    "side",
+    "offset",
+    "content",
+];
+
+/// The node taken, `node`, split into the node `addNode` adds before the patch, which keeps what a
+/// patch cannot set, of no content, and, as a border node, on the top side at its start; and the
+/// patch of the rest of its fields, in a load's order, each left out where it is null, which a
+/// patch refuses and a load reads as none, but the division and the regions, which a patch takes
+/// null in too. None where the patch cannot say what the node gives: a border node whose side or
+/// offset is left out or null.
+fn split_for_update(node: &Value) -> Option<(Value, Value)> {
+    let fields = fields_of(node).expect("a node is an object");
+    let border = matches!(get(fields, "attachedTo"), Some(Value::Text(_)));
+    let present = |name| !matches!(get(fields, name), None | Some(Value::Null));
+    if border && !(present("side") && present("offset")) {
+        return None;
+    }
+    let mut base: Vec<(String, Value)> = fields
+        .iter()
+        .filter(|(name, _)| !PATCHABLE.contains(&name.as_str()))
+        .cloned()
+        .collect();
+    base.push(("content".to_owned(), Value::List(Vec::new())));
+    if border {
+        base.push(("side".to_owned(), Value::Text("top".to_owned())));
+        base.push(("offset".to_owned(), Value::Number(0.0)));
+    }
+    let patch = PATCHABLE
+        .iter()
+        .filter_map(|&name| {
+            let value = get(fields, name)?;
+            let nulled = matches!(value, Value::Null) && !matches!(name, "divide" | "regions");
+            (!nulled).then(|| (name.to_owned(), value.clone()))
+        })
+        .collect();
+    Some((Value::Object(base), Value::Object(patch)))
+}
+
+/// The cases the property below rests on, counted per clause.
+#[derive(Default)]
+struct TakenCases {
+    /// The node taken lies in a node of the data, divided into regions, accepted.
+    nested_divided: Cell<u32>,
+    /// It lies at depth 2 or more, accepted.
+    deep: Cell<u32>,
+    /// It lies in a region, accepted.
+    in_region: Cell<u32>,
+    /// It is a border node riding a node that lies in another, accepted.
+    nested_border: Cell<u32>,
+    /// It is a border node of an empty list of regions, accepted.
+    border_without_regions: Cell<u32>,
+    /// It is accepted.
+    accepted: Cell<u32>,
+    /// It is no border node and gives a side or an offset, which the rule of its attachment
+    /// refuses.
+    side_of_no_border: Cell<u32>,
+    /// It is refused by the rule of its container.
+    container_refused: Cell<u32>,
+    /// It is refused by the rule of its attachment.
+    attachment_refused: Cell<u32>,
+    /// It rides a border node, which the rule of its attachment refuses.
+    on_a_border: Cell<u32>,
+    /// The data hold an edge with an end on an edge.
+    end_on_edge: Cell<u32>,
+    /// `updateNode` is compared, and accepts the patch or refuses it.
+    updated: Cell<u32>,
+    update_refused: Cell<u32>,
+}
+
+/// What the outcome of a load, `loaded`, of the node taken, `node`, of `kind`, beside `nested`,
+/// where it lies in a container or rides a node as `nest` names them, at `depth`, settles, counted
+/// in `cases` by clause.
+fn count_taken(
+    nested: &Nested,
+    (kind, node, depth, nest): (Kind, &Value, Option<usize>, Nest),
+    loaded: &Outcome,
+    cases: &TakenCases,
+) {
+    let fields = fields_of(node).expect("a node is an object");
+    let gives = |name| get(fields, name).is_some();
+    let border = matches!(get(fields, "attachedTo"), Some(Value::Text(_)));
+    let tally = |cell: &Cell<u32>, so: bool| cell.set(cell.get() + u32::from(so));
+    let side = gives("side") || gives("offset");
+    tally(&cases.side_of_no_border, !border && side);
+    let on_edge = nested.edges.iter().any(|edge| {
+        fields_of(edge).is_some_and(|edge| {
+            get(edge, "sourceEdge").is_some() || get(edge, "targetEdge").is_some()
+        })
+    });
+    tally(&cases.end_on_edge, on_edge);
+    let on_a_border = matches!(get(fields, "attachedTo"),
+        Some(Value::Text(on)) if nested.borders.contains(on));
+    tally(&cases.on_a_border, on_a_border && loaded.is_err());
+    match loaded {
+        Ok(_) => {
+            tally(&cases.accepted, true);
+            let deep = depth.unwrap_or_default();
+            let (lies_in, rides) = (nest.0.is_some(), nest.1.is_some());
+            let regions = matches!(get(fields, "regions"), Some(Value::List(l)) if !l.is_empty());
+            tally(
+                &cases.nested_divided,
+                lies_in && kind == Kind::Divided && regions,
+            );
+            tally(&cases.deep, lies_in && deep >= 2);
+            let region =
+                matches!(get(fields, "container"), Some(Value::Text(c)) if c.contains('r'));
+            tally(&cases.in_region, lies_in && region);
+            tally(&cases.nested_border, rides && deep >= 1);
+            tally(&cases.border_without_regions, rides && gives("regions"));
+        }
+        Err(GraphDataProblem::InvalidContainer { .. }) => tally(&cases.container_refused, true),
+        Err(GraphDataProblem::InvalidAttachment { .. }) => tally(&cases.attachment_refused, true),
+        Err(_) => {}
+    }
+}
+
+/// The node taken, `node`, added to a load of `nested` without what a patch can set, where it lies
+/// in a container or rides a node as `nest` names them, and given the rest by `updateNode`: held
+/// to `loaded`, the outcome of a load of it beside `nested`, and counted in `cases`.
+fn updated_alike(
+    nested: &Nested,
+    (node, nest): (&Value, Nest),
+    loaded: &Outcome,
+    cases: &TakenCases,
+) -> Result<(), TestCaseError> {
+    let Some((base, patch)) = split_for_update(node) else {
+        return Ok(());
+    };
+    let mut engine = engine_of(nested);
+    let base = NodeInput::deserialize(base).expect("a node is an object");
+    let Ok(slot) = engine.add(&base, nest) else {
+        // What a patch cannot set refuses the node before its patch.
+        prop_assert!(
+            loaded.is_err(),
+            "the node without its patch refused, loaded"
+        );
+        return Ok(());
+    };
+    let Some(Value::Text(id)) = get(fields_of(node).expect("a node is an object"), "id") else {
+        unreachable!("a node added has an identifier")
+    };
+    let patch = NodePatch::deserialize(patch).expect("a patch is an object");
+    let updated = engine
+        .update(slot, id, &patch)
+        .map(|()| described(&engine, slot))
+        .map_err(|refusal| match refusal {
+            CallRefusal::Data(problem) => problem,
+            refusal => panic!("{refusal:?}"),
+        });
+    match (&updated, loaded) {
+        (Ok(_), Ok(_)) => {
+            prop_assert!(
+                alike(&updated, loaded),
+                "updated {updated:?}, loaded {loaded:?}"
+            );
+            cases.updated.set(cases.updated.get() + 1);
+        }
+        // Refused alike, not by one problem: the node before its patch passed what the patch
+        // cannot set, and a patch is checked in its fields' order.
+        (Err(_), Err(_)) => cases.update_refused.set(cases.update_refused.get() + 1),
+        _ => prop_assert!(false, "updated {updated:?}, loaded {loaded:?}"),
+    }
+    Ok(())
+}
+
+/// One case of the property below: the node taken, `node`, of `kind`, at `depth` where it lies in
+/// or rides a node of `nested`, loaded with `nested`, added to a load of `nested` by `addNode`, and
+/// added without what a patch can set and given that by `updateNode`.
+fn taken_case(
+    nested: &Nested,
+    kind: Kind,
+    node: &Value,
+    depth: Option<usize>,
+    cases: &TakenCases,
+) -> Result<(), TestCaseError> {
+    let count = nested.nodes.len() as u32;
+    let mut all = nested.nodes.clone();
+    all.push(node.clone());
+    let (nodes, edges) = columns_of(&all, &nested.edges);
+    let mut full = Engine::new();
+    let loaded = load_into(&mut full, &nodes, &edges)
+        .map(|_| described(&full, count))
+        .map_err(at_index_zero);
+    let nest = nest_of(nested, node);
+    let mut engine = engine_of(nested);
+    let input = NodeInput::deserialize(node.clone()).expect("a node is an object");
+    let added = engine
+        .add(&input, nest)
+        .map(|slot| described(&engine, slot));
+    prop_assert!(alike(&added, &loaded), "added {added:?}, loaded {loaded:?}");
+    count_taken(nested, (kind, node, depth, nest), &loaded, cases);
+    updated_alike(nested, (node, nest), &loaded, cases)
+}
+
+#[test]
+fn a_node_of_nested_data_is_refused_alike_by_a_load_by_add_node_and_by_update_node() {
+    // Verifies: ARCH-engine-edits-nested-graph, ARCH-regions-are-container-slots
+    // Verifies: ARCH-border-nodes-ride-sides, API-edits-report-division-moves, Q-7
+    let cases = TakenCases::default();
+    let mut config = ProptestConfig::with_cases(4_000);
+    config.source_file = Some(file!());
+    let mut runner = TestRunner::new(proptest::test_runner::contextualize_config(config));
+    let result = runner.run(
+        &(nested_data(), taken_node()),
+        |(nested, (kind, fields, lies, rides))| {
+            let (node, depth) = placed_taken(&nested, kind, fields, &lies, rides);
+            taken_case(&nested, kind, &node, depth, &cases)
+        },
+    );
+    if let Err(error) = result {
+        panic!("{error}\n{runner}");
+    }
+    // Each clause well below what a run of 4,000 cases counts: the nesting with regions and with
+    // border nodes, at depth, in a region, a border node of no regions, a side of a node that is
+    // no border node, the refusals of the rules of a container and an attachment, ends on edges,
+    // and `updateNode` accepting and refusing.
+    let floors = [
+        ("in a node, divided", &cases.nested_divided, 80),
+        ("at depth 2", &cases.deep, 80),
+        ("in a region", &cases.in_region, 100),
+        ("riding a node in another", &cases.nested_border, 60),
+        (
+            "a border node of no regions",
+            &cases.border_without_regions,
+            50,
+        ),
+        ("accepted", &cases.accepted, 600),
+        ("a side of no border node", &cases.side_of_no_border, 150),
+        ("container refused", &cases.container_refused, 50),
+        ("attachment refused", &cases.attachment_refused, 60),
+        ("riding a border node", &cases.on_a_border, 40),
+        ("an end on an edge", &cases.end_on_edge, 1_000),
+        ("updated", &cases.updated, 600),
+        ("update refused", &cases.update_refused, 400),
+    ];
+    for (clause, count, floor) in floors {
+        assert!(count.get() >= floor, "{clause}: {}", count.get());
+    }
+}
+
+/// The fields of `NodePatch`, and an identifier, a width, a position, and an empty name, which it
+/// does not know.
+const PATCH_KEYS: [&str; 12] = [
+    "content",
+    "height",
+    "resizable",
+    "outline",
+    "divide",
+    "regions",
+    "side",
+    "offset",
+    "id",
+    "width",
+    "x",
+    "",
+];
+
+/// A value of the field `key` of a patch: mostly one a node of its kind accepts, now and then null,
+/// which a patch refuses where a load reads none but of the division and the regions, one the
+/// bridge refuses, or a value of another type.
+fn patch_value(key: &'static str) -> BoxedStrategy<Value> {
+    let text = |s: &str| Value::Text(s.to_owned());
+    match key {
+        "content" => prop_oneof![
+            4 => Just(Value::List(Vec::new())),
+            4 => Just(titled("p")),
+            3 => content(true),
+        ]
+        .boxed(),
+        "height" => given_height(true),
+        "resizable" => flag(true),
+        "outline" => outline(true),
+        "divide" => prop_oneof![
+            10 => Just(text("across")),
+            10 => Just(text("down")),
+            2 => Just(Value::Null),
+            1 => Just(text("sideways")),
+            1 => Just(Value::Number(1.0)),
+        ]
+        .boxed(),
+        "regions" => regions_value("p"),
+        "side" => prop_oneof![
+            20 => prop::sample::select(SIDES.map(text).to_vec()),
+            1 => Just(text("middle")),
+            1 => Just(Value::Number(1.0)),
+            1 => Just(Value::Null),
+        ]
+        .boxed(),
+        "offset" => prop_oneof![
+            20 => (0.0..80.0f64).prop_map(Value::Number),
+            1 => num(),
+            1 => Just(Value::Null),
+            1 => Just(text("1")),
+        ]
+        .boxed(),
+        _ => anything().boxed(),
+    }
+}
+
+/// Regions of the node `owner`, `{owner}r0`, …: mostly up to three, each in one before it or in
+/// the node, now and then the first with a field of another type; now and then none, null, or a
+/// value of another type.
+fn regions_value(owner: &'static str) -> BoxedStrategy<Value> {
+    let picks = prop::collection::vec(
+        proptest::option::weighted(0.4, any::<prop::sample::Index>()),
+        1..=3,
+    );
+    let mistyped = proptest::option::weighted(0.1, 0_usize..6);
+    let list = (picks, mistyped).prop_map(move |(picks, mistyped)| {
+        let (mut regions, holds) = regions_drawn(owner, &picks);
+        if let Some(field) = mistyped {
+            let case = (None, 30.0, false, false, holds[0]);
+            regions[0] = region_value(0, &case, holds[0], Some(field));
+        }
+        Value::List(regions)
+    });
+    prop_oneof![
+        10 => list,
+        3 => Just(Value::List(Vec::new())),
+        1 => Just(Value::Null),
+        1 => Just(Value::Number(1.0)),
+    ]
+    .boxed()
+}
+
+/// A patch of `updateNode`: mostly up to four fields of `NodePatch`, each once, in any order, now
+/// and then one of a name it does not know among them, and now and then a value of any shape at
+/// all.
+fn patch() -> impl Strategy<Value = Value> {
+    let known = prop::sample::subsequence(PATCH_KEYS[..8].to_vec(), 0..=4).prop_shuffle();
+    let unknown = proptest::option::weighted(
+        0.08,
+        (
+            prop::sample::select(PATCH_KEYS[8..].to_vec()),
+            any::<prop::sample::Index>(),
+        ),
+    );
+    let entries = (known, unknown)
+        .prop_flat_map(|(mut keys, unknown)| {
+            if let Some((key, at)) = unknown {
+                keys.insert(at.index(keys.len() + 1), key);
+            }
+            keys.into_iter()
+                .map(|key| patch_value(key).prop_map(move |value| (key.to_owned(), value)))
+                .collect::<Vec<_>>()
+        })
+        .prop_map(Value::Object);
+    prop_oneof![20 => entries, 1 => anything()]
+}
+
+/// The node `target`, a node of nested graph data, as a load reads it once `patch` is given to it,
+/// as `updateNode` gives it: each field the patch sets in place of the node's; null, where a patch
+/// refuses it, as a value of another type; the division and the regions, where the patch sets
+/// either, as it sets them, a division alone dividing the node into none and regions alone in the
+/// node's division; and the side of a border node, set alone, at the offset `held` the engine
+/// held before the patch, which `nodeUpdated` tells the host application with it (README,
+/// `updateNode`; ARCH-border-nodes-ride-sides). None where the patch names a field it does not
+/// know.
+fn patched_node(target: &Value, patch: &[(String, Value)], held: Option<f64>) -> Option<Value> {
+    let mut fields = fields_of(target).expect("a node is an object").to_vec();
+    if patch
+        .iter()
+        .any(|(key, _)| !PATCH_KEYS[..8].contains(&key.as_str()))
+    {
+        return None;
+    }
+    let sets = |name: &str| patch.iter().any(|(key, _)| key == name);
+    if sets("divide") && !sets("regions") {
+        fields.retain(|(name, _)| name != "regions");
+    }
+    if let Some(held) = held.filter(|_| sets("side") && !sets("offset")) {
+        fields.retain(|(name, _)| name != "offset");
+        fields.push(("offset".to_owned(), Value::Number(held)));
+    }
+    for (key, value) in patch {
+        let nulled = matches!(value, Value::Null) && !matches!(key.as_str(), "divide" | "regions");
+        let value = if nulled {
+            Value::Text("null".to_owned())
+        } else {
+            value.clone()
+        };
+        fields.retain(|(name, _)| name != key);
+        fields.push((key.clone(), value));
+    }
+    Some(Value::Object(fields))
+}
+
+/// The cases the property below rests on, counted per field of a patch: given to a node and
+/// accepted, and refused; and a patch refused by a name it does not know, and one of no object.
+#[derive(Default)]
+struct PatchCases {
+    accepted: [Cell<u32>; 8],
+    refused: [Cell<u32>; 8],
+    unknown: Cell<u32>,
+    no_object: Cell<u32>,
+}
+
+/// The index of the node of `nested` that `pick` names, among those nothing lies in where the
+/// patch `divides` the node anew, as such a patch moves what the node holds; among all nodes
+/// otherwise.
+fn patch_target(nested: &Nested, pick: prop::sample::Index, divides: bool) -> usize {
+    let named = |value: Option<&Value>, id: &str| matches!(value, Some(Value::Text(c)) if c == id || c.starts_with(&format!("{id}r")));
+    let free: Vec<usize> = (0..nested.nodes.len())
+        .filter(|&i| {
+            let id = format!("c{i}");
+            let lies_in =
+                |node: &Value| named(fields_of(node).and_then(|n| get(n, "container")), &id);
+            !divides || !nested.nodes.iter().any(lies_in)
+        })
+        .collect();
+    free[pick.index(free.len())]
+}
+
+/// One case of the property below: `patch` given by `updateNode` to the node of `nested` that
+/// `pick` names, as `patch_target` chooses it, and a load of `nested` with that node as the patch
+/// makes it.
+fn patch_case(
+    nested: &Nested,
+    pick: prop::sample::Index,
+    patch: Value,
+    cases: &PatchCases,
+) -> Result<(), TestCaseError> {
+    let entries = match &patch {
+        Value::Object(entries) => entries.clone(),
+        _ => Vec::new(),
+    };
+    let patch = match NodePatch::deserialize(patch).map_err(unshaped) {
+        Ok(patch) => patch,
+        Err(error) => {
+            prop_assert!(!messages(&error).into_iter().any(names_rust));
+            cases.no_object.set(cases.no_object.get() + 1);
+            return Ok(());
+        }
+    };
+    let divides = entries
+        .iter()
+        .any(|(key, _)| key == "divide" || key == "regions");
+    let index = patch_target(nested, pick, divides);
+    let target = &nested.nodes[index];
+    let id = format!("c{index}");
+    let mut engine = engine_of(nested);
+    let held = engine
+        .graph
+        .place_of(index as u32)
+        .map(|place| place.offset);
+    let updated = engine
+        .update(index as u32, &id, &patch)
+        .map(|()| described(&engine, index as u32))
+        .map_err(|refusal| match refusal {
+            CallRefusal::Data(problem) => problem,
+            refusal => panic!("{refusal:?}"),
+        });
+    if let Err(error) = &updated {
+        prop_assert!(!messages(error).into_iter().any(names_rust));
+    }
+    let Some(node) = patched_node(target, &entries, held) else {
+        prop_assert!(
+            updated.is_err(),
+            "a patch of a field it does not know accepted"
+        );
+        cases.unknown.set(cases.unknown.get() + 1);
+        return Ok(());
+    };
+    let mut nodes = nested.nodes.clone();
+    nodes[index] = node;
+    let (columns, edges) = columns_of(&nodes, &nested.edges);
+    let mut full = Engine::new();
+    let loaded = load_into(&mut full, &columns, &edges)
+        .map(|_| described(&full, index as u32))
+        .map_err(at_index_zero);
+    prop_assert_eq!(
+        updated.is_ok(),
+        loaded.is_ok(),
+        "updated {:?}, loaded {:?}",
+        updated,
+        loaded
+    );
+    if updated.is_ok() {
+        prop_assert!(
+            alike(&updated, &loaded),
+            "updated {:?}, loaded {:?}",
+            updated,
+            loaded
+        );
+    }
+    let counts = if updated.is_ok() {
+        &cases.accepted
+    } else {
+        &cases.refused
+    };
+    for (key, _) in &entries {
+        let at = PATCH_KEYS
+            .iter()
+            .position(|k| k == key)
+            .expect("a field of NodePatch");
+        counts[at].set(counts[at].get() + 1);
+    }
+    Ok(())
+}
+
+#[test]
+fn a_patch_of_any_field_is_accepted_and_refused_alike_with_a_load_of_the_node_it_makes() {
+    // Verifies: API-edits-report-division-moves, ARCH-regions-are-container-slots
+    // Verifies: ARCH-border-nodes-ride-sides, REN-node-content-and-hits, Q-7
+    let cases = PatchCases::default();
+    let mut config = ProptestConfig::with_cases(4_000);
+    config.source_file = Some(file!());
+    let mut runner = TestRunner::new(proptest::test_runner::contextualize_config(config));
+    let strategy = (nested_data(), any::<prop::sample::Index>(), patch());
+    let result = runner.run(&strategy, |(nested, pick, patch)| {
+        patch_case(&nested, pick, patch, &cases)
+    });
+    if let Err(error) = result {
+        panic!("{error}\n{runner}");
+    }
+    // Each field of a patch given to a node and accepted, and refused, a patch of a field it does
+    // not know, and one of no object, each well below what a run of 4,000 cases counts.
+    for (key, (accepted, refused)) in PATCH_KEYS
+        .iter()
+        .zip(cases.accepted.iter().zip(&cases.refused))
+    {
+        assert!(
+            accepted.get() >= 20 && refused.get() >= 200,
+            "{key}: {accepted:?} {refused:?}"
+        );
+    }
+    assert!(cases.unknown.get() >= 150, "unknown: {:?}", cases.unknown);
+    assert!(
+        cases.no_object.get() >= 40,
+        "no object: {:?}",
+        cases.no_object
+    );
 }

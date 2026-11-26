@@ -45,7 +45,7 @@ import {
 /** The node shape and the width of each kind: a state as wide as its name needs, a pseudostate as
  *  small as its node shape allows. History is laid out 64 wide and then made as wide as its letter
  *  makes it high, 90.51, so that it is round (`ROUND`); the human chose that on 2026-11-19. */
-export const STATE_SHAPES: Record<StateKind, { shape: NodeShape; width: number }> = {
+const STATE_SHAPES: Record<StateKind, { shape: NodeShape; width: number }> = {
   state: { shape: "rounded-rectangle", width: 200 },
   composite: { shape: "rounded-rectangle", width: 360 },
   submachine: { shape: "rounded-rectangle", width: 240 },
@@ -153,7 +153,7 @@ function regionsOf(id: string, sizes: readonly number[]): RegionData[] {
 /** The size of a composite state or the frame: its width, its height, at least what its content
  *  and its regions one above the other need, and the size of each of its regions along their
  *  division, `down` or `across`. */
-export interface Size {
+interface Size {
   width: number;
   height: number;
   regions?: readonly number[];
@@ -239,7 +239,7 @@ export function labelTextOf({ trigger, guard, effect }: Transition): string | nu
 /** The sides of a transition the user connected: docked on the outline at both ends, or for a
  *  loop the side it left by at both, since a loop leaves and re-enters one side
  *  (API-edges-dock-nodes-or-edges). */
-export function dockingOf(edge: AddedEdge): EdgePatch {
+function dockingOf(edge: AddedEdge): EdgePatch {
   if ("source" in edge && "target" in edge && edge.source === edge.target)
     return { targetSide: edge.sourceSide };
   return { sourceSide: "outline", targetSide: "outline" };
@@ -443,7 +443,7 @@ const ANCHORS: EdgeData[] = [
 /** The state diagram as graph data, each node placed by the height `heightOf` gives it, with the
  *  state of each node, the kind of each edge, a transition or an anchor, and the trigger, guard,
  *  and effect of each transition, by their identifiers. */
-export function stateDiagram(heightOf: Comb["heightOf"]): DiagramData {
+function stateDiagram(heightOf: Comb["heightOf"]): DiagramData {
   const transitions = TRANSITIONS.map(edgeOf);
   const edges = [...transitions, ...ANCHORS];
   const nodes: NodeData[] = [];

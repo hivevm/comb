@@ -12,7 +12,7 @@ started drag:
 
 The predicate of what a drag takes stands three times: `takenOf` in `node-drag.ts`, and inline in
 `resize.ts` and in `region-line.ts`. `draggedOf` lives in `node-drag.ts`, and `resize.ts` and
-`region-line.ts` import it; `resize.ts` also imports `regionBoxes` and `regionChanges` from
+`region-line.ts` import it; `resize.ts` also imports `regionPlaces` and `regionChanges` from
 `region-line.ts`.
 
 Evidence: the review of ticket 02 of uml-diagrams, finding 6: `draggedOf` reused `removalOf`

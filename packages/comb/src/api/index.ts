@@ -78,7 +78,7 @@ export interface CombOptions {
    *  `true`; an error it throws refuses the deletion and is thrown on from the key's event.
    *  Never called for the host application's own calls. Without it, a deletion is allowed. One
    *  during whose call Comb tells a change to `onChange` deletes nothing, whatever it returns
-   *  (API-edits-report-nested-changes). */
+   *  (API-edits-report-division-moves). */
   canDelete?: (deletion: Deletion) => boolean;
   /** The veto of a connection of the user's (G-3): called when the user releases a connection
    *  over a compatible connector of another node, or of the same node where `allowLoops` allows
@@ -89,7 +89,7 @@ export interface CombOptions {
    *  host application's own calls. Without it, no connection begins: Comb has no name to give the
    *  edge. One during whose call Comb tells a change to `onChange` connects nothing, whatever it
    *  returns, and its identifier is neither checked nor thrown
-   *  (API-edits-report-nested-changes). */
+   *  (API-edits-report-division-moves). */
   canConnect?: (proposal: Proposal) => string | false;
   /** The veto of a move of the user's into a container (G-14): called when the user releases a
    *  dragged node over a container other than its own, with the identifiers of the node and of
@@ -100,7 +100,7 @@ export interface CombOptions {
    *  release's event. A drag released in the node's own container asks nothing. Never called for
    *  the host application's own calls. Without it, a move into a container is allowed. One during
    *  whose call Comb tells a change to `onChange` moves nothing, whatever it returns
-   *  (API-edits-report-nested-changes). */
+   *  (API-edits-report-division-moves). */
   canMoveInto?: (move: ContainerMove) => boolean;
   /** Whether the host application allows loops, edges from a node back to itself: `addEdge`
    *  then accepts one, and the user's connection counts the source's own connectors compatible,
@@ -175,14 +175,14 @@ export interface Comb {
   /** The world point under the point (`clientX`, `clientY`) of the page, in the client
    *  coordinates of a pointer or drop event, for a node dropped from the host's palette (G-1).
    *  Throws a `RangeError` on a coordinate that is not finite; needs no engine, so it keeps
-   *  answering once the engine is lost (API-edits-report-nested-changes). */
+   *  answering once the engine is lost (API-edits-report-division-moves). */
   worldPointAt(clientX: number, clientY: number): { x: number; y: number };
   /** Calls `listener` whenever the selection changes (G-5); returns the unsubscribe function. */
   onSelectionChange(listener: (selection: Selection) => void): () => void;
   /** Calls `listener` with every change of the graph, whoever made it, once the canvas holds it
    *  and before the call that made it returns, in the order made; where the change also clears
    *  the selection, before `onSelectionChange` reports it. Returns the unsubscribe function
-   *  (API-edits-report-nested-changes). */
+   *  (API-edits-report-division-moves). */
   onChange(listener: (change: GraphChange) => void): () => void;
   /** Calls `listener` when the user clicks an element of a node's content: presses on it and
    *  releases within 4 screen pixels of the press, which selects the node, after
@@ -229,7 +229,7 @@ export class RendererUnavailableError extends Error {
   }
 }
 
-/** The world rectangle the nodes cover, each as high as `sizes` holds, or null for a graph
+/** The world rectangle the nodes cover, each of the size `sizes` holds, or null for a graph
  *  without nodes; a free slot covers nothing. */
 function boundsOf(
   nodes: readonly (NodeView | undefined)[],
@@ -243,7 +243,7 @@ function boundsOf(
     const { x, y } = positionAt(positions, slot);
     bounds.minX = Math.min(bounds.minX, x);
     bounds.minY = Math.min(bounds.minY, y);
-    bounds.maxX = Math.max(bounds.maxX, x + node.width);
+    bounds.maxX = Math.max(bounds.maxX, x + sizes[slot * 2]!);
     bounds.maxY = Math.max(bounds.maxY, y + sizes[slot * 2 + 1]!);
   });
   return any ? bounds : null;

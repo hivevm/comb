@@ -113,7 +113,7 @@ test("an association's three labels are drawn at their path parameters and follo
 test("dragging the label at the source end moves it alone and tells labelMoved naming it", async ({
   page,
 }) => {
-  // Verifies: G-6, API-edges-dock-nodes-or-edges, API-edits-report-nested-changes
+  // Verifies: G-6, API-edges-dock-nodes-or-edges, API-edits-report-division-moves
   await open(page);
   await loaded(page, ASSOCIATION);
   const before = await labels(page);
@@ -145,7 +145,7 @@ test("dragging the label at the source end moves it alone and tells labelMoved n
 test("a label dragged off its edge is drawn where it was dropped, and tells one labelMoved", async ({
   page,
 }) => {
-  // Verifies: G-6, API-edits-report-nested-changes, REN-node-content-and-hits
+  // Verifies: G-6, API-edits-report-division-moves, REN-node-content-and-hits
   await open(page);
   await loaded(page, PAIR);
   // Grabbed 6 to the right of its point, dropped with the point at (410, -60).
@@ -228,7 +228,7 @@ test("at the middle level a press where a label's point lies drags no label", as
 test("a label the host clears mid-drag ends the drag: no error, and no labelMoved", async ({
   page,
 }) => {
-  // Verifies: API-edits-report-nested-changes, Q-7
+  // Verifies: API-edits-report-division-moves, Q-7
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -248,7 +248,7 @@ test("a label the host clears mid-drag ends the drag: no error, and no labelMove
 test("a label drag past every finite world point moves nothing and throws nothing", async ({
   page,
 }) => {
-  // Verifies: REN-node-content-and-hits, API-edits-report-nested-changes
+  // Verifies: REN-node-content-and-hits, API-edits-report-division-moves
   // Verifies: API-shell-mistake-refused-as-shells
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));

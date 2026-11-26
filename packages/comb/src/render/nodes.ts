@@ -962,7 +962,7 @@ export class NodeGraphic extends Container {
     text.rotation = across ? 0 : -Math.PI / 2;
     text.position.set(across ? width / 2 : t / 2, across ? t / 2 : height / 2);
     // Cut by the engine once the layer has read the views of its buffers, which a call into the
-    // engine may detach (API-bridge-columns-carry-nesting).
+    // engine may detach (API-bridge-columns-keep-no-size).
     this.unnamed = { name, length: across ? width : height };
     const band = across ? { x: 0, y: 0, width, height: t } : { x: 0, y: 0, width: t, height };
     return { ...band, name: "", rotation: text.rotation };
@@ -1182,10 +1182,7 @@ export class NodesContainer extends Container {
       if (!node) return;
       const view = this.views.bind(slot);
       const [start, end] = [placed.bounds[first + i]!, placed.bounds[first + i + 1]!];
-      // A region and a divided node are as wide as the engine laid them out
-      // (ARCH-regions-are-container-slots); every other node as wide as its data gives.
-      const width = node.region || node.divide ? sizes[slot * 2]! : node.width;
-      const height = sizes[slot * 2 + 1]!;
+      const [width, height] = [sizes[slot * 2]!, sizes[slot * 2 + 1]!];
       view.bands = this.bands;
       const at = [start, end, first + i] as const;
       view.bind(node, node.id === selected, [width, height], placed, at, icons);

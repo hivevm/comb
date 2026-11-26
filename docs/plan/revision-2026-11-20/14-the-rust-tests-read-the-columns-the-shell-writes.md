@@ -21,8 +21,9 @@ holds that the two writers give equal bytes for each case.
 
 - [ ] Given a case of the corpus, when either writer changes what it writes for it, then a test
       fails.
-- [ ] Given `beside` 4 and 5, when the corpus is read, then a case holds each and a Rust test
-      decides its refusal.
+- [ ] Given the bits of `side` and `offset` in the column `given`, which replaced `beside` 4 and 5
+      in ticket 06 of this revision, when the corpus is read, then a case holds each and a Rust
+      test decides its refusal.
 - [ ] Given `snapshot.rs`, when the work is done, then `OwnedColumns` is smaller or gone, and the
       hand-off says by how many lines.
 

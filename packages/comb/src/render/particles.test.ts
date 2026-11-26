@@ -5,10 +5,7 @@ import type { Particle } from "pixi.js";
 import { FAR_NODE_COLOR, FAR_SELECTED_COLOR, NodeParticles } from "./particles";
 import type { GraphView } from "../store";
 
-const nodes = [
-  { id: "a", width: 100 },
-  { id: "b", width: 100 },
-] as GraphView["nodes"];
+const nodes = [{ id: "a" }, { id: "b" }] as GraphView["nodes"];
 const state = (selected: string | null) =>
   ({
     nodes,

@@ -1,17 +1,18 @@
 //! The regions a node is divided into (ARCH-regions-are-container-slots,
-//! API-edits-report-nested-changes): as the host application hands them over to `addNode` and
-//! `updateNode`, as a load's columns carry them (API-bridge-columns-carry-nesting), checked, and
-//! built into the engine's graph as node slots of their own.
+//! API-edits-report-division-moves): as the host application hands them over to `addNode` and
+//! `updateNode`, as a load's columns carry them (API-bridge-columns-keep-no-size), checked, and
+//! handed to the engine's division as its parts.
 
 use std::collections::HashSet;
 use std::fmt;
 
-use comb_engine::graph::{Axis, Graph};
+use comb_engine::geometry::WORLD_LIMIT;
+use comb_engine::graph::{Axis, DivideError, Part, division_needs};
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use tsify::Tsify;
 
-use super::checks::{dash_of, id_length};
+use super::checks::{dash_of, divided, id_length};
 use super::problem::{A_DIVIDE, A_REGION_LIST};
 use super::{Field, GraphDataProblem, GraphList, MAX_TEXT, Pair, utf16_length};
 
@@ -89,7 +90,7 @@ impl<'de> Visitor<'de> for LineVisitor {
     }
 }
 
-/// A region as `api` hands it over (API-edits-report-nested-changes, *Graph data of nesting*): its
+/// A region as `api` hands it over (API-edits-report-division-moves, *Graph data of nesting*): its
 /// identifier, its name, its size along the direction of the division it lies in, the line after
 /// it, its own division, and `of`, the index in the same list of the region it lies in, none for
 /// one that divides the node itself. `api` flattens the host application's tree of regions into
@@ -187,15 +188,6 @@ fn read_region(at: usize, input: &RegionInput) -> Option<Region> {
     })
 }
 
-/// Whether each of `regions` holds regions of its own.
-pub(crate) fn holding(regions: &[Region]) -> Vec<bool> {
-    let mut holds = vec![false; regions.len()];
-    for parent in regions.iter().filter_map(|region| region.parent) {
-        holds[parent] = true;
-    }
-    holds
-}
-
 /// Holds the regions of the node `id` at `index` of a load, or 0 for an edit, divided by
 /// `divide`, to the rules of a load, in their order, each region's fields in their order: regions
 /// need a division of what they lie in (`invalidField` of `divide`); an identifier no longer than
@@ -257,44 +249,87 @@ pub(crate) fn check_regions(
     Ok(units)
 }
 
-/// Adds the regions `regions` into the node in `slot`, divided by `divide`, each into what it
-/// lies in, at its size along that direction, and returns their slots in their order; `arrange`
-/// of the divided node lays them out. A region that holds none is not divided. The slot holds a
-/// node, and the regions passed `check_regions`.
-pub(crate) fn add_regions(
-    graph: &mut Graph,
-    slot: u32,
-    divide: Axis,
-    regions: &[Region],
-) -> Result<Vec<u32>, GraphDataProblem> {
-    let holds = holding(regions);
-    let mut slots: Vec<u32> = Vec::with_capacity(regions.len());
-    for (region, &holds) in regions.iter().zip(&holds) {
-        let (into, axis) = region.parent.map_or((slot, Some(divide)), |parent| {
-            (slots[parent], regions[parent].divide)
-        });
-        let mut size = [0.0; 2];
-        #[expect(
-            clippy::cast_possible_truncation,
-            reason = "a size `check_regions` held to f32"
-        )]
-        let extent = region.size as f32;
-        size[axis.map_or(0, Axis::index)] = extent;
-        let added = graph
-            .add_node_in(into, true, [0.0, 0.0, size[0], size[1]])
-            .map_err(|_| GraphDataProblem::from(comb_engine::graph::TooManySlots))?;
-        // A slot just added, which no mark refuses.
-        let _ = graph.mark_region(
-            added,
-            region.name.is_some(),
-            region.divide.filter(|_| holds),
-        );
-        slots.push(added);
-    }
-    Ok(slots)
+/// The parts of the engine's division of `regions`, which passed `check_regions`, each keeping
+/// the region in the slot `kept` names at its index, where it names one
+/// (ARCH-regions-are-container-slots).
+pub(crate) fn parts_of(regions: &[Region], kept: &[u32]) -> Vec<Part> {
+    regions
+        .iter()
+        .enumerate()
+        .map(|(index, region)| {
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "a size `check_regions` held to f32"
+            )]
+            let size = region.size as f32;
+            Part {
+                size,
+                named: region.name.is_some(),
+                divide: region.divide,
+                of: region.parent,
+                keeps: kept.get(index).copied().filter(|&slot| slot != u32::MAX),
+            }
+        })
+        .collect()
 }
 
-/// The regions of a load as columns (API-bridge-columns-carry-nesting), region `k` in the node
+/// Refuses as `beyondWorld` the division of the node `id` by `divide` into `regions` that would
+/// grow the node, at the world position `at` and `size` wide and high, past the world's limit,
+/// naming `width` or `height`, the first axis whose far side would pass it
+/// (ARCH-one-workspace-per-example, *World*). The node grows to what its regions need, which the
+/// engine's `division_needs` computes (ARCH-regions-are-container-slots, *Division*), as the
+/// engine keeps it, in `f32`. Without the check, sizes `f32` holds one by one sum past it.
+pub(crate) fn within_world_divided(
+    id: &str,
+    divide: Option<Axis>,
+    at: [f32; 2],
+    size: [f32; 2],
+    top: f32,
+    regions: &[Region],
+) -> Result<(), GraphDataProblem> {
+    let Some(divide) = divided(divide, regions) else {
+        return Ok(());
+    };
+    let (_, need) =
+        division_needs(divide, top, &parts_of(regions, &[])).map_err(division_problem)?;
+    // The need as the engine keeps it, the nearest `f32`, which may lie past the `f64` it rounds;
+    // one past `f32` is infinite, and refused.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "rounded to f32 as the engine keeps it, so that what rounds past the limit is refused"
+    )]
+    let kept = need.map(|need| f64::from(need as f32));
+    // Compared as `within_by_height` compares: `size > limit - at`.
+    let beyond = [(0, "width"), (1, "height")]
+        .into_iter()
+        .find(|&(axis, _)| {
+            f64::from(size[axis]).max(kept[axis]) > WORLD_LIMIT - f64::from(at[axis])
+        });
+    if let Some((_, field)) = beyond {
+        return Err(GraphDataProblem::BeyondWorld {
+            list: GraphList::Nodes,
+            id: id.to_owned(),
+            field: field.to_owned(),
+            limit: WORLD_LIMIT,
+        });
+    }
+    Ok(())
+}
+
+/// The problem of a division `addNode` or `updateNode` hands the engine: past the limit of node
+/// slots, which each checks first, `tooManyNodes`; a slot that holds no node or a part out of
+/// place, which their checks leave no room for, a malformed call refused, never a panic that would
+/// trap the engine (API-shell-mistake-refused-as-shells).
+pub(crate) fn division_problem(error: DivideError) -> GraphDataProblem {
+    match error {
+        DivideError::TooManySlots(error) => GraphDataProblem::from(error),
+        DivideError::Slot(_) | DivideError::Region { .. } | DivideError::Part { .. } => {
+            super::malformed("regions the engine could not divide the node into")
+        }
+    }
+}
+
+/// The regions of a load as columns (API-bridge-columns-keep-no-size), region `k` in the node
 /// slot after the nodes and the regions before it, each listed after what it divides: its
 /// identifier, as the nodes' are, the slot of the node or region it divides, its size, its own
 /// division as a code, the dash and the gap of the line after it where it is dashed, and its name
@@ -378,6 +413,7 @@ mod tests {
     use super::super::{EdgeCells, OwnedColumns, OwnedEdgeColumns, graph_of, load_of};
     use super::*;
     use comb_engine::content::Fonts;
+    use comb_engine::graph::Graph;
 
     /// A region `id` of `size`, solid, unnamed unless `name`, divided by `divide`, in the region at
     /// `of` of its list, or in the node for none.
@@ -438,7 +474,7 @@ mod tests {
 
     #[test]
     fn a_load_takes_the_regions_as_slots_after_the_nodes_that_tile_the_part_below_the_content() {
-        // Verifies: ARCH-regions-are-container-slots, API-bridge-columns-carry-nesting
+        // Verifies: ARCH-regions-are-container-slots, API-bridge-columns-keep-no-size
         let graph = load_columns(&activity_columns()).unwrap();
         let top = graph.top(0);
         assert!(top > 0.0);
@@ -490,7 +526,7 @@ mod tests {
 
     #[test]
     fn a_node_in_a_divided_node_an_edge_to_a_region_and_regions_out_of_rule_are_refused() {
-        // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes
+        // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves
         let in_divided = activity_columns().nested(&[None, Some(0)], &[false, false]);
         assert_eq!(
             load_columns(&in_divided).err(),
@@ -573,13 +609,13 @@ mod tests {
     fn add_node_to_divided(graph: &mut Graph, container: u32) -> Result<u32, GraphDataProblem> {
         let node = added(10.0, 10.0, |n| n.id = "x".to_owned().into());
         super::super::add_node_to(graph, &node, (Some(container), None), &Fonts::default(), 0)
-            .map(|(slot, _)| slot)
+            .map(|added| added.slot)
     }
 
     #[test]
     fn an_update_that_leaves_a_region_out_removes_its_content_and_keeps_that_of_a_region_it_keeps()
     {
-        // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes
+        // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves
         let mut engine = crate::Engine::new();
         let (divide, regions) = partitions();
         let act = added(0.0, 0.0, |n| {
@@ -621,6 +657,54 @@ mod tests {
         assert_eq!(engine.graph.container(y), regions[0]);
         let at = rect(&engine.graph, y);
         assert_eq!([at[0] - first[0], at[1] - first[1]], [10.0, 40.0]);
+    }
+
+    #[test]
+    fn an_update_that_divides_a_container_moves_each_node_it_held_into_the_region_at_its_position()
+    {
+        // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves
+        // A load and `addNode` refuse a node in a divided node (`AN_UNDIVIDED`), and a node added
+        // holds nothing, so `updateNode` alone divides a node that holds nodes. The maintainer's
+        // decisions of 2026-11-25: each goes, where it lay, into the region whose box holds its
+        // position, here `x` into `p1` and `y`, at (300, 100), into `p3`, from 250 to 350 across
+        // and from the content's 64 down; one beside every region, `z`, into the first, `p1`.
+        let mut engine = crate::Engine::new();
+        let c = added(0.0, 0.0, |n| {
+            n.id = "c".to_owned().into();
+            n.is_container = Some(true).into();
+        });
+        let c = engine.add(&c, (None, None)).unwrap();
+        let held =
+            [("x", 10.0, 100.0), ("y", 300.0, 100.0), ("z", 900.0, 100.0)].map(|(id, x, y)| {
+                let node = added(x, y, |n| n.id = id.to_owned().into());
+                engine.add(&node, (Some(c), None)).unwrap()
+            });
+        let before = held.map(|s| rect(&engine.graph, s));
+        let (divide, regions) = partitions();
+        let patch = super::super::NodePatch(vec![
+            (
+                "divide".to_owned(),
+                super::super::PatchValue::Divide(Field(Some(divide))),
+            ),
+            (
+                "regions".to_owned(),
+                super::super::PatchValue::Regions(Some(regions).into()),
+            ),
+        ]);
+        let kept = [u32::MAX; 5];
+        let removed = engine.update_with(c, "c", &patch, &kept).unwrap();
+        assert_eq!(removed[0], 0, "nothing goes");
+        let regions = engine.graph.regions_of(c);
+        assert_eq!(regions.len(), 5);
+        let p3 = rect(&engine.graph, regions[4]);
+        assert_eq!([p3[0], p3[2]], [250.0, 350.0]);
+        // `c` holds its regions alone: what lies directly in it is what is no region.
+        let direct = (0..engine.graph.nodes_in_use())
+            .filter(|&s| engine.graph.container(s) == c && !engine.graph.is_region(s));
+        assert_eq!(direct.count(), 0);
+        let containers = held.map(|s| engine.graph.container(s));
+        assert_eq!(containers, [regions[0], regions[4], regions[0]]);
+        assert_eq!(held.map(|s| rect(&engine.graph, s)), before);
     }
 
     #[test]
@@ -706,7 +790,7 @@ mod tests {
 
     #[test]
     fn an_update_into_no_regions_leaves_the_node_undivided_no_container_and_as_wide_as_its_data() {
-        // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes
+        // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves
         use super::super::PatchValue;
         for fields in [
             vec![("regions", PatchValue::Regions(Some(Vec::new()).into()))],
@@ -722,6 +806,39 @@ mod tests {
             assert!(!engine.graph.is_container(slot));
             assert_eq!(engine.graph.sizes()[0], 300.0);
         }
+    }
+
+    #[test]
+    fn no_regions_leave_the_node_undivided_by_a_load_by_add_node_and_by_update_node() {
+        // Verifies: ARCH-regions-are-container-slots, API-bridge-columns-keep-no-size
+        use super::super::PatchValue;
+        // A division across into no regions, 300 wide, not marked a container.
+        let act = added(0.0, 0.0, |n| {
+            n.id = "act".to_owned().into();
+            n.width = 300.0.into();
+            n.divide = Some(Divide::Across).into();
+            n.regions = Some(Vec::new()).into();
+        });
+        let undivided = |graph: &Graph, slot: u32| {
+            assert!(graph.regions_of(slot).is_empty());
+            assert_eq!(graph.divided(slot), None);
+            assert!(!graph.is_container(slot));
+            assert_eq!(graph.sizes()[slot as usize * 2], 300.0);
+        };
+        let loaded = load_columns(&OwnedColumns::of([Some(&act)])).unwrap();
+        undivided(&loaded, 0);
+        let mut engine = crate::Engine::new();
+        let slot = engine.add(&act, (None, None)).unwrap();
+        undivided(&engine.graph, slot);
+        let (mut engine, slot) = engine_with_activity();
+        let fields = vec![
+            ("divide", PatchValue::Divide(Some(Divide::Across).into())),
+            ("regions", PatchValue::Regions(Some(Vec::new()).into())),
+        ];
+        engine
+            .update_with(slot, "act", &patch(fields), &[])
+            .unwrap();
+        undivided(&engine.graph, slot);
     }
 
     #[test]
@@ -745,7 +862,7 @@ mod tests {
 
     #[test]
     fn region_names_count_against_the_budget_of_content_in_a_load_add_node_and_update_node() {
-        // Verifies: ARCH-regions-are-container-slots, API-bridge-columns-carry-nesting
+        // Verifies: ARCH-regions-are-container-slots, API-bridge-columns-keep-no-size
         use super::super::{PatchValue, TEST_BUDGET};
         // The titles of `act` and `x` hold 2 code units, the names of the regions 16.
         TEST_BUDGET.set(Some(16));
@@ -776,8 +893,162 @@ mod tests {
     }
 
     #[test]
+    fn regions_whose_sizes_reach_past_the_world_are_refused_by_a_load_add_node_and_update_node() {
+        // Verifies: ARCH-one-workspace-per-example, ARCH-regions-are-container-slots
+        use super::super::PatchValue;
+        use comb_engine::geometry::WORLD_LIMIT;
+        // Five regions across of 1e38 each, which `f32` holds, whose sum it does not; `x` in the
+        // fifth. They grow the node across, past the limit of its width.
+        let far = || -> Vec<RegionInput> {
+            (1..=5)
+                .map(|k| region(&format!("p{k}"), 1e38, None, None, None))
+                .collect()
+        };
+        let act = added(0.0, 0.0, |n| {
+            n.id = "act".to_owned().into();
+            n.divide = Some(Divide::Across).into();
+            n.regions = Some(far()).into();
+        });
+        let beyond = || GraphDataProblem::BeyondWorld {
+            list: GraphList::Nodes,
+            id: "act".into(),
+            field: "width".into(),
+            limit: WORLD_LIMIT,
+        };
+        let x = added(10.0, 40.0, |n| n.id = "x".to_owned().into());
+        let columns =
+            OwnedColumns::of([Some(&act), Some(&x)]).nested(&[None, Some(6)], &[false, false]);
+        assert_eq!(load_columns(&columns).err(), Some(beyond()));
+        let mut engine = crate::Engine::new();
+        assert_eq!(engine.add(&act, (None, None)), Err(beyond()));
+        assert_eq!(engine.graph.nodes_in_use(), 0);
+        // Patched onto an undivided node, the graph as it was.
+        let plain = added(0.0, 0.0, |n| n.id = "act".to_owned().into());
+        let slot = engine.add(&plain, (None, None)).unwrap();
+        let before = engine.graph.sizes().to_vec();
+        let fields = vec![
+            ("divide", PatchValue::Divide(Some(Divide::Across).into())),
+            ("regions", PatchValue::Regions(Some(far()).into())),
+        ];
+        assert_eq!(
+            engine.update_with(slot, "act", &patch(fields), &[]),
+            Err(crate::CallRefusal::Data(beyond()))
+        );
+        assert_eq!(engine.graph.sizes(), before);
+        assert!(engine.graph.regions_of(slot).is_empty());
+        // Regions that fit the world, at its edge, are taken.
+        let near = vec![region("p1", WORLD_LIMIT / 4.0, None, None, None)];
+        let fields = vec![
+            ("divide", PatchValue::Divide(Some(Divide::Across).into())),
+            ("regions", PatchValue::Regions(Some(near).into())),
+        ];
+        assert!(engine.update_with(slot, "act", &patch(fields), &[]).is_ok());
+        assert!(engine.graph.sizes().iter().all(|size| size.is_finite()));
+    }
+
+    #[test]
+    fn a_division_is_refused_past_the_world_on_the_axis_it_grows_along_and_taken_within_it() {
+        // Verifies: ARCH-one-workspace-per-example, ARCH-regions-are-container-slots
+        use comb_engine::geometry::WORLD_LIMIT;
+        let mut engine = crate::Engine::new();
+        let far: Vec<RegionInput> = (1..=5)
+            .map(|k| region(&format!("p{k}"), 1e38, None, None, None))
+            .collect();
+        // Five such regions down grow the node past the limit of its height.
+        let down = added(0.0, 0.0, |n| {
+            n.id = "act".to_owned().into();
+            n.divide = Some(Divide::Down).into();
+            n.regions = Some(far).into();
+        });
+        let height = GraphDataProblem::BeyondWorld {
+            list: GraphList::Nodes,
+            id: "act".into(),
+            field: "height".into(),
+            limit: WORLD_LIMIT,
+        };
+        assert_eq!(engine.add(&down, (None, None)), Err(height));
+        // Each region counts along the division and across it at most once: two of a quarter of
+        // the limit down, at 0.6 of it across; across into two, each down into four of a fifth.
+        let quarter = WORLD_LIMIT / 4.0;
+        let fifth = WORLD_LIMIT / 5.0;
+        let mut nested = vec![
+            region("a", 100.0, Some("A"), Some(Divide::Down), None),
+            region("b", 100.0, Some("B"), Some(Divide::Down), None),
+        ];
+        for of in [0, 1] {
+            for k in 0..4 {
+                nested.push(region(&format!("{of}{k}"), fifth, None, None, Some(of)));
+            }
+        }
+        for (x, divide, regions) in [
+            (
+                WORLD_LIMIT * 0.6,
+                Divide::Down,
+                vec![
+                    region("p", quarter, None, None, None),
+                    region("q", quarter, None, None, None),
+                ],
+            ),
+            (0.0, Divide::Across, nested),
+        ] {
+            let fits = added(x, 0.0, |n| {
+                n.id = "fits".to_owned().into();
+                n.divide = Some(divide).into();
+                n.regions = Some(regions).into();
+            });
+            let mut engine = crate::Engine::new();
+            assert!(engine.add(&fits, (None, None)).is_ok(), "{x}");
+            assert!(engine.graph.sizes().iter().all(|size| size.is_finite()));
+        }
+    }
+
+    #[test]
+    fn a_division_whose_need_rounds_past_the_world_as_the_engine_keeps_it_is_refused() {
+        // Verifies: ARCH-one-workspace-per-example, ARCH-regions-are-container-slots
+        use comb_engine::geometry::WORLD_LIMIT;
+        // At y = 2^70, down into 2^120 - 2^96 and 2^95 + 2^90: their sum lies below the limit
+        // less 2^70 in f64, but the nearest f32, which the engine keeps, lies past it.
+        let [two_70, two_90, two_95, two_96, two_120] =
+            [70, 90, 95, 96, 120].map(|e| 2_f64.powi(e));
+        let act = added(0.0, two_70, |n| {
+            n.id = "act".to_owned().into();
+            n.divide = Some(Divide::Down).into();
+            n.regions = Some(vec![
+                region("p", two_120 - two_96, None, None, None),
+                region("q", two_95 + two_90, None, None, None),
+            ])
+            .into();
+        });
+        let mut engine = crate::Engine::new();
+        assert_eq!(
+            engine.add(&act, (None, None)),
+            Err(GraphDataProblem::BeyondWorld {
+                list: GraphList::Nodes,
+                id: "act".into(),
+                field: "height".into(),
+                limit: WORLD_LIMIT,
+            })
+        );
+    }
+
+    #[test]
+    fn an_update_of_a_region_slot_is_refused_and_changes_nothing() {
+        // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves
+        use super::super::PatchValue;
+        let (mut engine, slot) = engine_with_activity();
+        let region = engine.graph.regions_of(slot)[0];
+        let sizes = engine.graph.sizes().to_vec();
+        let fields = vec![("height", PatchValue::Height(Field(Some(90.0))))];
+        assert!(matches!(
+            engine.update_with(region, "p1", &patch(fields), &[]),
+            Err(crate::CallRefusal::Data(GraphDataProblem::Malformed { .. }))
+        ));
+        assert_eq!(engine.graph.sizes(), sizes);
+    }
+
+    #[test]
     fn regions_count_against_the_limit_of_nodes_of_a_load() {
-        // Verifies: ARCH-regions-are-container-slots, API-bridge-columns-carry-nesting
+        // Verifies: ARCH-regions-are-container-slots, API-bridge-columns-keep-no-size
         // Two nodes and as many regions as a load holds nodes, refused before they are read.
         let mut columns = activity_columns();
         columns.regions.of = vec![0; super::super::MAX_ITEMS as usize - 1];

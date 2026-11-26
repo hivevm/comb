@@ -2,7 +2,7 @@
 // another (G-3, API-edges-dock-nodes-or-edges): the host application's `canConnect` names the
 // edge, which is told as `edgeAdded` by the user; a release anywhere else, over the source, or over
 // a node it already reaches makes none, and a refused name reaches the page as an error
-// (API-edits-report-nested-changes).
+// (API-edits-report-division-moves).
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphData } from "comb";
 import { dragWorld, drawnGraph, loaded, node, open, pagePoint, setViewport, told } from "./shared";
@@ -38,7 +38,7 @@ const C_LEFT: [number, number] = [500, 32];
 test("a drag from a's bottom connector to b's top one connects them by those sides", async ({
   page,
 }) => {
-  // Verifies: G-3, API-edges-dock-nodes-or-edges, API-edits-report-nested-changes
+  // Verifies: G-3, API-edges-dock-nodes-or-edges, API-edits-report-division-moves
   await open(page);
   await loaded(page, NODES);
   await page.evaluate(() => {
@@ -137,7 +137,7 @@ for (const allowed of [true, false]) {
   test(`with loops allowed, a drag from a back onto it asks the veto, which ${allowed ? "adds" : "refuses"} the loop`, async ({
     page,
   }) => {
-    // Verifies: G-3, G-13, API-edges-dock-nodes-or-edges, API-edits-report-nested-changes
+    // Verifies: G-3, G-13, API-edges-dock-nodes-or-edges, API-edits-report-division-moves
     await open(page, "?loops=allow");
     await loaded(page, NODES);
     await page.evaluate((allows) => {
@@ -225,7 +225,7 @@ test("with loops allowed, a node that has a loop offers none of its connectors t
 
 for (const name of ["false", "undefined", "a number", "a throw"] as const) {
   test(`canConnect returning ${name} makes no edge`, async ({ page }) => {
-    // Verifies: API-edits-report-nested-changes
+    // Verifies: API-edits-report-division-moves
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
@@ -254,7 +254,7 @@ for (const [name, id, kind] of [
   test(`canConnect returning ${name} makes no edge, and its GraphDataError reaches the page`, async ({
     page,
   }) => {
-    // Verifies: API-edits-report-nested-changes, Q-7
+    // Verifies: API-edits-report-division-moves, Q-7
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
@@ -269,7 +269,7 @@ for (const [name, id, kind] of [
 test("without canConnect a press on a connector begins no connection and shows none", async ({
   page,
 }) => {
-  // Verifies: API-edits-report-nested-changes, REN-node-content-and-hits
+  // Verifies: API-edits-report-division-moves, REN-node-content-and-hits
   await open(page, "?connect=none");
   await loaded(page, NODES);
   const midway = await drag(page, A_BOTTOM, B_TOP);
@@ -326,7 +326,7 @@ test("an edge the other way does not count: c connects to a, which reaches c", a
 test("a veto that throws ends the gesture first: no connection is drawn after it", async ({
   page,
 }) => {
-  // Verifies: API-edits-report-nested-changes
+  // Verifies: API-edits-report-division-moves
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -350,7 +350,7 @@ test("a veto that throws ends the gesture first: no connection is drawn after it
 test("a veto that removes the target and returns an identifier makes no edge and throws nothing", async ({
   page,
 }) => {
-  // Verifies: API-edits-report-nested-changes
+  // Verifies: API-edits-report-division-moves
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -371,7 +371,7 @@ test("a veto that removes the target and returns an identifier makes no edge and
 test("a veto that adds an edge between the two itself and returns another identifier keeps its edge alone", async ({
   page,
 }) => {
-  // Verifies: API-edits-report-nested-changes
+  // Verifies: API-edits-report-division-moves
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -394,7 +394,7 @@ test("a veto that adds an edge between the two itself and returns another identi
 test("a veto that sets the viewport and fits the view still connects under its identifier", async ({
   page,
 }) => {
-  // Verifies: API-edits-report-nested-changes
+  // Verifies: API-edits-report-division-moves
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -418,7 +418,7 @@ test("a veto that sets the viewport and fits the view still connects under its i
 test("a veto that adds an edge and then throws keeps its edge alone, its error thrown after the gesture ended", async ({
   page,
 }) => {
-  // Verifies: API-edits-report-nested-changes
+  // Verifies: API-edits-report-division-moves
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);

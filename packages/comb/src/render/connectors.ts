@@ -111,7 +111,7 @@ export class ConnectorsLayer extends Graphics {
     if (!node) return;
     const [x, y] = [positions[slot * 2]!, positions[slot * 2 + 1]!];
     for (const side of SIDES) {
-      const at = connectorPoint(x, y, node.width, sizes[slot * 2 + 1]!, side);
+      const at = connectorPoint(x, y, sizes[slot * 2]!, sizes[slot * 2 + 1]!, side);
       const onto = compatible && !(from?.slot === slot && from.side === side);
       this.circle(at.x - origin.x, at.y - origin.y, RADIUS / state.viewport.scale).fill(
         onto ? COMPATIBLE : PLAIN,
@@ -179,7 +179,7 @@ export class ConnectionLine extends Graphics {
     const world = connectorPoint(
       positions[slot * 2]!,
       positions[slot * 2 + 1]!,
-      node.width,
+      sizes[slot * 2]!,
       sizes[slot * 2 + 1]!,
       connection.side,
     );

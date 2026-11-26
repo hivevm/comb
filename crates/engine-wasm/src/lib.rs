@@ -1,4 +1,4 @@
-//! The bridge between the shell and the engine (API-bridge-columns-carry-nesting).
+//! The bridge between the shell and the engine (API-bridge-columns-keep-no-size).
 //!
 //! Structured data crosses through serde-wasm-bindgen as `Ts<T>`, with TypeScript types tsify
 //! generates; the graph data of a load crosses as columns, each a string in pieces or one typed
@@ -45,8 +45,9 @@ use kept::{ContentStore, Drawn};
 
 use graph_data::{
     COLUMN_LIMIT, ContentData, EdgeColumns, EdgeRefusal, ID_LIMIT, LABEL_LIMIT, NodeColumns,
-    ROW_LIMIT, RegionColumns, SEGMENT_LIMIT, TEXT_LIMIT, add_edge_to, add_node_to, edge_refused_of,
-    height_of, load_of, malformed, numbered, patch_of, refused_of, slot, unshaped, update_edge_in,
+    NodeRefusal, ROW_LIMIT, RegionColumns, SEGMENT_LIMIT, TEXT_LIMIT, add_edge_to, add_node_to,
+    edge_refused_of, height_of, load_of, malformed, numbered, refused_of, slot, unshaped,
+    update_edge_in, update_node_in,
 };
 
 /// A number the shell computed that an export cannot take: the shell's own mistake, never one of
@@ -89,6 +90,15 @@ impl From<GraphDataProblem> for CallRefusal {
 impl From<GraphSlotError> for CallRefusal {
     fn from(error: GraphSlotError) -> Self {
         Self::Slot(error.into())
+    }
+}
+
+impl From<NodeRefusal> for CallRefusal {
+    fn from(refusal: NodeRefusal) -> Self {
+        match refusal {
+            NodeRefusal::Data(problem) => Self::Data(problem),
+            NodeRefusal::Slot(error) => Self::Slot(error.into()),
+        }
     }
 }
 
@@ -135,7 +145,8 @@ impl From<GraphSlotError> for SlotError {
 #[derive(Tsify, Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ContainerError {
-    /// A slot that holds no node, or a node that is no container.
+    /// A slot that holds no node, a node that is no container, or a node or a region divided into
+    /// regions, which holds its regions alone.
     #[serde(rename_all = "camelCase")]
     NoContainer { slot: u32 },
     /// The node itself, or a node it holds at any depth.
@@ -358,7 +369,7 @@ pub fn content_budget() -> u32 {
 
 /// Checks how many UTF-16 code units the strings of content of one load hold together, `units`,
 /// as the shell counted them while it read them, and names the node `node` whose string passed
-/// the budget (API-bridge-columns-carry-nesting).
+/// the budget (API-bridge-columns-keep-no-size).
 #[wasm_bindgen(js_name = checkContentBudget)]
 pub fn check_content_budget(units: f64, node: &str) -> Result<(), GraphDataProblem> {
     graph_data::check_content_budget(node, units)
@@ -418,7 +429,7 @@ pub fn segment_limit() -> u32 {
 /// What a press hits (REN-node-content-and-hits): a connector by the slot of its node and its side,
 /// a label by the slot of its edge, a node by its slot and the element of its content drawn there,
 /// where one is (REN-node-content-and-hits), an edge by its slot, or nothing; one generated value
-/// (API-bridge-columns-carry-nesting).
+/// (API-bridge-columns-keep-no-size).
 #[derive(Tsify, Serialize, Debug, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Hit {
@@ -455,7 +466,7 @@ pub enum Hit {
 }
 
 /// A resize handle of a selected node, at a corner or the middle of a side
-/// (API-edits-report-nested-changes, *Resizing*), as a hit names it and `resizeNode` takes it.
+/// (API-edits-report-division-moves, *Resizing*), as a hit names it and `resizeNode` takes it.
 #[derive(Tsify, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum ResizeHandle {
@@ -642,14 +653,15 @@ impl Engine {
 
     /// Replaces the graph with a load, node slot `i` for its node `i` and edge slot `i` for its
     /// edge `i`, and returns the number of node slots. The nodes and the edges cross as columns
-    /// (API-bridge-columns-carry-nesting), each in slot order, and serde-wasm-bindgen converts
+    /// (API-bridge-columns-keep-no-size), each in slot order, and serde-wasm-bindgen converts
     /// nothing of a load. Of the nodes: the identifiers as pieces of at most 2^28 UTF-16 code
     /// units, each ending where a value ends, with the boundaries across all pieces in UTF-16 code
     /// units, the numbers as `Float64Array`, a height its data gives with a byte that says whether
     /// it does, whether it is resizable as a byte, the node shapes as the codes of `NodeShapeCode`,
     /// the outlines as the codes of `OutlineCode` with the dash and the gap of a dashed one,
-    /// per border node the slot it is attached to, its side, its offset, and what stands beside
-    /// its `attachedTo`, with the identifier the first one attached to no node names
+    /// per border node the slot it is attached to, its side, and its offset, per node which of its
+    /// `x`, `y`, `container`, `side`, and `offset` it gives, with the identifier the first border
+    /// node attached to no node names
     /// (ARCH-border-nodes-ride-sides), the content as the columns of `ContentColumns`, a byte per
     /// row saying whether it is a separator among them, its texts
     /// in pieces as the identifiers are,
@@ -667,7 +679,7 @@ impl Engine {
     #[expect(
         clippy::too_many_arguments,
         reason = "one parameter per column, each a type wasm-bindgen hands over in one copy, \
-                  or one per piece (API-bridge-columns-carry-nesting)"
+                  or one per piece (API-bridge-columns-keep-no-size)"
     )]
     #[expect(
         clippy::needless_pass_by_value,
@@ -710,7 +722,7 @@ impl Engine {
         attached: &[u32],
         side: &[u8],
         offset: &[f64],
-        beside: &[u8],
+        given: &[u8],
         attached_missing: Option<String>,
         row_bounds: Vec<u32>,
         element_bounds: Vec<u32>,
@@ -853,7 +865,7 @@ impl Engine {
             attached,
             side,
             offset,
-            beside,
+            given,
             attached_missing: attached_missing.as_deref(),
             content: content.view(),
             refused,
@@ -957,15 +969,12 @@ impl Engine {
         Ok(f64::from(height_of(&node, &self.fonts)?))
     }
 
-    /// Checks the patch `updateNode` hands over for the node `id` in `slot`, reading it once, as a
-    /// load checks a node's content, its strings counted against the budget on from those the
-    /// graph holds besides the node's, and gives the node its new content and the height it lays
-    /// out to, its edges re-placed (REN-node-content-and-hits); the store merges the patch. A patch
-    /// that sets regions divides the node anew (`divide_anew`), `kept` naming per region of the
-    /// patch, depth first, the slot of the node's region of its identifier, which `api` resolved,
-    /// or `u32::MAX`; it returns what went with the regions left out as `removed` lays it out, and
-    /// nothing for a patch that sets no regions. A refused patch changes nothing; a slot that
-    /// holds no node throws a `SlotError`.
+    /// Checks the patch `updateNode` hands over for the node `id` in `slot` and gives the node its
+    /// new content and the height it lays out to, its edges re-placed (REN-node-content-and-hits);
+    /// the store merges the patch. `kept` names per region of the patch, depth first, the slot of
+    /// the node's region of its identifier, which `api` resolved, or `u32::MAX`. It returns what
+    /// went with the regions left out as `removed` lays it out, and nothing for a patch that sets
+    /// no regions. A refused patch changes nothing; a slot that holds no node throws a `SlotError`.
     #[wasm_bindgen(js_name = updateNode)]
     pub fn update_node(
         &mut self,
@@ -1123,7 +1132,7 @@ impl Engine {
     }
 
     /// Puts the node in `slot` at the world position `(x, y)`, everything it holds with it: a drag
-    /// taken back puts the node exactly where it lay at the press (API-edits-report-nested-changes,
+    /// taken back puts the node exactly where it lay at the press (API-edits-report-division-moves,
     /// *Vetoes*). A slot that holds no node throws a `SlotError`, and a point that is not finite a
     /// `NumberError` `nonFinitePoint`; either way nothing moves.
     pub fn place(&mut self, slot: u32, x: f64, y: f64) -> Result<(), CallRefusal> {
@@ -1135,7 +1144,7 @@ impl Engine {
     }
 
     /// Resizes the node in `slot`, whose box was `from`, `x, y, width, height`, at the press, by a
-    /// drag of `handle` by `(dx, dy)` world units (API-edits-report-nested-changes, *Resizing*):
+    /// drag of `handle` by `(dx, dy)` world units (API-edits-report-division-moves, *Resizing*):
     /// the sides the handle pulls move by the drag, never so far that the node is less than 8
     /// world units a side, lower than its content needs, an actor and an hourglass their drawing
     /// and their content at the new width, or leaves out a box of the nodes that lie directly in
@@ -1169,6 +1178,27 @@ impl Engine {
         } else {
             Vec::new()
         }
+    }
+
+    /// The size of the region in `slot` along the direction of its division, as the engine holds
+    /// it apart from its extent, which the last region of a division stretches to the rest: what
+    /// `api` tells the host application of a region's size (ARCH-regions-are-container-slots); none
+    /// for a slot that holds no region.
+    #[wasm_bindgen(js_name = regionSize)]
+    pub fn region_size(&self, slot: u32) -> Option<f64> {
+        trap::spring();
+        self.graph.region_size(slot).map(f64::from)
+    }
+
+    /// The slot of the container or region the node in `slot` lies in, none for one on the canvas
+    /// or a slot that holds no node (ARCH-engine-edits-nested-graph): where the engine chose a
+    /// node's container, as a division moves what a node or a kept region held into its regions
+    /// (ARCH-regions-are-container-slots), `api` reads it here.
+    #[wasm_bindgen(js_name = containerOf)]
+    pub fn container_of(&self, slot: u32) -> Option<u32> {
+        trap::spring();
+        let container = self.graph.container(slot);
+        (self.graph.holds_node(slot) && container != CANVAS).then_some(container)
     }
 
     /// Moves the line after the region in `slot` to the world coordinate `to` along the direction
@@ -1239,7 +1269,7 @@ impl Engine {
 
     /// The slot of the container a drop of the node in `dragged` at the world point `(x, y)` lands
     /// in: of the containers whose outline holds the point, neither the node nor one it holds at
-    /// any depth, the topmost; none for the canvas (API-edits-report-nested-changes, *Vetoes*). A
+    /// any depth, the topmost; none for the canvas (API-edits-report-division-moves, *Vetoes*). A
     /// slot that holds no node throws a `SlotError`, and a point that is not finite a
     /// `NumberError` `nonFinitePoint`.
     #[wasm_bindgen(js_name = containerAt)]
@@ -1258,8 +1288,8 @@ impl Engine {
     /// none, at the world position it has, and gives it the next rank, so that it is drawn and hit
     /// above every other node of its kind (ARCH-engine-edits-nested-graph, *Moving into a
     /// container*). A slot that holds no node throws a `SlotError`, and a container that holds no
-    /// container, or that is the node or one it holds, a `ContainerError`; either way the graph
-    /// stays as it was.
+    /// container, is divided into regions, or is the node or one it holds, a `ContainerError`;
+    /// either way the graph stays as it was.
     #[wasm_bindgen(js_name = moveInto)]
     pub fn move_into(&mut self, slot: u32, container: Option<u32>) -> Result<(), MoveIntoRefusal> {
         trap::spring();
@@ -1479,16 +1509,12 @@ impl Engine {
         nest: (Option<u32>, Option<u32>),
     ) -> Result<u32, GraphDataProblem> {
         let units = self.content.units();
-        let (slot, content) = add_node_to(&mut self.graph, node, nest, &self.fonts, units)?;
-        self.content.set(slot, content);
-        // Read again, as `add_node_to` took them, for the code units of their names.
-        let id = node.id.0.as_deref().unwrap_or_default();
-        let names = graph_data::regions_of(id, 0, &node.divide, &node.regions)
-            .map(|(_, regions)| regions.iter().map(graph_data::Region::name_units).collect())
-            .unwrap_or_else(|_| Vec::new());
-        let regions = self.graph.regions_of(slot);
-        self.content.set_regions(regions.into_iter().zip(names));
-        Ok(slot)
+        let added = add_node_to(&mut self.graph, node, nest, &self.fonts, units)?;
+        self.content.set(added.slot, added.content);
+        let regions = self.graph.regions_of(added.slot);
+        self.content
+            .set_regions(regions.into_iter().zip(added.names));
+        Ok(added.slot)
     }
 
     /// `updateNode` of the node `id` in `slot` by `patch`, read: its strings of content counted on
@@ -1499,7 +1525,8 @@ impl Engine {
     }
 
     /// `updateNode` of the node `id` in `slot` by `patch`, read, the regions it keeps named by
-    /// `kept`: its strings of content counted on from those the graph holds besides the node's.
+    /// `kept`: checked and given to the graph by `graph_data`, to the store here, and answered as
+    /// the export answers.
     fn update_with(
         &mut self,
         slot: u32,
@@ -1507,192 +1534,10 @@ impl Engine {
         patch: &NodePatch,
         kept: &[u32],
     ) -> Result<Vec<u32>, CallRefusal> {
-        let mut held = self.content.held_besides(slot);
-        // A patch of regions replaces the node's, whose names then count no more.
-        let divides = patch
-            .0
-            .iter()
-            .any(|(key, _)| key == "regions" || key == "divide");
-        if divides && self.graph.holds_node(slot) {
-            let names: u64 = self
-                .graph
-                .regions_of(slot)
-                .iter()
-                .map(|&r| self.content.units_of(r))
-                .sum();
-            held -= names;
-        }
-        // A slot that holds no node is refused below as a slot, whatever node shape it held.
-        let shape = if self.graph.holds_node(slot) {
-            self.graph.shape(slot)
-        } else {
-            comb_engine::shape::NodeShape::Rectangle
-        };
-        let current = self.graph.divided(slot);
-        let place = self.graph.place_of(slot);
-        let patched = patch_of(
-            id,
-            (shape, place.is_some()),
-            current,
-            patch,
-            &self.fonts,
-            held,
-        )?;
-        if patched.is_empty() {
-            return Ok(Vec::new());
-        }
-        if !self.graph.holds_node(slot) {
-            return Err(CallRefusal::Slot(SlotError::NoNode { slot }));
-        }
-        if let Some((_, regions)) = &patched.regions {
-            // Each new region takes a node slot, the old ones free theirs.
-            let old = self.graph.regions_of(slot).len();
-            let nodes = f64::from(self.graph.nodes_in_use()) + regions.len() as f64 - old as f64;
-            graph_data::check_graph_size(nodes, 0.0)?;
-            // Their names count against the budget of content beside the node's content.
-            let names: u64 = regions.iter().map(graph_data::Region::name_units).sum();
-            let content = patched
-                .content
-                .as_ref()
-                .map_or_else(|| self.content.units_of(slot), |(checked, _)| checked.units);
-            if names > 0 {
-                graph_data::within_budget(id, held + content + names)?;
-            }
-        }
-        // The height the node then has, never less than its content, old or new, needs.
-        let given = patched.height.or_else(|| self.graph.given_height(slot));
-        let laid = patched.content.as_ref().map_or_else(
-            || {
-                let (content, node) = self.content.of(slot);
-                content.laid(node, &self.fonts)
-            },
-            |&(_, laid)| laid,
-        );
-        let width = self.graph.sizes()[slot as usize * 2];
-        let height = graph_data::node_height(shape, width, laid, given);
-        graph_data::within_by_height(id, self.graph.positions()[slot as usize * 2 + 1], height)?;
-        self.graph.resize_node(slot, height)?;
-        let resizable = patched
-            .resizable
-            .unwrap_or_else(|| self.graph.is_resizable(slot));
-        self.graph.set_sizing(slot, given, resizable)?;
-        if let Some((content, _)) = patched.content {
-            self.content.set(slot, content);
-        }
-        self.graph
-            .set_outline(slot, patched.outline.unwrap_or(self.graph.outline(slot)))?;
-        let top = graph_data::content_top(shape, width, laid);
-        self.graph.set_top(slot, top);
-        let removed = match patched.regions {
-            Some((divide, regions)) => self.divide_anew(slot, divide, &regions, kept, top)?,
-            None => Vec::new(),
-        };
-        self.graph.arrange(slot);
-        if let Some(place) = place {
-            self.place_anew(slot, place, patched.side, patched.offset)?;
-        }
-        Ok(removed)
-    }
-
-    /// Gives the border node in `slot`, at `place`, the side and the offset a patch set, each kept
-    /// where it set none (ARCH-border-nodes-ride-sides).
-    fn place_anew(
-        &mut self,
-        slot: u32,
-        place: comb_engine::graph::Place,
-        side: Option<comb_engine::geometry::Side>,
-        offset: Option<f64>,
-    ) -> Result<(), CallRefusal> {
-        if side.is_none() && offset.is_none() {
-            return Ok(());
-        }
-        let side = side.unwrap_or(place.side);
-        let offset = offset.unwrap_or(place.offset);
-        self.graph
-            .set_place(slot, side, offset)
-            .map_err(|_| malformed("a border node the patch checked refused its place"))?;
-        Ok(())
-    }
-
-    /// Divides the node in `slot` anew into `regions` in the direction `divide`, below its
-    /// content, `top` high, in place of the regions it has, and returns what went with those as
-    /// `removed` lays it out: the regions, and what a region `kept` does not name held, with every
-    /// edge at it. `kept` names, per region of `regions` at every depth, depth first, the slot of
-    /// the region of the node that has its identifier, or `u32::MAX`; what that region holds
-    /// directly moves into the new one at its position relative to it
-    /// (ARCH-regions-are-container-slots, *Removing a region*).
-    fn divide_anew(
-        &mut self,
-        slot: u32,
-        divide: Option<Axis>,
-        regions: &[graph_data::Region],
-        kept: &[u32],
-        top: f32,
-    ) -> Result<Vec<u32>, CallRefusal> {
-        let old = self.graph.regions_of(slot);
-        // Divided into no regions, it is divided no more (ARCH-regions-are-container-slots).
-        let divide = divide.filter(|_| !regions.is_empty());
-        let holds = graph_data::holding(regions);
-        // What each kept region holds directly that is no region, taken out onto the canvas so
-        // that its removal leaves it, and where it goes: into the region of the same identifier
-        // at its position relative to it, or, where that region now holds regions, nothing lying
-        // beside them, into its first region, to any depth, at its world position (the human's
-        // decision of 2026-11-18).
-        let mut moved = Vec::new();
-        for (index, &from) in kept.iter().enumerate() {
-            if !old.contains(&from) || index >= regions.len() {
-                continue;
-            }
-            let into = first_leaf(regions, &holds, index);
-            let origin = self.graph.positions()[from as usize * 2..][..2].to_vec();
-            for &held in &self.graph.held_by(from) {
-                if self.graph.is_region(held) {
-                    continue;
-                }
-                let at = &self.graph.positions()[held as usize * 2..];
-                let world = [f64::from(at[0]), f64::from(at[1])];
-                let place = if into == index {
-                    Landing::Relative([
-                        world[0] - f64::from(origin[0]),
-                        world[1] - f64::from(origin[1]),
-                    ])
-                } else {
-                    Landing::World(world)
-                };
-                moved.push((into, held, place));
-            }
-        }
-        for &(_, held, _) in &moved {
-            let _ = self.graph.move_into(held, CANVAS);
-        }
-        let tops: Vec<u32> = old
-            .iter()
-            .copied()
-            .filter(|&r| self.graph.container(r) == slot)
-            .collect();
-        let (nodes, edges) = self.graph.remove_nodes(&tops)?;
-        self.content.remove(&nodes);
-        self.graph.divide(slot, divide, top)?;
-        let added = match divide {
-            Some(axis) => graph_data::add_regions(&mut self.graph, slot, axis, regions)?,
-            None => Vec::new(),
-        };
-        let names = regions.iter().map(graph_data::Region::name_units);
-        self.content.set_regions(added.iter().copied().zip(names));
-        self.graph.arrange(slot);
-        for (index, held, place) in moved {
-            let Some(&region) = added.get(index) else {
-                continue;
-            };
-            let at = &self.graph.positions()[region as usize * 2..];
-            let world = match place {
-                Landing::Relative([x, y]) => [f64::from(at[0]) + x, f64::from(at[1]) + y],
-                Landing::World(world) => world,
-            };
-            let _ = self.graph.move_into(held, region);
-            let _ = self.graph.place(held, world[0], world[1]);
-        }
-        Ok(removed(&nodes, &edges))
+        let held = self.content.held_by(&self.graph, slot);
+        let updated = update_node_in(&mut self.graph, &self.fonts, slot, id, patch, kept, held)?;
+        let divided = self.content.take(slot, updated);
+        Ok(divided.map_or_else(Vec::new, |went| removed(&went.nodes, &went.edges)))
     }
 
     /// The element of the content of the node in `slot` whose rectangle holds `point`, of those
@@ -1750,20 +1595,23 @@ impl Engine {
                 continue;
             }
             let (content, node) = self.content.of(slot);
-            let width = self.graph.sizes()[slot as usize * 2];
+            // At the width its data gives, as a load lays it out, not the one its regions grew it
+            // to (ARCH-regions-are-container-slots).
+            let width = self.graph.own_width(slot);
             let laid = content.laid(node, &self.fonts);
             let given = self.graph.given_height(slot);
             let shape = self.graph.shape(slot);
             let height = graph_data::node_height(shape, width, laid, given);
             if self.graph.sizes()[slot as usize * 2 + 1] != height {
-                // A slot that holds a node, as the check above found, which no resize refuses.
-                let _ = self.graph.resize_node(slot, height);
+                self.graph.resize_node(slot, height).unwrap_or_else(|_| {
+                    unreachable!("a slot that holds a node, as checked above, refuses no resize")
+                });
             }
-            if self.graph.divided(slot).is_some() {
-                self.graph
-                    .set_top(slot, graph_data::content_top(shape, width, laid));
-                self.graph.arrange(slot);
-            }
+            self.graph
+                .set_top(slot, graph_data::content_top(shape, width, laid))
+                .unwrap_or_else(|_| {
+                    unreachable!("a node, as checked above no region, takes a top")
+                });
         }
     }
 
@@ -1847,28 +1695,6 @@ impl Engine {
                 .push(graph_data::numbered(self.dashes.len() / 4));
         }
     }
-}
-
-/// Where a node a kept region held lies once the regions are divided anew: at its position
-/// relative to the region of the same identifier, or at its world position in another.
-#[derive(Clone, Copy)]
-enum Landing {
-    Relative([f64; 2]),
-    World([f64; 2]),
-}
-
-/// The region of `regions` a node held by the region at `index` moves into: that region where it
-/// holds none, else its first region, to any depth (the human's decision of 2026-11-18).
-fn first_leaf(regions: &[graph_data::Region], holds: &[bool], index: usize) -> usize {
-    let mut at = index;
-    while holds[at] {
-        // A region that holds regions holds one after it, the first of them next in the list.
-        match (at + 1..regions.len()).find(|&next| regions[next].parent == Some(at)) {
-            Some(next) => at = next,
-            None => break,
-        }
-    }
-    at
 }
 
 /// The buffers the shell reads, each as a pointer into WebAssembly memory and a length in values.
@@ -2197,14 +2023,14 @@ impl Engine {
     }
 
     /// The `x` of the origin the last `query` wrote its vertex positions and label points
-    /// relative to (API-bridge-columns-carry-nesting).
+    /// relative to (API-bridge-columns-keep-no-size).
     #[wasm_bindgen(js_name = originX)]
     pub fn origin_x(&self) -> f64 {
         self.visible.origin.x
     }
 
     /// The `y` of the origin the last `query` wrote its vertex positions and label points
-    /// relative to (API-bridge-columns-carry-nesting).
+    /// relative to (API-bridge-columns-keep-no-size).
     #[wasm_bindgen(js_name = originY)]
     pub fn origin_y(&self) -> f64 {
         self.visible.origin.y
@@ -2237,7 +2063,7 @@ impl Engine {
 
     /// Where the buffer `buffer` of the edge mesh `of` starts: the last query's, which `query`
     /// writes, or the moving layer's, which `meshAt` writes (REN-moving-layer-moves-content).
-    /// Fresh per read, since growing memory moves it (API-bridge-columns-carry-nesting).
+    /// Fresh per read, since growing memory moves it (API-bridge-columns-keep-no-size).
     #[wasm_bindgen(js_name = meshPtr)]
     pub fn mesh_ptr(&self, of: MeshOf, buffer: MeshBuffer) -> *const u8 {
         let mesh = self.mesh_of(of);
@@ -2267,7 +2093,7 @@ impl Engine {
 
 // The tests of the exports: a query of a loaded graph, and the budget a load's limit must fit.
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use comb_engine::stroke::MESH_BUDGET;
     use graph_data::tests::batch;
@@ -2353,12 +2179,19 @@ mod tests {
         assert_eq!(graph.attach(3, 2, BoxSide::Right, 10.0), Ok(10.0));
         graph.set_sizing(2, None, true).unwrap();
         assert_eq!(graph.add_node(0.0, 400.0, 300.0, 200.0), Ok(4));
-        graph.divide(4, Some(Axis::Across), 0.0).unwrap();
-        for _ in 0..2 {
-            let region = graph.add_node_in(4, true, [0.0, 0.0, 100.0, 0.0]).unwrap();
-            graph.mark_region(region, false, None).unwrap();
-        }
-        graph.arrange(4);
+        let part = comb_engine::graph::Part {
+            size: 100.0,
+            ..comb_engine::graph::Part::default()
+        };
+        let parts = [part, part];
+        let divided = graph.divide(
+            4,
+            Some(Axis::Across),
+            0.0,
+            &parts,
+            comb_engine::graph::RegionSlots::Added,
+        );
+        assert_eq!(divided.unwrap().regions, [5, 6]);
         assert_eq!(
             engine.remove_nodes(&[2, 4]),
             Ok(vec![5, 2, 4, 5, 6, 3, 1, 2])
@@ -2468,6 +2301,37 @@ mod tests {
     }
 
     #[test]
+    fn a_move_into_a_divided_container_is_refused_and_one_into_its_region_taken() {
+        // Verifies: ARCH-regions-are-container-slots, API-shell-mistake-refused-as-shells
+        // Nodes a and b on the canvas, and container c over a, in slot 2.
+        let mut engine = Engine::new();
+        engine.graph = graph_of(&batch(&[("a", 0.0, 0.0), ("b", 900.0, 0.0)], &[])).unwrap();
+        let shape = [-100.0, -100.0, 600.0, 400.0];
+        assert_eq!(engine.graph.add_node_in(CANVAS, true, shape), Ok(2));
+        assert_eq!(engine.move_into(0, Some(2)), Ok(()));
+        let refused = |error| Err(MoveIntoRefusal::Container(error));
+        // Divided into a region, c holds its region alone, which takes the node.
+        let part = comb_engine::graph::Part {
+            size: 50.0,
+            ..comb_engine::graph::Part::default()
+        };
+        let divided = engine.graph.divide(
+            2,
+            Some(comb_engine::graph::Axis::Across),
+            0.0,
+            &[part],
+            comb_engine::graph::RegionSlots::Added,
+        );
+        let region = divided.unwrap().regions[0];
+        assert_eq!(engine.graph.container(0), region);
+        assert_eq!(
+            engine.move_into(1, Some(2)),
+            refused(ContainerError::NoContainer { slot: 2 })
+        );
+        assert_eq!(engine.move_into(1, Some(region)), Ok(()));
+    }
+
+    #[test]
     fn a_drop_finds_its_container_and_a_move_into_one_refuses_what_cannot_take_the_node() {
         // Verifies: ARCH-engine-edits-nested-graph, API-shell-mistake-refused-as-shells
         // Nodes a and b on the canvas, and container c over a, added last, in slot 2.
@@ -2522,7 +2386,7 @@ mod tests {
 
     /// An engine whose titles advance by 7 a glyph and whose ellipsis by 10, the body by 6, in
     /// lines 18 and 16 high.
-    fn fonted() -> Engine {
+    pub(crate) fn fonted() -> Engine {
         let mut engine = Engine::new();
         let ellipsis = [u32::from(comb_engine::content::ELLIPSIS)];
         let title = RoleCode::Title as u8;
@@ -2536,7 +2400,7 @@ mod tests {
     }
 
     /// The query of the near level over `rect` on `engine`, where a pixel is a world unit.
-    fn near(engine: &mut Engine, rect: [f64; 4]) {
+    pub(crate) fn near(engine: &mut Engine, rect: [f64; 4]) {
         let [min_x, min_y, max_x, max_y] = rect;
         let rect = RectInput {
             min_x,
@@ -2703,7 +2567,7 @@ mod tests {
 
     #[test]
     fn a_separator_row_lays_out_as_a_line_across_the_inner_rectangle_between_its_rows() {
-        // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting
+        // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size
         use graph_data::tests::{a_and, load_into};
         // Node `b` at (300, 0), 100 wide: a title "Idle", a separator, and a body "entry".
         let mut rows = graph_data::ContentInput::new();
@@ -2758,7 +2622,7 @@ mod tests {
 
     #[test]
     fn a_dashed_outline_is_laid_as_dash_segments_on_its_node_which_update_node_sets() {
-        // Verifies: REN-node-shapes-cover-uml, API-bridge-columns-carry-nesting
+        // Verifies: REN-node-shapes-cover-uml, API-bridge-columns-keep-no-size
         use graph_data::tests::{a_and, load_into};
         let mut engine = fonted();
         let nodes = a_and(|n| {
@@ -3030,7 +2894,7 @@ mod tests {
 
     #[test]
     fn a_badge_is_drawn_on_its_colour_kept_as_given_and_hit_on_its_pill_alone() {
-        // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting
+        // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size
         // `b`, 100 wide at (300, 0), holds a title row and a badge "Done" on 0x22C55E below it:
         // its pill from (12, 28), the four glyphs of the body's 6 and 8 either side, 40 × 22.
         use graph_data::tests::{badged, load_into};
@@ -3070,7 +2934,7 @@ mod tests {
 
     #[test]
     fn a_progress_bar_is_drawn_as_its_segments_and_track_kept_as_given_and_hit_across_its_line() {
-        // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting
+        // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size
         // `b`, 100 wide at (300, 0), holds a title row and a progress bar of 0.3 green and 0.2
         // grey below it: its cell from (12, 28), 76 × 16, its bar 8 high from 32, the segments
         // 22.8 and 15.2 long from 12, and the track the remaining 38.
@@ -3132,7 +2996,7 @@ mod tests {
 
     #[test]
     fn an_icon_hands_the_shell_its_name_and_its_square_kept_as_given_and_hit_on_its_square() {
-        // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting
+        // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size
         // `b`, 100 wide at (300, 0), holds a title row and an icon named "bet" below it: its
         // square from (12, 28), the body's line of 16 on a side, in a column 76 wide.
         use graph_data::tests::{icon, load_into, named_content};
@@ -3205,7 +3069,7 @@ mod tests {
 
     #[test]
     fn a_metric_is_drawn_as_its_three_texts_and_its_arrow() {
-        // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting
+        // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size
         // `metric_engine`'s metric: its cell from (12, 28), 76 × 30, the node 68 high; the caption
         // on its line of 14; the value from (12, 42), two body glyphs of 6; the arrow 8 after it,
         // a square of 10 from (32, 45); the trend's text 4 after the arrow, from 46 to 88.
@@ -3239,7 +3103,7 @@ mod tests {
 
     #[test]
     fn a_metric_is_kept_as_given_and_hit_across_its_cell() {
-        // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting
+        // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size
         let engine = metric_engine();
         // Its content, built when asked, holds the metric as the host application gave it.
         let metric = ContentElement::Metric {
@@ -3382,7 +3246,7 @@ mod tests {
 
     #[test]
     fn the_texts_after_a_progress_bar_are_read_as_their_own() {
-        // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting
+        // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size
         // A progress bar fills no text, so that the texts of the elements after it, in its node
         // and in the nodes after it, are their own: a load of a node of a bar between two texts,
         // then a node of a title.
@@ -3422,115 +3286,8 @@ mod tests {
     }
 
     #[test]
-    fn a_patch_of_content_lays_the_node_out_anew_and_a_refused_one_changes_nothing() {
-        // Verifies: REN-node-content-and-hits, API-edits-report-nested-changes
-        use graph_data::tests::{TITLE, b_of, content, load_into, text};
-        let mut engine = fonted();
-        let nodes = b_of(&[&[TITLE]]);
-        let none = graph_data::OwnedEdgeColumns::of([]);
-        assert_eq!(load_into(&mut engine, &nodes, &none), Ok(2));
-        let body = text(RoleCode::Body, "b");
-        let long = text(RoleCode::Title, "abcdefghijklmnopqrst");
-        let rows = content(&[&[long], &[body], &[body], &[body], &[body]]);
-        let patch = NodePatch(vec![("content".to_owned(), rows.into())]);
-        let slot = 1;
-        engine.update(slot, "b", &patch).unwrap();
-        assert_eq!(engine.graph.sizes()[2..], [100.0, 102.0]);
-        near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
-        // The long title is cut to 9 glyphs and an ellipsis within its column of 76.
-        let long = &engine.drawn.texts[engine.drawn.bounds[1] as usize..];
-        assert!(long.starts_with("abcdefghi\u{2026}b"), "{long}");
-        assert_eq!(engine.drawn.bounds[2] - engine.drawn.bounds[1], 10);
-        // Its content, built when asked, is the patch's, each weight as the engine keeps it.
-        let text = |role, text: &str| ContentElement::Text {
-            role,
-            text: text.to_owned(),
-            weight: Some(1.0),
-        };
-        let rows = engine.content.content_of(slot).0;
-        assert_eq!(rows.len(), 5);
-        assert_eq!(rows[0], [text(TextRole::Title, "abcdefghijklmnopqrst")]);
-        assert_eq!(rows[4], [text(TextRole::Body, "b")]);
-        assert_eq!(
-            engine.content.content_of(0).0,
-            [[text(TextRole::Title, "x")]]
-        );
-        // A refused patch leaves the node as it was.
-        let refused = NodePatch(vec![(
-            "content".to_owned(),
-            content(&[&[(KindCode::Unnamed, 1.0, RoleCode::Title, None)]]).into(),
-        )]);
-        assert!(
-            patch_of(
-                "b",
-                (graph_data::RECTANGLE.0, false),
-                None,
-                &refused,
-                &engine.fonts,
-                0
-            )
-            .is_err()
-        );
-        assert_eq!(engine.graph.sizes()[2..], [100.0, 102.0]);
-        // A slot that holds no node is the shell's mistake.
-        assert_eq!(
-            engine.graph.resize_node(7, 64.0),
-            Err(comb_engine::graph::SlotError::NoNode { slot: 7 })
-        );
-    }
-
-    #[test]
-    fn a_patch_of_height_and_resizable_raises_the_height_and_a_resize_stops_at_the_content() {
-        // Verifies: API-edits-report-nested-changes, REN-node-shapes-cover-uml
-        use graph_data::PatchValue;
-        use graph_data::tests::{TITLE, b_of, content, load_into, text};
-        let mut engine = fonted();
-        let nodes = b_of(&[&[TITLE]]);
-        let none = graph_data::OwnedEdgeColumns::of([]);
-        assert_eq!(load_into(&mut engine, &nodes, &none), Ok(2));
-        let content_height = engine.graph.sizes()[3];
-        // A height below the content's raised to it, and the node resizable.
-        let patch = NodePatch(vec![
-            ("height".to_owned(), PatchValue::Height(Field(Some(10.0)))),
-            (
-                "resizable".to_owned(),
-                PatchValue::Resizable(Field(Some(true))),
-            ),
-        ]);
-        engine.update(1, "b", &patch).unwrap();
-        assert_eq!(engine.graph.sizes()[3], content_height);
-        assert!(engine.graph.is_resizable(1));
-        // A greater one kept, through a patch of more content too.
-        let patch = NodePatch(vec![(
-            "height".to_owned(),
-            PatchValue::Height(Field(Some(300.0))),
-        )]);
-        engine.update(1, "b", &patch).unwrap();
-        assert_eq!(engine.graph.sizes()[3], 300.0);
-        let body = text(RoleCode::Body, "b");
-        let patch = NodePatch(vec![("content".to_owned(), content(&[&[body]]).into())]);
-        engine.update(1, "b", &patch).unwrap();
-        assert_eq!(engine.graph.sizes()[3], 300.0);
-        // A height not above 0 is refused, the node as it was.
-        let patch = NodePatch(vec![(
-            "height".to_owned(),
-            PatchValue::Height(Field(Some(0.0))),
-        )]);
-        assert!(engine.update(1, "b", &patch).is_err());
-        assert_eq!(engine.graph.sizes()[3], 300.0);
-        // A resize of the bottom far up stops at the height its content needs, and keeps it.
-        let [x, y] = [0, 1].map(|axis| f64::from(engine.graph.positions()[2 + axis]));
-        let from = [x, y, 100.0, 300.0];
-        engine
-            .resize(1, Handle::Bottom, &from, [0.0, -1000.0])
-            .unwrap();
-        assert_eq!(engine.graph.sizes()[3], content_height);
-        assert_eq!(engine.graph.given_height(1), Some(content_height));
-    }
-
-    #[test]
     fn a_load_whose_texts_are_all_empty_and_a_node_of_no_rows_lay_out() {
-        // Verifies: API-bridge-columns-carry-nesting
+        // Verifies: API-bridge-columns-keep-no-size
         // Every text empty: the column of texts crosses in no piece at all.
         use graph_data::tests::{content, load_into, text};
         let empty = || content(&[&[text(RoleCode::Title, "")]]);
@@ -3584,6 +3341,39 @@ mod tests {
     }
 
     #[test]
+    fn a_font_handed_over_lays_a_node_its_regions_grew_out_at_its_own_width_as_a_load_does() {
+        // Verifies: REN-node-content-and-hits, ARCH-regions-are-container-slots
+        use graph_data::tests::{added, content, load_into};
+        use graph_data::{Divide, Line};
+        let region = |id: &str| RegionInput {
+            id: id.to_owned().into(),
+            name: None.into(),
+            size: 30.0.into(),
+            line: Line::Solid.into(),
+            divide: None.into(),
+            of: None.into(),
+        };
+        // A rectangle 60 wide, of no content, whose height follows its width, divided across into
+        // three regions of 30, which grow it to 90 wide.
+        let node = added(0.0, 0.0, |n| {
+            n.width = 60.0.into();
+            n.content = content(&[]).into();
+            n.divide = Some(Divide::Across).into();
+            n.regions = Some(vec![region("a"), region("b"), region("c")]).into();
+        });
+        let mut engine = Engine::new();
+        let none = graph_data::OwnedEdgeColumns::of([]);
+        let nodes = graph_data::OwnedColumns::of([Some(&node)]);
+        load_into(&mut engine, &nodes, &none).unwrap();
+        let loaded = engine.graph.sizes().to_vec();
+        assert_eq!(loaded[..2], [90.0, 60.0]);
+        // A font laid out from the width its data gives, 60, not the 90 its regions grew it to.
+        let title = RoleCode::Title as u8;
+        assert_eq!(engine.set_font(title, &[], &[], 7.0, 18.0), Ok(()));
+        assert_eq!(engine.graph.sizes(), loaded);
+    }
+
+    #[test]
     fn a_font_whose_role_or_metrics_the_engine_cannot_take_is_refused_and_nothing_changes() {
         // Verifies: API-shell-mistake-refused-as-shells
         let mut engine = Engine::new();
@@ -3626,7 +3416,7 @@ mod tests {
 
     #[test]
     fn a_small_graph_queries_complete_and_a_million_curved_edges_whole_far_coarsened() {
-        // Verifies: API-bridge-columns-carry-nesting
+        // Verifies: API-bridge-columns-keep-no-size
         let small = batch(&[("a", 0.0, 0.0), ("b", 300.0, 100.0)], &[("e", "a", "b")]);
         let rect = [-100.0, -100.0, 500.0, 300.0];
         let engine = detail_of(&small, rect, DetailLevel::Near, 1.0);

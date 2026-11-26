@@ -10,13 +10,13 @@
 # grep with -q fails and names the line, while a here-string, a comment, grep -c, grep -q after
 # '||', and a POSIX sh script without pipefail pass; the forms that read the input whole report the
 # match of a producer that writes on after it, where the pipe reads none. Where ShellCheck is not
-# on PATH the lint skips ShellCheck, and so does this test with the cases that need it. The rules
-# shell/root, shell/bash-floor, and shell/mode run the cases of scripts/fixtures/check-shell.txt,
-# which says its format; inline beside them, the root.sh a script reads refuses a --root given
-# twice or standing as the value of an option, and a script the rules hold is started only when a
-# line asks for it.
+# on PATH the lint skips ShellCheck, and so does this test with the cases that need it; a stand-in
+# on PATH shows that the lint names the release it ran. The rules shell/root, shell/bash-floor,
+# and shell/mode run the cases of scripts/fixtures/check-shell.txt, which says its format; inline
+# beside them, the root.sh a script reads refuses a --root given twice or standing as the value of
+# an option, and a script the rules hold is started only when a line asks for it.
 #
-# Verifies: NUC-checks-are-bash
+# Verifies: NUC-checks-are-bash, DEV-container-adds-bun-rust-shellcheck
 # Inputs: scripts/check-shell.sh scripts/lib/ scripts/fixtures/check-shell.txt scripts/check-devcontainer.sh scripts/check-docs.sh scripts/sensor-action-refs.sh scripts/sensor-binding-adrs.sh scripts/sensor-review-binding.sh
 #
 # Usage:
@@ -176,6 +176,20 @@ else
   echo "FAIL: the pipe into grep -q reads the match, so the producer does not test the forms" >&2
   printf '    %s\n' "$out" >&2
 fi
+
+# The lint names the release of the ShellCheck it ran (DEV-container-adds-bun-rust-shellcheck §4),
+# here a stand-in on PATH that names one no real release has.
+stub="$work/stub-bin"
+mkdir -p "$stub"
+# shellcheck disable=SC2016  # the stand-in's "$1" is its own
+printf '#!/usr/bin/env bash\n[[ "$1" == --version ]] && printf "%%s\\n" "ShellCheck" "version: 9.9.9"\nexit 0\n' \
+  > "$stub/shellcheck"
+chmod +x "$stub/shellcheck"
+d="$(repo version-line)"
+printf '#!/usr/bin/env bash\necho ok\n' > "$d/ok.sh"
+git -C "${d:?}" add ok.sh
+PATH="$stub:$PATH" expect 0 "the lint names the version of the ShellCheck it ran, and where it is" \
+  "$d" "ShellCheck 9.9.9 ($stub/shellcheck)"
 
 # --- the root a script reads: scripts/lib/root.sh, as the rule shell/root holds it ---------
 

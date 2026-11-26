@@ -2,17 +2,17 @@ name: Dev Container
 
 # Builds the Dev Container as VS Code does, from .devcontainer/devcontainer.json, its Dockerfile,
 # and its Features resolved by devcontainer-lock.json, and asserts the toolchain
-# DEV-container-adds-bun-and-rust decides
-# inside it: the Bun of the Dockerfile's pinned 'oven/bun' tag, Cargo, the WebAssembly target, and
-# no Node.js on PATH. Starting the container runs its postCreateCommand too, the dependencies from
-# bun.lock and Chromium, so the smoke test covers the setup a new container gets.
-# scripts/check-container.sh reads the same files without building them; this workflow proves that
-# they build into what they say.
+# DEV-container-adds-bun-rust-shellcheck decides inside it: the Bun of the Dockerfile's pinned
+# 'oven/bun' tag, Cargo, the WebAssembly target, the ShellCheck release
+# .devcontainer/install-shellcheck.sh names, and no Node.js on PATH. Starting the container runs
+# its postCreateCommand too, the dependencies from bun.lock and Chromium, so the smoke test covers
+# the setup a new container gets. scripts/check-container.sh reads the same files without
+# building them; this workflow proves that they build into what they say.
 #
 # It runs as a workflow of its own, not as a job of the Checks workflow, because a build takes
 # minutes: on a pull request or a push to main that changes the container's definition or this
-# file, weekly against main for what moves without a commit (the Feature's stable Rust, the
-# Debian package of ShellCheck, Chromium), and on demand. It is no required check, since a
+# file, weekly against main for what moves without a commit (the Feature's stable Rust and
+# Chromium), and on demand. It is no required check, since a
 # required check that a path filter skips never reports. The Dev Containers CLI runs on the
 # runner's own Node.js, outside the container, at a pinned version; '--frozen-lockfile' fails the
 # build where the lock does not match the Features. It needs no secret
@@ -50,14 +50,21 @@ jobs:
           persist-credentials: false
       - name: Build and start the Dev Container
         run: npx --yes @devcontainers/cli@0.89.0 up --workspace-folder . --frozen-lockfile
-      # Verifies: DEV-container-adds-bun-and-rust — the container carries the pinned Bun, Cargo with the WebAssembly
-      # target, and no Node.js.
+      # Verifies: DEV-container-adds-bun-rust-shellcheck — the container carries the pinned Bun,
+      # Cargo with the WebAssembly target, the pinned ShellCheck, and no Node.js.
       - name: Assert the toolchain inside the container
         run: |
           bun_tag="$(grep -oE '^COPY --from=oven/bun:[0-9]+\.[0-9]+\.[0-9]+' .devcontainer/Dockerfile | head -n 1)"
           bun_tag="${bun_tag#COPY --from=oven/bun:}"
           if [[ -z "$bun_tag" ]]; then
             echo "No pinned oven/bun tag in .devcontainer/Dockerfile" >&2
+            exit 1
+          fi
+          shellcheck_version="$(grep -oE '^SHELLCHECK_VERSION="[0-9]+\.[0-9]+\.[0-9]+"' .devcontainer/install-shellcheck.sh | head -n 1)"
+          shellcheck_version="${shellcheck_version#SHELLCHECK_VERSION=\"}"
+          shellcheck_version="${shellcheck_version%\"}"
+          if [[ -z "$shellcheck_version" ]]; then
+            echo "No SHELLCHECK_VERSION in .devcontainer/install-shellcheck.sh" >&2
             exit 1
           fi
           npx --yes @devcontainers/cli@0.89.0 exec --workspace-folder . bash -c '
@@ -68,6 +75,12 @@ jobs:
               echo "bun is $bun_version, the Dockerfile pins $1" >&2
               exit 1
             fi
+            shellcheck --version
+            shellcheck_version="$(shellcheck --version | sed -n "s/^version:[[:space:]]*//p")"
+            if [[ "$shellcheck_version" != "$2" ]]; then
+              echo "shellcheck is $shellcheck_version, install-shellcheck.sh pins $2" >&2
+              exit 1
+            fi
             cargo --version
             rustup target list --installed | grep -qx wasm32-unknown-unknown \
               || { echo "the wasm32-unknown-unknown target is not installed" >&2; exit 1; }
@@ -75,4 +88,4 @@ jobs:
               echo "node is on PATH; the container carries no Node.js" >&2
               exit 1
             fi
-          ' _ "$bun_tag"
+          ' _ "$bun_tag" "$shellcheck_version"

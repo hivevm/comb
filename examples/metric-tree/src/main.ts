@@ -16,6 +16,7 @@ import {
 import engineUrl from "comb/engine.wasm?url";
 import {
   bridgeCalls,
+  edgeIndices,
   edgeVertices,
   gpuEdgeIndices,
   hitKind,
@@ -108,6 +109,7 @@ declare global {
     work: () => ReturnType<typeof work>;
     edgeVertices: () => ReturnType<typeof edgeVertices>;
     gpuEdgeIndices: () => ReturnType<typeof gpuEdgeIndices>;
+    edgeIndices: () => ReturnType<typeof edgeIndices>;
   }
 }
 
@@ -421,7 +423,7 @@ function sized(
 }
 
 /** How the example's copy of the graph takes each kind of change, as a host application that
- *  persists keeps its own from `onChange` alone (API-edits-report-nested-changes); the type
+ *  persists keeps its own from `onChange` alone (API-edits-report-division-moves); the type
  *  checker fails it where a
  *  kind is left out. */
 const MIRROR: { [K in GraphChange["kind"]]: (change: Extract<GraphChange, { kind: K }>) => void } =
@@ -599,4 +601,5 @@ window.visibleRect = (margin) => visibleRect(comb, margin);
 window.work = () => work(comb);
 window.edgeVertices = () => edgeVertices(comb);
 window.gpuEdgeIndices = () => gpuEdgeIndices(comb);
+window.edgeIndices = () => edgeIndices(comb);
 window.loadReport = load();

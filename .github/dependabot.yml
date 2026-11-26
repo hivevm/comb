@@ -4,7 +4,7 @@
 #   (SEC-actions-pinned-by-sha);
 # - the JavaScript dependencies pinned by bun.lock, and the Rust crates pinned by Cargo.lock;
 # - the images the Dev Container's Dockerfile pins by digest, and its Features
-# (DEV-container-adds-bun-and-rust).
+# (DEV-container-adds-bun-rust-shellcheck).
 version: 2
 updates:
   - package-ecosystem: github-actions

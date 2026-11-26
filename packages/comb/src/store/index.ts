@@ -32,13 +32,13 @@ export interface PlacedNodeData extends NodeFields {
   x: number;
   y: number;
   /** The identifier of the container it lies in, its `x` and `y` then relative to the container's
-   *  top left corner; on the canvas where left out (API-edits-report-nested-changes). */
+   *  top left corner; on the canvas where left out (API-edits-report-division-moves). */
   container?: string;
   /** `true` for a container, which may hold nodes even while empty, and is drawn below the edges
    *  and the other nodes. */
   isContainer?: boolean;
   /** `true` where the user may resize it by its resize handles once it is selected
-   *  (API-edits-report-nested-changes). */
+   *  (API-edits-report-division-moves). */
   resizable?: boolean;
   /** The direction its `regions` divide it in: `across` side by side, `down` one above the other
    *  (ARCH-regions-are-container-slots). */
@@ -188,40 +188,33 @@ export interface EdgePatch {
   labels?: readonly EdgeLabelData[] | null;
 }
 
-/** A node as the store keeps it: its identifier, its width, its node shape, which `api` fills
- *  in, the identifier of its container, its mark as a container, the height its data gives or the
- *  last resize left, and whether it is resizable, each where the node has one
- *  (API-edits-report-nested-changes). Its position, its content, and the height it has are the
- *  engine's (ARCH-graph-in-zustand-store, REN-node-content-and-hits); a new object for every change
- *  of its content or its size, so that a view tells the change by identity. */
+/** A node as the store keeps it: its identifier, its node shape, which `api` fills in, the
+ *  identifier of its container, its mark as a container, whether the host gave it a height, and
+ *  whether it is resizable, each where the node has one (API-edits-report-division-moves). Its
+ *  position, its size, and its content are the engine's, which every reader takes from the
+ *  engine's buffers (ARCH-graph-in-zustand-store, REN-node-content-and-hits); a new object for
+ *  every change of its content, so that a view tells the change by identity. */
 export type NodeView = Pick<
   NodeData,
-  | "id"
-  | "width"
-  | "shape"
-  | "outline"
-  | "container"
-  | "isContainer"
-  | "height"
-  | "resizable"
-  | "divide"
-  | "attachedTo"
+  "id" | "shape" | "outline" | "container" | "isContainer" | "resizable" | "divide" | "attachedTo"
 > & {
+  /** Set where its data or a patch of `updateNode` gave it a height. */
+  heightGiven?: true;
   /** Set where the slot holds a region of a node, which is no node of the host application's:
    *  no edge ends on it, and no call names it as a node (ARCH-regions-are-container-slots). */
   region?: RegionView;
 };
 
-/** What the store keeps of `node`: no key for a container, a mark, a height, whether it is
+/** What the store keeps of `node`: no key for a container, a mark, a height given, whether it is
  *  resizable, a division, a region, or a node it rides it has none of. */
 export function nodeViewOf(node: NodeView): NodeView {
-  const { id, width, shape, container, isContainer, height, resizable, divide, region } = node;
-  const view: NodeView = { id, width, shape };
+  const { id, shape, container, isContainer, heightGiven, resizable, divide, region } = node;
+  const view: NodeView = { id, shape };
   if (node.outline !== undefined) view.outline = node.outline;
   if (node.attachedTo !== undefined) view.attachedTo = node.attachedTo;
   if (container !== undefined) view.container = container;
   if (isContainer !== undefined) view.isContainer = isContainer;
-  if (height !== undefined) view.height = height;
+  if (heightGiven) view.heightGiven = heightGiven;
   if (resizable !== undefined) view.resizable = resizable;
   if (divide !== undefined) view.divide = divide;
   if (region !== undefined) view.region = region;
@@ -253,7 +246,6 @@ export function regionViewsOf(
     };
     const view: NodeView = {
       id,
-      width: 0,
       shape: "rectangle",
       container: parent ? parent.id : container,
       isContainer: true,
@@ -278,7 +270,7 @@ export type KeptEdge = Omit<EdgeFields, "labels"> & {
 
 /** What `updateNode` may change of a node: its content, which it replaces whole
  *  (REN-node-content-and-hits), its height, a height below its content's raised to it, and whether
- *  the user may resize it (API-edits-report-nested-changes). */
+ *  the user may resize it (API-edits-report-division-moves). */
 export interface NodePatch {
   content?: NodeContent;
   height?: number;
@@ -307,26 +299,25 @@ export interface TakenRegions {
 /** A node divided anew by a patch of `updateNode`: its direction, its regions, the slots the
  *  engine took them into, depth first, and the slots of the regions it had. */
 export interface Divided {
-  /** The width the engine made the node to hold its regions. */
-  readonly width: number;
   readonly divide: Divide | undefined;
   readonly regions: readonly RegionRead[];
   readonly slots: readonly number[];
   readonly old: readonly number[];
 }
 
-/** What a patch of `updateNode` set besides content, as the store keeps it, and whether it set a
- *  border node's side or offset, which the engine keeps. */
-export type NodeSizing = Pick<NodePatch, "height" | "resizable" | "outline"> & {
-  side?: true;
-  offset?: true;
-};
+/** A patch of `updateNode` the engine took of the node `id`, and how it divided the node anew
+ *  where it did: what the store's `updateNode` records. */
+export interface NodeUpdate {
+  readonly id: string;
+  readonly patch: Readonly<NodePatch>;
+  readonly divided?: Divided;
+}
 
 /** Who made a change: the user on the canvas, or the host application through `Comb`. */
 export type By = "user" | "host";
 
 /** The change the last action that changed the graph made, by kind and the identifier it touched,
- *  never a coordinate (ARCH-graph-in-zustand-store, API-edits-report-nested-changes): `api`
+ *  never a coordinate (ARCH-graph-in-zustand-store, API-edits-report-division-moves): `api`
  *  delivers it to the host application, reading what it carries from the store and the engine's
  *  buffers. A new object for every change, so
  *  that one is told from the next by identity. */
@@ -378,20 +369,9 @@ export type StoreChange =
       readonly kind: "nodeUpdated";
       readonly by: "host";
       readonly id: string;
-      /** Whether the patch set the node's content, which the engine keeps. */
-      readonly content: boolean;
-      /** Set where the patch set the node's height, which the engine keeps as raised. */
-      readonly height?: true;
-      /** Whether the node is resizable, where the patch set it. */
-      readonly resizable?: boolean;
-      /** How its outline is drawn, where the patch set it (REN-node-shapes-cover-uml). */
-      readonly outline?: Outline;
-      /** Set where the patch divided the node into regions anew. */
-      readonly regions?: true;
-      /** Set where the patch set a border node's side, and its offset, which the engine keeps
-       *  (ARCH-border-nodes-ride-sides). */
-      readonly side?: true;
-      readonly offset?: true;
+      /** The fields of `NodePatch` the patch set, which `api` reads from the store and the
+       *  engine as it delivers the change. */
+      readonly fields: readonly (keyof NodePatch)[];
     };
 
 /** A connection the user drags from the connector `side` of the node in slot `source`
@@ -419,7 +399,7 @@ export interface GraphView {
   readonly edgeSlots: ReadonlyMap<string, number>;
   /** The UTF-16 code units of every identifier the graph holds, a node's, an edge's, and each
    *  edge's source and target, which the limits of a load bound after every edit
-   *  (API-edits-report-nested-changes). */
+   *  (API-edits-report-division-moves). */
   readonly idUnits: number;
   /** The change the last action that changed the graph made, or none before the first. */
   readonly change: StoreChange | null;
@@ -453,21 +433,14 @@ export interface GraphState extends GraphView {
    *  `read` into one list, which the engine took into `slots` in their order
    *  (ARCH-regions-are-container-slots). */
   addNode(node: NodeData, slot: number, regions?: TakenRegions): void;
-  /** Records that the engine took a patch of the node `id`, which set its content where
-   *  `content`, its height and whether it is resizable where `sizing` names them, and divided it
-   *  anew where `divided` says how: its regions, which the engine took into `slots`, depth first,
-   *  in place of those in `old`. */
-  updateNode(id: string, content: boolean, sizing?: NodeSizing, divided?: Divided): void;
-  /** Records that a resize, now released, left the node `id` `width` × `height`, the height then
-   *  its own, changed the positions relative to it of the nodes `moved`, and the sizes of its
-   *  regions `regions` (API-edits-report-nested-changes). */
-  nodeResized(
-    id: string,
-    width: number,
-    height: number,
-    moved: readonly string[],
-    regions?: readonly string[],
-  ): void;
+  /** Records that the engine took `patch` of the node `id`, keeping what the patch set of what
+   *  the store keeps, and divided it anew where `divided` says how: its regions, which the engine
+   *  took into `slots`, depth first, in place of those in `old`. */
+  updateNode(update: NodeUpdate): void;
+  /** Records that a resize, now released, changed the size of the node `id`, which the engine
+   *  keeps, the positions relative to it of the nodes `moved`, and the sizes of its regions
+   *  `regions` (API-edits-report-division-moves). */
+  nodeResized(id: string, moved: readonly string[], regions?: readonly string[]): void;
   /** Records that the drag of a line of the divided node `node`, now released, changed the sizes
    *  of its regions `regions` and the positions relative to their region of the nodes `moved`
    *  (ARCH-regions-are-container-slots). */
@@ -484,7 +457,7 @@ export interface GraphState extends GraphView {
   /** Records that the point a connection is dragged to moved, where interaction keeps it. */
   pointerMoved(): void;
   /** Records that a drag, now released, left the node `id` where the engine keeps it, in the
-   *  container `container`, or on the canvas for `null` (API-edits-report-nested-changes); by the
+   *  container `container`, or on the canvas for `null` (API-edits-report-division-moves); by the
    *  host where an `updateNode` moved it into a region (ARCH-regions-are-container-slots). */
   nodeMoved(id: string, container: string | null, by?: By): void;
   /** Forgets the nodes in `nodeSlots` and the edges in `edgeSlots`, which the engine removed,
@@ -708,21 +681,17 @@ function patched(edge: EdgeView, patch: EdgePatch): EdgeView {
   } as EdgeView;
 }
 
-/** What `updateNode` changes of `state`: the node `id` a new object where its content changed, so
- *  that a view tells the change by identity, and the change recorded. */
-function updatedFrom(
-  state: GraphView,
-  id: string,
-  content: boolean,
-  sizing: NodeSizing = {},
-  divided?: Divided,
-): Partial<GraphView> {
-  const { height, resizable, outline } = sizing;
+/** What `updateNode` changes of `state`: the node `id` a new object where its content or what the
+ *  store keeps of it changed, so that a view tells the change by identity, and the change
+ *  recorded. */
+function updatedFrom(state: GraphView, { id, patch, divided }: NodeUpdate): Partial<GraphView> {
+  const { height, resizable, outline } = patch;
   const sized = height !== undefined || resizable !== undefined || outline !== undefined;
+  const content = patch.content !== undefined;
   const view = (node: NodeView) => {
     const updated = nodeViewOf({
       ...node,
-      ...(height === undefined ? {} : { height }),
+      ...(height === undefined ? {} : { heightGiven: true as const }),
       ...(resizable === undefined ? {} : { resizable }),
       ...(outline === undefined ? {} : { outline }),
     });
@@ -730,7 +699,6 @@ function updatedFrom(
       delete updated.divide;
       if (divided.divide !== undefined && divided.regions.length > 0)
         updated.divide = divided.divide;
-      updated.width = divided.width;
     }
     return updated;
   };
@@ -742,25 +710,17 @@ function updatedFrom(
   if (divided) {
     ({ nodes, slots, idUnits } = withRegions(nodes, slots, idUnits, id, divided));
   }
-  return { nodes, slots, idUnits, change: updateOf(id, content, sizing, divided !== undefined) };
+  return { nodes, slots, idUnits, change: updateOf(id, patch, divided !== undefined) };
 }
 
-/** The change `updateNode` records of the node `id`: whether it set content, what it set of the
- *  node's size and place, and whether it divided the node anew. */
-function updateOf(id: string, content: boolean, sizing: NodeSizing, divided: boolean) {
-  const { height, resizable, side, offset, outline } = sizing;
-  return {
-    kind: "nodeUpdated",
-    by: "host",
-    id,
-    content,
-    ...(height === undefined ? {} : { height: true as const }),
-    ...(resizable === undefined ? {} : { resizable }),
-    ...(outline === undefined ? {} : { outline }),
-    ...(divided ? { regions: true as const } : {}),
-    ...(side ? { side: true as const } : {}),
-    ...(offset ? { offset: true as const } : {}),
-  } as const;
+/** The change `updateNode` records of the node `id`: the fields `patch` set, and with a side the
+ *  offset, which the engine holds within the new side
+ *  (ARCH-border-nodes-ride-sides), and with a division anew its direction and its regions. */
+function updateOf(id: string, patch: Readonly<NodePatch>, divided: boolean): StoreChange {
+  const fields = new Set(Object.keys(patch) as (keyof NodePatch)[]);
+  if (fields.has("side")) fields.add("offset");
+  if (divided) fields.add("regions").add("divide");
+  return { kind: "nodeUpdated", by: "host", id, fields: [...fields] };
 }
 
 /** `nodes`, `slots`, and `idUnits` without the regions in `divided.old` the store still keeps and
@@ -791,21 +751,6 @@ function withRegions(
   return { nodes, slots, idUnits };
 }
 
-/** What `nodeResized` changes of `state`: a new view of the node `id`, `width` × `height`, the
- *  height its own as the engine keeps it after a resize, and the change. */
-function resizedFrom(
-  state: GraphView,
-  id: string,
-  [width, height]: readonly [number, number],
-  moved: readonly string[],
-  regions: readonly string[],
-): Partial<GraphView> {
-  const slot = state.slots.get(id)!;
-  const nodes = state.nodes.slice();
-  nodes[slot] = nodeViewOf({ ...nodes[slot]!, width, height });
-  return { nodes, change: { kind: "nodeResized", by: "user", id, moved, regions } };
-}
-
 /** What `addNode` changes of `state`: `node` kept in `slot`, its regions in `regions`, depth
  *  first, and their identifiers counted (ARCH-regions-are-container-slots). */
 function withNode(
@@ -814,10 +759,15 @@ function withNode(
   slot: number,
   { read, slots: regions }: TakenRegions,
 ): Partial<GraphView> {
-  const { id, divide } = node;
+  const { id, divide, height, ...rest } = node;
   const nodes = state.nodes.slice();
   const divided = divide !== undefined && regions.length > 0;
-  nodes[slot] = nodeViewOf({ ...node, divide: divided ? divide : undefined });
+  nodes[slot] = nodeViewOf({
+    ...rest,
+    id,
+    divide: divided ? divide : undefined,
+    heightGiven: height === undefined ? undefined : true,
+  });
   const added = divided ? regionViewsOf(id, divide, read) : [];
   const slots = new Map(state.slots).set(id, slot);
   let units = nodeUnits({ id });
@@ -867,10 +817,10 @@ export function createGraphStore() {
     load: (graph, idUnits) => set((state) => loadedFrom(state, graph, idUnits)),
     addNode: (node, slot, regions = { read: [], slots: [] }) =>
       set((state) => withNode(state, node, slot, regions)),
-    updateNode: (id, content, sizing, divided) =>
-      set((state) => updatedFrom(state, id, content, sizing, divided)),
-    nodeResized: (id, width, height, moved, regions = []) =>
-      set((state) => resizedFrom(state, id, [width, height], moved, regions)),
+    updateNode: (update) => set((state) => updatedFrom(state, update)),
+    // The engine keeps the size the resize left (ARCH-graph-in-zustand-store).
+    nodeResized: (id, moved, regions = []) =>
+      set({ change: { kind: "nodeResized", by: "user", id, moved, regions } }),
     regionsMoved: (node, regions, moved) =>
       set({ change: { kind: "regionsMoved", by: "user", node, regions, moved } }),
     select: (selection) => set({ selection }),

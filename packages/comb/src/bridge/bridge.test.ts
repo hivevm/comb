@@ -62,7 +62,7 @@ const edge = (id: string, source: string, target: string) => ({
 });
 // The bridge takes only what `api/snapshot.ts` produces (ARCH-one-workspace-per-example); its own
 // tests stand in for that module and hand it plain data of their own, the nodes and edges written
-// into columns as it writes them (API-bridge-columns-carry-nesting).
+// into columns as it writes them (API-bridge-columns-keep-no-size).
 type PlainNode = ReturnType<typeof node>;
 /** Writes the plain content `content` of the node just started into `columns`, as the snapshot
  *  writes a node's content. */
@@ -174,7 +174,7 @@ function row(count: number): GraphSnapshot {
 
 describe("bridge views", () => {
   test("in test mode, every call detaches the views taken before it", () => {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     // Under `bun test` the bridge runs in test mode: it grows the engine's memory before each of
     // its calls, so a view kept across any call reads empty, not only when memory happens to grow.
     // Only a grown memory detaches its buffer, so an empty view shows that the call grew it.
@@ -218,7 +218,7 @@ describe("bridge", () => {
   });
 
   test("a view read after memory grew still sees the positions", () => {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     bridge.loadGraph(graph([node("a", 7, 8)]));
     const big = Array.from({ length: 200_000 }, (_, i) => node(`n${i}`, i, i));
     bridge.loadGraph(graph(big));
@@ -227,7 +227,7 @@ describe("bridge", () => {
   });
 
   test("malformed graph data comes back as a typed error", () => {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     expect(() => bridge.loadGraph(graph([node("a", Number.NaN, 0)]))).toThrow();
     const errors = [
       graph([node("a", 0, 0), node("a", 1, 1)]),
@@ -366,7 +366,7 @@ describe("bridge refusals of a single field", () => {
   for (const { field, problem, ...corruption } of CORRUPTIONS) {
     const how = "value" in corruption ? `holds ${JSON.stringify(corruption.value)}` : "is missing";
     test(`where ${field} ${how}, the problem names the field and its node or edge`, () => {
-      // Verifies: API-bridge-columns-carry-nesting
+      // Verifies: API-bridge-columns-keep-no-size
       expect(bridge.loadGraph(corrupted("node.x", { value: 0 }))).toBe(2);
       let refused: unknown = null;
       try {
@@ -379,7 +379,7 @@ describe("bridge refusals of a single field", () => {
   }
 
   test("a million nodes with every field refused are refused quickly, naming the first", () => {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     const refused = { id: false, x: false, y: false, width: false, content: false };
     const nodes = Array.from({ length: 1_000_000 }, () => ({ ...refused }));
     const start = performance.now();
@@ -403,7 +403,7 @@ describe("bridge refusals of a single field", () => {
   });
 
   test("a message names no Rust type or crate", () => {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     const refusals = [
       ...CORRUPTIONS.map(
         (corruption) => () => bridge.loadGraph(corrupted(corruption.field, corruption)),
@@ -457,7 +457,7 @@ const snapshotted = (nodes: unknown[], edges: unknown[] = []) =>
 
 describe("bridge columns of nesting", () => {
   test("a container crosses as the slot its identifier names, before or after its node", () => {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     // `a` in `c`, which comes after it, `b` in `a`, a container too, and `d` on the canvas.
     const nodes = [
       { ...node("a", 10, 20), container: "c", isContainer: true },
@@ -485,7 +485,7 @@ describe("bridge columns of nesting", () => {
   });
 
   test("a container's identifier counts against no budget of identifiers", () => {
-    // Verifies: ARCH-one-workspace-per-example, API-bridge-columns-carry-nesting
+    // Verifies: ARCH-one-workspace-per-example, API-bridge-columns-keep-no-size
     // The identifiers of `c` and `a`, 1 and 4 code units; `a` names `c` as its container.
     const nodes = [
       { ...node("c", 0, 0), isContainer: true },
@@ -495,7 +495,7 @@ describe("bridge columns of nesting", () => {
   });
 
   test("a container that is no string or a mark that is no boolean is refused by its field", () => {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     for (const [fields, field, expected] of [
       [{ container: 5 }, "container", "the identifier of a container, or none"],
       [{ isContainer: "yes" }, "isContainer", "true or false, or none"],
@@ -514,9 +514,31 @@ describe("bridge columns of nesting", () => {
   });
 });
 
+describe("bridge columns of border nodes", () => {
+  test("what a node gives of x, y, container, side, and offset crosses as bits the bridge checks", () => {
+    // Verifies: API-bridge-columns-keep-no-size, ARCH-border-nodes-ride-sides
+    const pin = { id: "p", width: 10, content: [], attachedTo: "a", side: "top", offset: 0 };
+    const { snapshot } = snapshotted([
+      node("a", 0, 0),
+      { ...node("b", 0, 0), side: "left" },
+      { ...node("c", 0, 0), container: null, offset: 4 },
+      pin,
+      { ...pin, id: "q", y: 4, container: "a" },
+    ]);
+    // x 1, y 2, container 4, side 8, offset 16; null and undefined are no value.
+    expect([...snapshot.nodes.given]).toEqual([3, 11, 19, 24, 30]);
+    // The first of them the bridge crate refuses: `b` by its side, no border node.
+    expect(outcome(() => bridge.loadGraph(snapshot))).toStrictEqual({
+      kind: "invalidAttachment",
+      node: "b",
+      field: "side",
+    });
+  });
+});
+
 describe("bridge columns of a load", () => {
   test("identifiers cut inside a surrogate pair side by side are refused for their length", () => {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     const pair = "\u{1F600}";
     // 300 code units each: the snapshot cuts the first after the high half of its pair, and the
     // second begins with a low half, so that the two halves meet across the boundary.
@@ -544,7 +566,7 @@ describe("bridge columns of a load", () => {
   });
 
   test("identifiers and titles beyond the basic plane are held exactly by the store and the engine", () => {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     // Two identifiers that differ only in a character beyond the basic plane, one of 256 code
     // units of such characters, and titles of them up to the limit.
     const ids = ["\u{1F600}", "\u{1F601}", "\u{1D49C}".repeat(128), "x\u{10FFFF}y"];
@@ -598,7 +620,7 @@ describe("bridge actions", () => {
   });
 
   test("an action crosses with its identifier among the names and comes back as given", () => {
-    // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting
+    // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size
     const { snapshot } = snapshotted([node("a", 0, 0), withAction("\u{1F600}details")]);
     expect(snapshot.nodes.content.names).toEqual(["\u{1F600}details"]);
     expect([...snapshot.nodes.content.kinds]).toEqual([
@@ -613,7 +635,7 @@ describe("bridge actions", () => {
   });
 
   test("an action whose identifier is no string or too long is refused naming the node", () => {
-    // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting, Q-7
+    // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size, Q-7
     const at = { node: "b", row: 1, column: 0, field: "id" };
     const cases: [unknown, object][] = [
       [undefined, { kind: "invalidContentText", ...at }],
@@ -643,7 +665,7 @@ const withBadge = (text: unknown, color: unknown) => ({
 
 describe("bridge badges", () => {
   test("a badge crosses with its colour among the numbers, is drawn near on it, and comes back as given", () => {
-    // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting
+    // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size
     const { snapshot } = snapshotted([node("a", 0, 0), withBadge("Done", 0x22c55e)]);
     const c = snapshot.nodes.content;
     expect([...c.kinds]).toEqual([KindCode.Text, KindCode.Text, KindCode.Badge]);
@@ -680,7 +702,7 @@ describe("bridge badges", () => {
 
 describe("bridge badges refused", () => {
   test("a badge whose colour is no integer in 0 to 0xffffff, or whose text is malformed, is refused naming the node", () => {
-    // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting, Q-7
+    // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size, Q-7
     const at = { node: "b", row: 1, column: 0 };
     const color = { kind: "invalidContentColor", ...at };
     const cases: [unknown, unknown, object][] = [
@@ -724,7 +746,7 @@ const [GREEN, GREY] = [0x22c55e, 0x9ca3af];
 
 describe("bridge progress bars", () => {
   test("a progress bar crosses with its segments among the numbers, is drawn near as its segments and track, and comes back as given", () => {
-    // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting
+    // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size
     const segments = [
       { fraction: 0.3, color: GREEN },
       { fraction: 0.2, color: GREY },
@@ -762,7 +784,7 @@ describe("bridge progress bars", () => {
   });
 
   test("a snapshot hands over one segment beyond the limit at most", () => {
-    // Verifies: API-bridge-columns-carry-nesting, Q-7
+    // Verifies: API-bridge-columns-keep-no-size, Q-7
     const many = Array.from({ length: 20 }, () => ({ fraction: 0, color: 0 }));
     const { snapshot } = snapshotted([withProgress(many)]);
     expect([...snapshot.nodes.content.segmentBounds]).toEqual([0, 0, 9]);
@@ -775,7 +797,7 @@ describe("bridge progress bars", () => {
 
 describe("bridge progress bars refused", () => {
   test("a progress bar whose segments are refused is named with its node and the segment, through every export", () => {
-    // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting, Q-7
+    // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size, Q-7
     const at = { node: "b", row: 1, column: 0 };
     const segment = (fraction: unknown, color: unknown = GREEN) => ({ fraction, color });
     const shape = (expected: string) => ({
@@ -837,7 +859,7 @@ const withMetric = (trend: unknown, caption: unknown = "Revenue", value: unknown
 
 describe("bridge metrics", () => {
   test("a metric crosses with its direction and colour, is drawn near as its three texts and its arrow, and comes back as given", () => {
-    // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting
+    // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size
     const trend = { text: "+3%", direction: "up" as const, color: GREEN };
     const { snapshot } = snapshotted([node("a", 0, 0), withMetric(trend)]);
     const c = snapshot.nodes.content;
@@ -883,7 +905,7 @@ describe("bridge metrics", () => {
 
 describe("bridge icons", () => {
   test("an icon crosses as its name among the names, is placed near as its square with its name, and comes back as given", () => {
-    // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting
+    // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size
     const withIcon = {
       ...node("b", 300, 0),
       content: [[{ kind: "text", role: "title", text: "Bet" }], [{ kind: "icon", name: "bet" }]],
@@ -918,7 +940,7 @@ describe("bridge icons", () => {
 
 describe("bridge metrics refused", () => {
   test("a metric whose direction, texts, or colour are refused is named with its node and the field, through every export", () => {
-    // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting, Q-7
+    // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size, Q-7
     const at = { node: "b", row: 1, column: 0 };
     const trend = (fields: object) => ({ text: "+3%", direction: "up", color: GREEN, ...fields });
     const direction = { kind: "invalidDirection", ...at };
@@ -1010,7 +1032,7 @@ function expectPieces(
 
 describe("bridge pieces of a string column", () => {
   test("a column cut with a small bound crosses in pieces that end where values end, read back exactly", () => {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     const bound = 16;
     const ids = PIECED_IDS;
     const nodes = ids.map((id, i) => ({ ...node(id, i * 300, 0), content: titled("") }));
@@ -1060,7 +1082,7 @@ const textOf = (role: string, value: unknown, weight: unknown = 1) => ({
 
 describe("bridge columns of a load's content", () => {
   test("rows of several texts cross as columns read back exactly per node, row, and element", () => {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     // Node a: a title beside a caption, then a body; node b: no rows; node c: a row of none, then
     // three texts beyond the basic plane. Cut with a small bound, the texts cross in pieces.
     const contents = [
@@ -1100,7 +1122,7 @@ describe("bridge columns of a load's content", () => {
   });
 
   test("a kind, a role, a weight, or a text of another type crosses as its code or as none", () => {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     const content = [
       [
         { kind: "chart", role: "title", text: "x", weight: 1 },
@@ -1129,7 +1151,7 @@ describe("bridge columns of a load's content", () => {
 
 describe("bridge shapes of content", () => {
   test("a row that is no list or an element that is no object is named where it lies", () => {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     const shaped = (content: unknown) =>
       graph([node("a", 0, 0), { ...node("b", 300, 0), content } as never]);
     const rows = shaped([[textOf("title", "t")], 5, "x"]);
@@ -1182,7 +1204,7 @@ describe("bridge shapes of content", () => {
 
 describe("bridge content that does not fit, and its layout", () => {
   test("content that does not fit together is refused as malformed, and the engine keeps working", () => {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     const { nodes, edges } = graph(two());
     const c = nodes.content;
     const misfits = [
@@ -1247,7 +1269,7 @@ describe("bridge layout of content", () => {
   });
 
   test("the texts of content of a load past the budget are refused naming the node that passes it", () => {
-    // Verifies: API-bridge-columns-carry-nesting, Q-7
+    // Verifies: API-bridge-columns-keep-no-size, Q-7
     const budget = bridge.contentBudget();
     expect(budget).toBe(1_000_000_000);
     expect(outcome(() => bridge.checkContentBudget(budget, "n7"))).toBe("accepted");
@@ -1275,7 +1297,7 @@ describe("bridge layout of content", () => {
 
 describe("bridge columns of a load's edges", () => {
   test("edge identifiers and label texts beyond the basic plane are held exactly by the store and the engine", () => {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     // An edge's identifier and label text beyond the basic plane, read back exactly where the
     // bridge names the edge, and the label text's length counted as JavaScript counts it.
     const ids = ["\u{1F600}", "\u{1F601}"];
@@ -1313,7 +1335,7 @@ const SIDE_EXPECTED =
 
 describe("bridge columns of ends on edges that do not fit", () => {
   test("an end's flag of lying on an edge past 1, or path parameters of another count, are refused as malformed", () => {
-    // Verifies: API-bridge-columns-carry-nesting, API-edges-dock-nodes-or-edges
+    // Verifies: API-bridge-columns-keep-no-size, API-edges-dock-nodes-or-edges
     const { nodes, edges } = graph(two(), [edge("e", "a", "b")]);
     const misfits = [
       { ...edges, sourceOnEdge: new Uint8Array([2]) },
@@ -1330,7 +1352,7 @@ describe("bridge columns of ends on edges that do not fit", () => {
 
 describe("bridge columns that do not fit", () => {
   test("a refused field of a code no field has is refused as malformed, and the engine keeps working", () => {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     const { nodes, edges } = graph(two());
     // Past the last field, `segment`, and far past it.
     for (const field of [NodeField.Segment + 1, 255, 2 ** 32 - 1]) {
@@ -1347,7 +1369,7 @@ describe("bridge columns that do not fit", () => {
   });
 
   test("an edge's refused field or code no field or value has is refused as malformed, and the engine keeps working", () => {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     const { nodes, edges } = graph(two(), [edge("e", "a", "b")]);
     const misfits = [
       { ...edges, refused: { index: 0, field: 20 } },
@@ -1367,7 +1389,7 @@ describe("bridge columns that do not fit", () => {
   });
 
   test("an edge's arrowhead or side that names none crosses as its code and is refused at its place", () => {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     const snapshot = graph(two(), [
       edge("d", "a", "b"),
       { ...edge("e", "b", "a"), sourceSide: "middle" as never, arrow: false as never },
@@ -1402,7 +1424,7 @@ const RUST =
 
 describe("bridge columns of labels that do not fit", () => {
   test("a label's place given against its field, a lightning byte past 1, or label boundaries that miss the labels are malformed", () => {
-    // Verifies: API-bridge-columns-carry-nesting, API-edges-dock-nodes-or-edges
+    // Verifies: API-bridge-columns-keep-no-size, API-edges-dock-nodes-or-edges
     const { nodes, edges } = graph(two(), [edge("e", "a", "b")]);
     const misfits = [
       { ...edges, refused: { index: 0, field: EdgeField.LabelT } },
@@ -1421,7 +1443,7 @@ describe("bridge columns of labels that do not fit", () => {
 
 describe("bridge fields the engine does not keep", () => {
   test("a title, label text, or label background of the wrong kind comes back as a typed error", () => {
-    // Verifies: ARCH-one-workspace-per-example, API-bridge-columns-carry-nesting
+    // Verifies: ARCH-one-workspace-per-example, API-bridge-columns-keep-no-size
     const labels = (fields: object) => [{ id: "m", text: "x", t: 0.5, offset: 0, ...fields }];
     const errors = [
       graph([{ ...node("a", 0, 0), content: titled(5 as unknown as string) }]),
@@ -1442,7 +1464,7 @@ describe("bridge fields the engine does not keep", () => {
   });
 
   test("a patch of a node comes back as a typed error unless it holds only content", () => {
-    // Verifies: ARCH-one-workspace-per-example, API-bridge-columns-carry-nesting
+    // Verifies: ARCH-one-workspace-per-example, API-bridge-columns-keep-no-size
     bridge.loadGraph(graph([node("a", 0, 0)]));
     expect(bridge.updateNode(0, "a", plain({ content: titled("A") }), NONE_KEPT)).toEqual(
       NONE_REMOVED,
@@ -1484,7 +1506,7 @@ describe("bridge query", () => {
   });
 
   test("a query read after memory grew holds the current slots", () => {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     bridge.loadGraph(row(3));
     expect([...bridge.query(everywhere, "near", 4, 0).nodes]).toEqual([0, 1, 2]);
     bridge.loadGraph(row(200_000));
@@ -1510,10 +1532,10 @@ describe("bridge query", () => {
       ),
     );
     // The edge runs level from (100, 32) to (200, 32); its label sits at (150, 20), found as the
-    // edge's slot and its place in its list (API-bridge-columns-carry-nesting).
+    // edge's slot and its place in its list (API-bridge-columns-keep-no-size).
     const near = bridge.query({ minX: 140, minY: -100, maxX: 160, maxY: 0 }, "near", 4, 20);
     expect([...near.labels]).toEqual([0, 0]);
-    // The point crosses relative to the query's origin (API-bridge-columns-carry-nesting).
+    // The point crosses relative to the query's origin (API-bridge-columns-keep-no-size).
     expect(near.labelPoints[0]! + near.origin.x).toBeCloseTo(150, 4);
     expect(near.labelPoints[1]! + near.origin.y).toBeCloseTo(20, 4);
     expect([
@@ -1559,7 +1581,7 @@ describe("bridge mesh and hit", () => {
   });
 
   test("a query far from the world's origin hands over its mesh relative to its origin", () => {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     bridge.loadGraph(
       graph(
         [node("a", 5e7, 0), node("b", 5e7 + 200, 0)],

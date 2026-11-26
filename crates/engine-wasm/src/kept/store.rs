@@ -4,7 +4,9 @@
 
 use std::collections::HashMap;
 
-use crate::graph_data::{Checked, ContentData, NodeContent};
+use comb_engine::graph::{Divided, Graph};
+
+use crate::graph_data::{Checked, ContentData, Held, NodeContent, Updated};
 
 /// The content of the nodes the graph holds, by slot: that of the last load, the content each
 /// addition or patch since gave a slot, and the code units of the strings of all of it, the texts
@@ -90,9 +92,36 @@ impl ContentStore {
         }
     }
 
-    /// The code units of the strings of content of the node in `slot`, or of the name of a region.
-    pub(crate) fn units_of(&self, slot: u32) -> u64 {
-        self.units_at(slot)
+    /// What the store holds of the node in `graph` in `slot`, as `updateNode` checks a patch of
+    /// it against: its content, and the names of its regions.
+    pub(crate) fn held_by(&self, graph: &Graph, slot: u32) -> Held<'_> {
+        let names = if graph.holds_node(slot) {
+            graph
+                .regions_of(slot)
+                .iter()
+                .map(|&r| self.units_at(r))
+                .sum()
+        } else {
+            0
+        };
+        Held {
+            besides: self.held_besides(slot),
+            names,
+            units: self.units_at(slot),
+            content: self.of(slot),
+        }
+    }
+
+    /// Takes what an accepted patch of the node in `slot` gives the store, `updated`, and returns
+    /// what its division changed, if it divided the node anew.
+    pub(crate) fn take(&mut self, slot: u32, updated: Updated) -> Option<Divided> {
+        if let Some(content) = updated.content {
+            self.set(slot, content);
+        }
+        let (divided, names) = updated.divided?;
+        self.remove(&divided.nodes);
+        self.set_regions(divided.regions.iter().copied().zip(names));
+        Some(divided)
     }
 
     /// The code units of the strings of content of the node in `slot`.
@@ -116,8 +145,8 @@ impl ContentStore {
     }
 }
 
-// The malformed-data tests of graph data verify API-bridge-columns-carry-nesting (see
-// `graph_data::tests`). Verifies: API-bridge-columns-carry-nesting
+// The malformed-data tests of graph data verify API-bridge-columns-keep-no-size (see
+// `graph_data::tests`). Verifies: API-bridge-columns-keep-no-size
 #[cfg(test)]
 mod tests {
     use crate::graph_data::tests::{
@@ -180,7 +209,7 @@ mod tests {
 
     #[test]
     fn a_node_added_to_a_graph_at_the_budget_is_refused_naming_it_and_the_graph_kept() {
-        // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting, Q-7
+        // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size, Q-7
         let mut engine = at_the_budget();
         let one = node_of("c", content(&[&[text(RoleCode::Title, "x")]]));
         let added = engine.add(&one, (None, None));
@@ -196,7 +225,7 @@ mod tests {
 
     #[test]
     fn an_update_past_the_budget_is_refused_and_one_of_as_many_code_units_or_fewer_taken() {
-        // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting, Q-7
+        // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size, Q-7
         let mut engine = at_the_budget();
         let sizes = engine.graph.sizes().to_vec();
         // `b`'s action of 3 code units grows to 4: refused, and nothing changes.
@@ -241,7 +270,7 @@ mod tests {
 
     #[test]
     fn a_deleted_nodes_code_units_are_free_for_a_node_added_after_it() {
-        // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting, Q-7
+        // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size, Q-7
         let mut engine = at_the_budget();
         // A removal that names a slot holding no node is refused and leaves the count.
         let no_node = Err(crate::SlotError::NoNode { slot: 99 });

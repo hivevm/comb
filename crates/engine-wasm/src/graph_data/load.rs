@@ -5,17 +5,16 @@ use comb_engine::content::Fonts;
 use comb_engine::geometry::WORLD_LIMIT;
 use std::collections::HashSet;
 
-use comb_engine::graph::{AddNodeError, Axis, CANVAS, Graph, NestError, Nesting};
+use comb_engine::graph::{AddNodeError, Axis, CANVAS, Graph, NestError, Nesting, RegionSlots};
 use comb_engine::shape::{NodeShape, Outline};
 
-use super::borders::{Marks, attached, check_border, check_target, invalid, target_of};
-use super::checks::Nodes;
+use super::borders::{attached, check_border, check_target, target_of};
 use super::checks::{
-    checked_node, content_fits_shape, content_top, edges_of, given_height, id_length, ids_of,
-    node_height, nodes_of, within_by_height,
+    Given, Holder, Nodes, check_attachment, check_container, checked_height, checked_node,
+    content_fits_shape, content_top, divided, edges_of, given_height, id_length, ids_of,
+    names_within, node_height, nodes_of,
 };
-use super::item::{Batch, Border, node_of};
-use super::problem::{A_MARKED_CONTAINER, A_NODE_OF_THE_GRAPH, AN_UNDIVIDED, NOT_IN_ITSELF};
+use super::item::{Batch, Border, given_of, node_of};
 #[cfg(test)]
 use super::snapshot::{EdgeCells, GraphBatch, OwnedColumns, OwnedEdgeColumns};
 use super::{
@@ -23,9 +22,18 @@ use super::{
     check_graph_size, lengths, text_spans,
 };
 use super::{
-    Region, RegionColumns, add_regions, check_regions, divide_of, malformed, numbered, regions_of,
-    within_budget,
+    Region, RegionColumns, check_regions, divide_of, division_problem, malformed, numbered,
+    parts_of, within_world_divided,
 };
+
+/// A node `addNode` added: the slot the engine chose, the content the bridge keeps of it, and the
+/// code units of the name of each of its regions, in the order of their slots.
+#[derive(Debug)]
+pub(crate) struct Added {
+    pub slot: u32,
+    pub content: Checked,
+    pub names: Vec<u64>,
+}
 
 /// A load the bridge accepted: the engine's graph, where each text of its content lies in its
 /// piece, which `ContentData` keeps, and the code units of the strings of its content.
@@ -75,19 +83,20 @@ pub(crate) fn load_of(
     let mut nesting = columns.nesting(count, count + regions);
     let mut nodes = nodes_of(&batch, content, fonts)?;
     let mut taken: HashSet<String> = nodes.slots.keys().map(|&id| id.to_owned()).collect();
-    let mut names = Vec::with_capacity(regions);
+    // A region's name counts against the budget of content as a text does.
+    let mut held = nodes.units;
     for (index, (node, (divide, list))) in batch.nodes.iter().zip(&trees).enumerate() {
         check_regions(node.id, index, *divide, list, &mut taken)?;
-        // A region's name counts against the budget of content as a text does.
-        let units: u64 = list.iter().map(Region::name_units).sum();
-        if units > 0 {
-            within_budget(node.id, nodes.units + names.iter().sum::<u64>() + units)?;
-        }
-        names.extend(list.iter().map(Region::name_units));
+        held += names_within(node.id, held, list)?;
     }
     let borders = border_targets(&batch, columns, &trees)?;
     divided_nesting(&batch, &columns.regions, &trees, &mut nesting, &mut nodes)?;
     nodes.positions = world_of(&batch, &nesting, &nodes.positions, &nodes.sizes)?;
+    for (i, (node, (divide, list))) in batch.nodes.iter().zip(&trees).enumerate() {
+        let at = [nodes.positions[i * 2], nodes.positions[i * 2 + 1]];
+        let size = [nodes.sizes[i * 2], nodes.sizes[i * 2 + 1]];
+        within_world_divided(node.id, *divide, at, size, nodes.tops[i], list)?;
+    }
     let spans = text_spans(content.texts, content.text_bounds)?;
     let name_spans = text_spans(content.names, content.name_bounds)?;
     let edges = edges_of(&batch, &nodes.slots)?;
@@ -95,20 +104,23 @@ pub(crate) fn load_of(
     divide_loaded(&mut graph, columns, &trees, &nodes.tops);
     for (slot, (&given, &resizable)) in (0..).zip(nodes.given.iter().zip(&nodes.resizable)) {
         if given.is_some() || resizable {
-            // A slot of a node just built, which no sizing refuses.
-            let _ = graph.set_sizing(slot, given, resizable);
+            graph
+                .set_sizing(slot, given, resizable)
+                .unwrap_or_else(|_| unreachable!("a slot of a node just built refuses no sizing"));
         }
     }
     for (slot, &shape) in (0..).zip(&nodes.shapes) {
         if shape != NodeShape::Rectangle {
-            // A slot of a node just built, which no node shape refuses.
-            let _ = graph.set_shape(slot, shape);
+            graph
+                .set_shape(slot, shape)
+                .unwrap_or_else(|_| unreachable!("a slot of a node just built refuses no shape"));
         }
     }
     for (slot, &outline) in (0..).zip(&nodes.outlines) {
         if outline != Outline::Solid {
-            // A slot of a node just built, which no outline refuses.
-            let _ = graph.set_outline(slot, outline);
+            graph
+                .set_outline(slot, outline)
+                .unwrap_or_else(|_| unreachable!("a slot of a node just built refuses no outline"));
         }
     }
     // Last, once the boxes of the nodes they ride are what the load gives them.
@@ -125,8 +137,9 @@ pub(crate) fn load_of(
 }
 
 /// The border nodes of a load, checked in slot order, each with the slot of the node it rides
-/// and its place (ARCH-border-nodes-ride-sides): by their own fields first, then by what they are
-/// attached to, one attached to no node named by the identifier the snapshot handed over.
+/// and its place (ARCH-border-nodes-ride-sides): every node by the rule of its attachment, a
+/// border node then by its own fields, then by what it is attached to, one attached to no node
+/// named by the identifier the snapshot handed over.
 fn border_targets(
     batch: &Batch,
     columns: &NodeColumns,
@@ -135,18 +148,18 @@ fn border_targets(
     let count = batch.nodes.len();
     let mut borders = Vec::new();
     for (index, node) in batch.nodes.iter().enumerate() {
-        if let Some(field) = columns.not_border(index) {
-            return Err(invalid(node.id, field));
-        }
+        let (divide, regions) = &trees[index];
+        let given = Given {
+            is_container: columns.is_container[index] == 1,
+            regions: divided(*divide, regions).is_some(),
+            resizable: node.resizable,
+            ..Given::of_bits(columns.given[index])
+        };
+        check_attachment(node.id, node.border.is_some(), given)?;
         let Some(border) = node.border else {
             continue;
         };
-        let marks = Marks {
-            is_container: columns.is_container[index] == 1,
-            divided: !trees[index].1.is_empty(),
-            resizable: node.resizable,
-        };
-        check_border(node.id, &border, &marks)?;
+        check_border(node.id, &border)?;
         let slot = numbered(index);
         let on = target_of(columns.attached[index], count)?;
         let named = columns.attached_missing.unwrap_or_default();
@@ -183,23 +196,24 @@ fn region_names(trees: &[(Option<Axis>, Vec<Region>)], columns: &RegionColumns) 
 /// with a division and regions, a region that holds regions.
 fn divisions(trees: &[(Option<Axis>, Vec<Region>)], columns: &RegionColumns) -> Vec<bool> {
     let count = trees.len();
-    let mut divided: Vec<bool> = trees
+    let mut slots: Vec<bool> = trees
         .iter()
-        .map(|(divide, list)| divide.is_some() && !list.is_empty())
+        .map(|(divide, list)| divided(*divide, list).is_some())
         .collect();
-    divided.resize(count + columns.of.len(), false);
+    slots.resize(count + columns.of.len(), false);
     for &of in columns.of {
         if of as usize >= count {
-            divided[of as usize] = true;
+            slots[of as usize] = true;
         }
     }
-    divided
+    slots
 }
 
 /// Takes the regions of a load into `nesting` and `nodes` as node slots after the nodes, each in
 /// what it divides at its top left corner, a container, its size its extent along the direction
-/// of that division; a divided node a container too (ARCH-regions-are-container-slots). A node
-/// that lies directly in a divided node or a divided region is refused as `invalidContainer`.
+/// of that division; a divided node a container too (ARCH-regions-are-container-slots). Then
+/// checks each node's container by the rule of a container, in slot order, the first refused as
+/// `invalidContainer`.
 fn divided_nesting(
     batch: &Batch,
     regions: &RegionColumns,
@@ -209,15 +223,6 @@ fn divided_nesting(
 ) -> Result<(), GraphDataProblem> {
     let count = batch.nodes.len();
     let divided = divisions(trees, regions);
-    for (node, &container) in batch.nodes.iter().zip(&nesting.containers) {
-        if divided.get(container as usize) == Some(&true) {
-            return Err(GraphDataProblem::InvalidContainer {
-                node: node.id.to_owned(),
-                field: "container".to_owned(),
-                expected: AN_UNDIVIDED.to_owned(),
-            });
-        }
-    }
     for (slot, &divided) in divided.iter().take(count).enumerate() {
         if divided {
             nesting.is_container[slot] = true;
@@ -242,13 +247,44 @@ fn divided_nesting(
         nodes.positions.extend([0.0, 0.0]);
         nodes.sizes.extend(extent);
     }
+    check_containers(batch, nesting, &divided)
+}
+
+/// Checks the container of each node of `batch` by `nesting`, its regions among its slots, each of
+/// them `divided` into regions or not, by the rule of a container, in slot order. The engine's
+/// check of the nesting names the first node in slot order whose container it refuses, for no node
+/// of the graph, no container, or a cycle; that node is the one taken to lie in itself. Where the
+/// engine refused it for no node or no container, the rule refuses it so before `in_itself` is
+/// read; a node before it the engine refused for nothing, so the rule refuses it, if at all, only
+/// for a container divided into regions, which the engine does not know.
+fn check_containers(
+    batch: &Batch,
+    nesting: &Nesting,
+    divided: &[bool],
+) -> Result<(), GraphDataProblem> {
+    let first = nesting.check().err().map(|error| match error {
+        NestError::NoNode { node }
+        | NestError::NotAContainer { node }
+        | NestError::InItself { node } => node as usize,
+    });
+    for (index, (node, &container)) in batch.nodes.iter().zip(&nesting.containers).enumerate() {
+        if container == CANVAS {
+            continue;
+        }
+        let at = container as usize;
+        let holder = (at < nesting.containers.len()).then(|| Holder {
+            divided: divided[at],
+            is_container: nesting.is_container[at],
+        });
+        check_container(node.id, holder, first == Some(index))?;
+    }
     Ok(())
 }
 
-/// Divides the nodes of a load `trees` names and marks its regions, `columns` naming each
-/// region's band and division, the regions below each node's content, `tops` high, a node its
-/// data does not mark a container one by its division alone; then lays out the regions of each
-/// divided node (ARCH-regions-are-container-slots).
+/// Divides each node of a load `trees` divides into its regions, in the slots the load built for
+/// them after the nodes, each region `k` of `columns` in slot `count + k`, the regions below the
+/// node's content, `tops` high, a node its data does not mark a container one by its division
+/// alone (ARCH-regions-are-container-slots).
 fn divide_loaded(
     graph: &mut Graph,
     columns: &NodeColumns,
@@ -256,36 +292,42 @@ fn divide_loaded(
     tops: &[f32],
 ) {
     let count = trees.len();
-    let regions = &columns.regions;
-    let divided = divisions(trees, regions);
-    let nodes: Vec<u32> = (0..count)
-        .filter(|&slot| divided[slot])
-        .map(numbered)
-        .collect();
-    for &slot in &nodes {
-        let i = slot as usize;
-        // Slots of nodes just built, which no division refuses.
-        let _ = graph.divide(slot, trees[i].0, tops[i]);
-        if columns.is_container[i] != 1 {
-            graph.made_by_division(slot);
+    // The slots of each node's regions, in the order of its tree, as `region_names` reads them.
+    let mut slots: Vec<Vec<u32>> = vec![Vec::new(); count];
+    let mut roots: Vec<usize> = Vec::with_capacity(columns.regions.of.len());
+    for (k, &of) in columns.regions.of.iter().enumerate() {
+        let of = of as usize;
+        let root = if of < count { of } else { roots[of - count] };
+        roots.push(root);
+        slots[root].push(numbered(count + k));
+    }
+    for (i, ((divide, regions), slots)) in trees.iter().zip(&slots).enumerate() {
+        if divide.is_none() || regions.is_empty() {
+            continue;
         }
-    }
-    for k in 0..regions.of.len() {
-        let slot = numbered(count + k);
-        let divide = divide_of(regions.divide[k]).filter(|_| divided[count + k]);
-        let _ = graph.mark_region(slot, regions.named[k] == 1, divide);
-    }
-    for slot in nodes {
-        graph.arrange(slot);
+        let built = RegionSlots::Built {
+            slots,
+            marked: columns.is_container[i] == 1,
+        };
+        // Slots of nodes and regions just built, each region in what it divides, within the
+        // world as `load_of` checked, which no division refuses.
+        graph
+            .divide(
+                numbered(i),
+                *divide,
+                tops[i],
+                &parts_of(regions, &[]),
+                built,
+            )
+            .unwrap_or_else(|_| unreachable!("a load's checked regions in slots just built"));
     }
 }
 
 /// The world positions of the nodes of `batch` at `relative`, `x, y` per node, each relative to its
 /// container by `nesting`, of `sizes`, `width, height` per node: the sums along each chain of
-/// containers (ARCH-engine-edits-nested-graph), checked once every node is, before the edges. A
-/// node that lies in no node of the batch, in a node that is no container, or in itself or a node
-/// it holds, is refused as `invalidContainer`, the first in slot order; a world position whose far
-/// side lies past the world's limit as `beyondWorld`, its field the one of a node's own position.
+/// containers (ARCH-engine-edits-nested-graph), checked once every node is, before the edges, the
+/// nesting checked by `check_containers`. A world position whose far side lies past the world's
+/// limit is refused as `beyondWorld`, its field the one of a node's own position.
 fn world_of(
     batch: &Batch,
     nesting: &Nesting,
@@ -295,18 +337,6 @@ fn world_of(
     if nesting.containers.iter().all(|&c| c == CANVAS) {
         return Ok(relative.to_vec());
     }
-    nesting.check().map_err(|error| {
-        let (node, expected) = match error {
-            NestError::NoNode { node } => (node, A_NODE_OF_THE_GRAPH),
-            NestError::NotAContainer { node } => (node, A_MARKED_CONTAINER),
-            NestError::InItself { node } => (node, NOT_IN_ITSELF),
-        };
-        GraphDataProblem::InvalidContainer {
-            node: batch.nodes[node as usize].id.to_owned(),
-            field: "container".to_owned(),
-            expected: expected.to_owned(),
-        }
-    })?;
     let world = nesting.world(relative);
     let mut positions = Vec::with_capacity(world.len());
     for (index, node) in batch.nodes.iter().enumerate() {
@@ -405,23 +435,18 @@ struct Single {
 /// height; the one sequence both crossings refuse by, so that their problems and their order stay
 /// one (REN-node-content-and-hits).
 fn single_of(input: &NodeInput, fonts: &Fonts, held: u64) -> Result<Single, GraphDataProblem> {
-    let (node, content) = node_of(0, input)?;
+    let (node, content, (divide, regions)) = node_of(0, input)?;
     id_length("nodes", 0, "id", node.id)?;
     let ([x, y], width) = checked_node(&node)?;
     let given = given_height(node.id, node.height)?;
     let outline = node.outline;
     let shape = node.shape;
     let (content, laid) = checked_content(node.id, shape, content, fonts, held)?;
-    let height = node_height(shape, width, laid, given);
-    within_by_height(node.id, y, height)?;
-    let (divide, regions) = regions_of(node.id, 0, &input.divide, &input.regions)?;
+    let height = checked_height(node.id, shape, [y, width], laid, given)?;
     let mut taken = HashSet::from([node.id.to_owned()]);
     check_regions(node.id, 0, divide, &regions, &mut taken)?;
     // Its regions' names count against the budget of content beside its content.
-    let names: u64 = regions.iter().map(Region::name_units).sum();
-    if names > 0 {
-        within_budget(node.id, held + content.units + names)?;
-    }
+    names_within(node.id, held + content.units, &regions)?;
     let content_height = node_height(shape, width, laid, None);
     Ok(Single {
         x,
@@ -436,7 +461,7 @@ fn single_of(input: &NodeInput, fonts: &Fonts, held: u64) -> Result<Single, Grap
         resizable: node.resizable,
         is_container: node.is_container,
         top: content_top(shape, width, laid),
-        divide: divide.filter(|_| !regions.is_empty()),
+        divide: divided(divide, &regions),
         regions,
         border: node.border,
     })
@@ -446,21 +471,20 @@ fn single_of(input: &NodeInput, fonts: &Fonts, held: u64) -> Result<Single, Grap
 /// index 0, and adds it to `graph`, whose nodes in use stay within `MAX_ITEMS`, as high as its
 /// content lays out to in `fonts`, its strings of content counted against the budget on from
 /// `held`, the code units of content the graph holds, into the node in `container`, which `api`
-/// resolved, or onto the canvas for none, at its position relative to that container; returns the
-/// slot the engine chose and the content it keeps, with its count. A container that holds no node,
-/// or a node that is no container, is refused as `invalidContainer`, and a world position past the
-/// world's limit as `beyondWorld`, after every other check (ARCH-engine-edits-nested-graph). A
-/// refused node leaves the graph as it was. That the graph holds no node of its identifier is
-/// `api`'s to check, against the map only it keeps (ARCH-one-workspace-per-example); `api` refuses
-/// a container its map does not hold as one first, and the check here keeps a slot the shell named
-/// wrongly out of the engine's tree.
+/// resolved, or onto the canvas for none, at its position relative to that container; returns
+/// what it added. A container is checked by the rule of a container, which refuses a slot that
+/// holds no node, the slot `api` names for an identifier its map does not hold among them, as
+/// `invalidContainer`; and a world position past the world's limit is refused as `beyondWorld`,
+/// after every other check (ARCH-engine-edits-nested-graph). A refused node leaves the graph as it
+/// was. That the graph holds no node of its identifier is `api`'s to check, against the map only
+/// it keeps (ARCH-one-workspace-per-example).
 pub(crate) fn add_node_to(
     graph: &mut Graph,
     node: &NodeInput,
     (container, attached_to): (Option<u32>, Option<u32>),
     fonts: &Fonts,
     held: u64,
-) -> Result<(u32, Checked), GraphDataProblem> {
+) -> Result<Added, GraphDataProblem> {
     let single = single_of(node, fonts, held)?;
     // Each region takes a node slot, counted against the limit of a load.
     let nodes = f64::from(graph.nodes_in_use()) + 1.0 + single.regions.len() as f64;
@@ -487,25 +511,11 @@ pub(crate) fn add_node_to(
     let (container, [x, y]) = match container {
         None => (CANVAS, [x, y]),
         Some(slot) => {
-            if graph.holds_node(slot) && graph.holds_regions(slot) {
-                return Err(GraphDataProblem::InvalidContainer {
-                    node: id.to_owned(),
-                    field: "container".to_owned(),
-                    expected: AN_UNDIVIDED.to_owned(),
-                });
-            }
-            if !(graph.holds_node(slot) && graph.is_container(slot)) {
-                let expected = if graph.holds_node(slot) {
-                    A_MARKED_CONTAINER
-                } else {
-                    A_NODE_OF_THE_GRAPH
-                };
-                return Err(GraphDataProblem::InvalidContainer {
-                    node: id.to_owned(),
-                    field: "container".to_owned(),
-                    expected: expected.to_owned(),
-                });
-            }
+            let holder = graph.holds_node(slot).then(|| Holder {
+                divided: graph.holds_regions(slot),
+                is_container: graph.is_container(slot),
+            });
+            check_container(id, holder, false)?;
             let at = &graph.positions()[slot as usize * 2..];
             let world = [
                 f64::from(at[0]) + f64::from(x),
@@ -514,34 +524,41 @@ pub(crate) fn add_node_to(
             (slot, within_world(id, world, [width, height])?)
         }
     };
+    within_world_divided(id, divide, [x, y], [width, height], top, &regions)?;
     let slot = graph
-        .add_node_in(
-            container,
-            is_container || divide.is_some(),
-            [x, y, width, height],
-        )
+        .add_node_in(container, is_container, [x, y, width, height])
         .map_err(|error| match error {
             AddNodeError::TooManySlots(error) => GraphDataProblem::from(error),
-            // The match above refused every slot that holds no container, before it read the
-            // container's position.
+            // The rule of a container refused every slot that holds no container, before its
+            // position was read.
             AddNodeError::NoContainer { .. } => unreachable!("a container checked above"),
         })?;
     // A slot just added, which no node shape, no outline, and no sizing refuses.
-    let _ = graph.set_shape(slot, shape);
-    let _ = graph.set_outline(slot, outline);
-    let _ = graph.set_sizing(slot, given, resizable);
+    let added = |_| unreachable!("a slot just added refuses no shape, outline, or sizing");
+    graph.set_shape(slot, shape).unwrap_or_else(added);
+    graph.set_outline(slot, outline).unwrap_or_else(added);
+    graph
+        .set_sizing(slot, given, resizable)
+        .unwrap_or_else(added);
     if let (Some(on), Some(border)) = (ride, &border) {
         attached(graph, slot, on, border)?;
     }
-    if let Some(axis) = divide {
-        let _ = graph.divide(slot, Some(axis), top);
-        add_regions(graph, slot, axis, &regions)?;
-        if !is_container {
-            graph.made_by_division(slot);
-        }
-        graph.arrange(slot);
+    if divide.is_some() {
+        graph
+            .divide(
+                slot,
+                divide,
+                top,
+                &parts_of(&regions, &[]),
+                RegionSlots::Added,
+            )
+            .map_err(division_problem)?;
     }
-    Ok((slot, content))
+    Ok(Added {
+        slot,
+        content,
+        names: regions.iter().map(Region::name_units).collect(),
+    })
 }
 
 /// The slot of the node the border node `node`, read as `single`, rides, `attached_to` as `api`
@@ -554,23 +571,17 @@ fn ridden(
     attached_to: Option<u32>,
 ) -> Result<Option<u32>, GraphDataProblem> {
     let id = node.id.0.as_deref().unwrap_or_default();
-    let Some(border) = &single.border else {
-        // A side or an offset, given or of another type, belongs to a border node alone.
-        let field = if node.side.0.is_none_or(|side| side.is_some()) {
-            Some("side")
-        } else if node.offset.0.is_none_or(|offset| offset.is_some()) {
-            Some("offset")
-        } else {
-            None
-        };
-        return field.map_or(Ok(None), |field| Err(invalid(id, field)));
-    };
-    let marks = Marks {
+    let given = Given {
         is_container: single.is_container,
-        divided: !single.regions.is_empty(),
+        regions: single.divide.is_some(),
         resizable: single.resizable,
+        ..given_of(node)
     };
-    check_border(id, border, &marks)?;
+    check_attachment(id, single.border.is_some(), given)?;
+    let Some(border) = &single.border else {
+        return Ok(None);
+    };
+    check_border(id, border)?;
     let named = node.attached_to.0.as_ref().and_then(Option::as_deref);
     let on = attached_to.filter(|&on| graph.holds_node(on));
     let on = check_target(id, CANVAS, on, named.unwrap_or_default(), |s| {
@@ -598,8 +609,8 @@ pub(crate) fn graph_of(batch: &GraphBatch) -> Result<Graph, GraphDataProblem> {
     .map(|loaded| loaded.graph)
 }
 
-// The malformed-data tests of graph data verify API-bridge-columns-carry-nesting (see
-// `graph_data::tests`). Verifies: API-bridge-columns-carry-nesting
+// The malformed-data tests of graph data verify API-bridge-columns-keep-no-size (see
+// `graph_data::tests`). Verifies: API-bridge-columns-keep-no-size
 #[cfg(test)]
 mod tests {
     use super::super::node_columns::Refused;
@@ -794,8 +805,32 @@ mod tests {
     }
 
     #[test]
+    fn an_added_node_names_its_regions_of_another_type_before_its_content_as_a_load_does() {
+        // Verifies: API-bridge-columns-keep-no-size, ARCH-regions-are-container-slots, Q-7
+        // A load's first pass names the regions by their type before any rule of content; so does
+        // `addNode`, the one sequence a node is refused by.
+        use super::super::problem::A_REGION_LIST;
+        let node = added(0.0, 0.0, |n| {
+            n.content = content(&[&[(KindCode::Text, 1.0, RoleCode::Title, None)]]).into();
+            n.regions = Field(None);
+        });
+        let problem = || GraphDataProblem::InvalidField {
+            list: GraphList::Nodes,
+            index: 0,
+            id: Some("n".into()),
+            field: "regions".into(),
+            expected: A_REGION_LIST.into(),
+        };
+        let columns = OwnedColumns::of([Some(&node)]);
+        assert_eq!(load_columns(&columns).map(drop), Err(problem()));
+        let mut graph = graph_of(&batch(&[("a", 0.0, 0.0)], &[])).unwrap();
+        assert_eq!(add(&mut graph, &node), Err(problem()));
+        assert_eq!(graph.nodes_in_use(), 1);
+    }
+
+    #[test]
     fn a_coordinate_not_finite_in_an_early_node_is_named_before_a_title_in_a_later_one() {
-        // Verifies: API-bridge-columns-carry-nesting
+        // Verifies: API-bridge-columns-keep-no-size
         // The first pass names only the values `Field<T>` reads; a title is checked at its rule,
         // in the second pass, after the nodes before it.
         let ids: Vec<String> = (0..6).map(|i| format!("n{i}")).collect();
@@ -814,7 +849,7 @@ mod tests {
 
     #[test]
     fn the_first_value_refused_by_its_type_is_named_across_nodes_and_edges() {
-        // Verifies: API-bridge-columns-carry-nesting
+        // Verifies: API-bridge-columns-keep-no-size
         // A node's refused field is named before any edge's, and an earlier edge's arrowhead
         // that names nothing before a later edge's field the shell named.
         let mut nodes = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]).nodes;
@@ -920,7 +955,7 @@ mod tests {
     #[test]
     fn an_outline_loads_as_given_and_one_naming_none_or_dashed_as_no_edge_is_is_refused_by_its_field()
      {
-        // Verifies: REN-node-shapes-cover-uml, API-bridge-columns-carry-nesting, Q-7
+        // Verifies: REN-node-shapes-cover-uml, API-bridge-columns-keep-no-size, Q-7
         use super::super::Outline as O;
         use super::super::problem::AN_OUTLINE;
         let dashed = |dash, gap| Some(O::Dashed(super::super::Pair([dash, gap])));
@@ -963,7 +998,7 @@ mod tests {
 
     #[test]
     fn an_outline_of_add_node_is_refused_as_a_load_s_and_columns_of_no_outline_are_malformed() {
-        // Verifies: REN-node-shapes-cover-uml, API-bridge-columns-carry-nesting, Q-7
+        // Verifies: REN-node-shapes-cover-uml, API-bridge-columns-keep-no-size, Q-7
         use super::super::Outline as O;
         use super::super::problem::AN_OUTLINE;
         let dashed = |dash, gap| Some(O::Dashed(super::super::Pair([dash, gap])));
@@ -999,7 +1034,7 @@ mod tests {
 
     #[test]
     fn a_separator_row_that_holds_elements_or_a_byte_past_one_is_malformed() {
-        // Verifies: API-bridge-columns-carry-nesting
+        // Verifies: API-bridge-columns-keep-no-size
         let mut columns = a_and(|_| ());
         // Node `b`'s one row, its title, marked a separator.
         columns.content.separators[1] = 1;
@@ -1023,7 +1058,7 @@ mod tests {
     #[test]
     fn a_height_below_the_content_s_is_raised_a_greater_one_kept_and_content_s_asked_alone() {
         // Verifies: REN-node-shapes-cover-uml, REN-node-content-and-hits,
-        // Verifies: API-bridge-columns-carry-nesting, REN-node-content-and-hits
+        // Verifies: API-bridge-columns-keep-no-size, REN-node-content-and-hits
         let given = |height: f64| move |n: &mut NodeInput| n.height = Some(height).into();
         // Of one title, 64 high: a height of 20 raised to it, one of 300 kept.
         for (height, drawn) in [(20.0, 64.0), (300.0, 300.0)] {
@@ -1056,7 +1091,7 @@ mod tests {
 
     #[test]
     fn a_height_not_finite_or_not_above_0_as_f32_holds_it_is_refused_naming_the_node() {
-        // Verifies: API-bridge-columns-carry-nesting, Q-7
+        // Verifies: API-bridge-columns-keep-no-size, Q-7
         let refused = || GraphDataProblem::InvalidSize { node: "b".into() };
         for height in [0.0, -1.0, f64::NAN, f64::INFINITY, 1e300] {
             let columns = a_and(|n| n.height = Some(height).into());
@@ -1234,12 +1269,14 @@ mod tests {
     }
 }
 
-/// The tests of a load's nesting (API-bridge-columns-carry-nesting,
+/// The tests of a load's nesting (API-bridge-columns-keep-no-size,
 /// ARCH-engine-edits-nested-graph).
 #[cfg(test)]
 mod nesting_tests {
     use super::super::node_columns::Refused;
-    use super::super::problem::{A_FLAG, AN_ID_OR_NONE};
+    use super::super::problem::{
+        A_FLAG, A_MARKED_CONTAINER, A_NODE_OF_THE_GRAPH, AN_ID_OR_NONE, NOT_IN_ITSELF,
+    };
     use super::super::tests::{batch, beyond, load_columns, load_into};
     use super::super::{Field, NodeField, OwnedColumns, OwnedEdgeColumns};
     use super::*;
@@ -1278,12 +1315,12 @@ mod nesting_tests {
         node: &NodeInput,
         container: Option<u32>,
     ) -> Result<u32, GraphDataProblem> {
-        add_node_to(graph, node, (container, None), &Fonts::default(), 0).map(|(slot, _)| slot)
+        add_node_to(graph, node, (container, None), &Fonts::default(), 0).map(|added| added.slot)
     }
 
     #[test]
     fn a_node_added_into_a_container_lies_at_the_sum_of_its_position_and_the_container_s() {
-        // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-nested-changes
+        // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-division-moves
         let mut graph = loaded_three();
         let node = batch(&[("n", 5.0, 7.0)], &[]).nodes.remove(0);
         let slot = add_into(&mut graph, &node, Some(0)).unwrap();
@@ -1301,7 +1338,7 @@ mod nesting_tests {
 
     #[test]
     fn a_node_added_into_no_container_or_past_the_world_is_refused_and_the_graph_stays() {
-        // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-nested-changes, Q-7
+        // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-division-moves, Q-7
         let mut graph = loaded_three();
         let node = batch(&[("n", 5.0, 7.0)], &[]).nodes.remove(0);
         // A node that is no container, a slot that holds no node.
@@ -1353,7 +1390,7 @@ mod nesting_tests {
 
     #[test]
     fn a_container_s_nodes_load_at_the_sums_of_their_positions_and_its() {
-        // Verifies: API-bridge-columns-carry-nesting, ARCH-engine-edits-nested-graph
+        // Verifies: API-bridge-columns-keep-no-size, ARCH-engine-edits-nested-graph
         let (nodes, _) = three(&[None, Some(0), Some(0)], &[true, false, false]);
         let graph = load_columns(&nodes).unwrap();
         assert_eq!(
@@ -1365,7 +1402,7 @@ mod nesting_tests {
 
     #[test]
     fn a_container_that_names_no_node_no_container_the_node_or_one_it_holds_is_refused() {
-        // Verifies: API-bridge-columns-carry-nesting, ARCH-engine-edits-nested-graph
+        // Verifies: API-bridge-columns-keep-no-size, ARCH-engine-edits-nested-graph
         let cases = [
             // Past the slots, as the snapshot writes an identifier that names no node.
             (
@@ -1415,7 +1452,7 @@ mod nesting_tests {
 
     #[test]
     fn a_nesting_refused_comes_after_every_node_s_checks_and_before_the_edges() {
-        // Verifies: API-bridge-columns-carry-nesting
+        // Verifies: API-bridge-columns-keep-no-size
         // A node after the nested one with a width that is negative, and an edge to no node.
         let mut data = batch(
             &[("c", 0.0, 0.0), ("a", 0.0, 0.0), ("b", 0.0, 0.0)],
@@ -1442,7 +1479,7 @@ mod nesting_tests {
 
     #[test]
     fn a_container_or_a_mark_of_another_type_is_refused_by_its_field_in_the_first_pass() {
-        // Verifies: API-bridge-columns-carry-nesting
+        // Verifies: API-bridge-columns-keep-no-size
         for (field, name, expected) in [
             (NodeField::Container, "container", AN_ID_OR_NONE),
             (NodeField::IsContainer, "isContainer", A_FLAG),
@@ -1476,7 +1513,7 @@ mod nesting_tests {
 
     #[test]
     fn a_world_position_past_the_world_s_limit_is_refused_by_the_field_it_passes_by() {
-        // Verifies: API-bridge-columns-carry-nesting, Q-7
+        // Verifies: API-bridge-columns-keep-no-size, Q-7
         // Each position within the limit, their sum past it.
         let far = WORLD_LIMIT * 0.75;
         let data = batch(&[("c", far, 0.0), ("a", far, 0.0)], &[]);

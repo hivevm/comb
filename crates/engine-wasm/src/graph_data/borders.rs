@@ -1,49 +1,18 @@
 //! Border nodes in graph data (ARCH-border-nodes-ride-sides): the checks of a node with
-//! `attachedTo`, `side`, and `offset`, of a load and of `addNode`, and their attachment in the
-//! engine once the graph holds the node they ride.
+//! `attachedTo`, `side`, and `offset`, of a load and of `addNode`, beside the rule of its
+//! attachment in `checks`, and their attachment in the engine once the graph holds the node they
+//! ride.
 
 use comb_engine::graph::{CANVAS, Graph};
 
 use super::GraphDataProblem;
+use super::checks::invalid_attachment;
 use super::item::Border;
 use super::problem::malformed;
 
-/// The refusal of the border node `node`, or of a node that is no border node but has a side or
-/// an offset, by its field `field`.
-pub(super) fn invalid(node: &str, field: &str) -> GraphDataProblem {
-    GraphDataProblem::InvalidAttachment {
-        node: node.to_owned(),
-        field: field.to_owned(),
-    }
-}
-
-/// What a border node's data says beside its place, which may refuse it: whether it marks it a
-/// container, gives it regions, and makes it resizable.
-pub(super) struct Marks {
-    pub(super) is_container: bool,
-    pub(super) divided: bool,
-    pub(super) resizable: bool,
-}
-
-/// Checks the border node `id` of place `border` by its own fields, in their order: what stands
-/// beside its `attachedTo`, then a mark as a container, regions, or resizing that it may not
-/// have, each as `invalidAttachment`; and an offset that is not finite as `nonFiniteCoordinate`.
-pub(super) fn check_border(
-    id: &str,
-    border: &Border,
-    marks: &Marks,
-) -> Result<(), GraphDataProblem> {
-    if let Some(field) = border.beside {
-        return Err(invalid(id, field));
-    }
-    let refused = [
-        ("isContainer", marks.is_container),
-        ("regions", marks.divided),
-        ("resizable", marks.resizable),
-    ];
-    if let Some((field, _)) = refused.into_iter().find(|&(_, is)| is) {
-        return Err(invalid(id, field));
-    }
+/// Checks the border node `id` of place `border`, which the rule of its attachment passed, by its
+/// offset: one that is not finite is refused as `nonFiniteCoordinate`.
+pub(super) fn check_border(id: &str, border: &Border) -> Result<(), GraphDataProblem> {
     if !border.offset.is_finite() {
         return Err(GraphDataProblem::NonFiniteCoordinate {
             node: id.to_owned(),
@@ -71,7 +40,7 @@ pub(super) fn check_target(
         });
     };
     if on == slot || is_border(on) {
-        return Err(invalid(node, "attachedTo"));
+        return Err(invalid_attachment(node, "attachedTo"));
     }
     Ok(on)
 }
@@ -105,8 +74,8 @@ pub(super) fn target_of(attached: u32, count: usize) -> Result<Option<u32>, Grap
 mod tests {
     use super::super::tests::{add, batch, load_columns};
     use super::super::{
-        Field, GraphList, NodeInput, NodePatch, OwnedColumns, PatchValue, RECTANGLE, Side,
-        add_node_to, graph_of, patch_of,
+        Divide, Field, GraphList, NodeInput, NodePatch, OwnedColumns, PatchValue, RegionInput,
+        Side, add_node_to, graph_of,
         problem::{A_BORDER_SIDE, A_NUMBER},
     };
     use super::*;
@@ -127,11 +96,7 @@ mod tests {
     /// The load of the action `a`, at (100, 50), 100 wide, and of `nodes` after it.
     fn load(nodes: &[NodeInput]) -> Result<Graph, GraphDataProblem> {
         let a = batch(&[("a", 100.0, 50.0)], &[]).nodes.remove(0);
-        let mut columns = OwnedColumns::of(std::iter::once(Some(&a)).chain(nodes.iter().map(Some)));
-        // Its marks as containers, which the columns of nesting carry.
-        for (i, node) in nodes.iter().enumerate() {
-            columns.is_container[i + 1] = u8::from(node.is_container.0 == Some(Some(true)));
-        }
+        let columns = OwnedColumns::of(std::iter::once(Some(&a)).chain(nodes.iter().map(Some)));
         load_columns(&columns)
     }
 
@@ -144,7 +109,7 @@ mod tests {
 
     #[test]
     fn a_loaded_border_node_rides_its_node_at_its_offset_held_within_its_side() {
-        // Verifies: ARCH-border-nodes-ride-sides, API-bridge-columns-carry-nesting
+        // Verifies: ARCH-border-nodes-ride-sides, API-bridge-columns-keep-no-size
         let graph = load(&[pin("p", "a", Side::Right, 1e9)]).unwrap();
         let place = graph.place_of(1).unwrap();
         let height = f64::from(graph.sizes()[1]);
@@ -157,8 +122,9 @@ mod tests {
         // As `addNode` adds one.
         let mut graph = graph_of(&batch(&[("a", 100.0, 50.0)], &[])).unwrap();
         let node = pin("p", "a", Side::Top, -4.0);
-        let (slot, _) =
-            add_node_to(&mut graph, &node, (None, Some(0)), &Fonts::default(), 0).unwrap();
+        let slot = add_node_to(&mut graph, &node, (None, Some(0)), &Fonts::default(), 0)
+            .unwrap()
+            .slot;
         assert_eq!(graph.place_of(slot).unwrap().offset, 0.0);
         let size = graph.sizes()[slot as usize * 2 + 1];
         assert_eq!(graph.positions()[2], 95.0);
@@ -176,17 +142,41 @@ mod tests {
         q.regions = Some(Vec::new()).into();
         let added = add_node_to(&mut graph, &q, (None, Some(0)), &Fonts::default(), 0);
         assert!(added.is_ok());
-        let patch = NodePatch(vec![(
-            "regions".to_owned(),
-            PatchValue::Regions(Some(Vec::new()).into()),
-        )]);
-        let patched = patch_of("p", (RECTANGLE.0, true), None, &patch, &Fonts::default(), 0);
-        assert!(patched.is_ok());
+        // Through `updateNode`, which refuses a list with a region by its rule of attachment.
+        let mut engine = crate::Engine::new();
+        let a = batch(&[("a", 100.0, 50.0)], &[]).nodes.remove(0);
+        engine.add(&a, (None, None)).unwrap();
+        let slot = engine
+            .add(&pin("p", "a", Side::Top, 0.0), (None, Some(0)))
+            .unwrap();
+        let regions = |list: Vec<RegionInput>| {
+            NodePatch(vec![
+                (
+                    "divide".to_owned(),
+                    PatchValue::Divide(Some(Divide::Across).into()),
+                ),
+                ("regions".to_owned(), PatchValue::Regions(Some(list).into())),
+            ])
+        };
+        assert!(engine.update(slot, "p", &regions(Vec::new())).is_ok());
+        assert!(engine.graph.regions_of(slot).is_empty());
+        let one = RegionInput {
+            id: "r".to_owned().into(),
+            name: None.into(),
+            size: 10.0.into(),
+            line: super::super::Line::Solid.into(),
+            divide: None.into(),
+            of: None.into(),
+        };
+        assert_eq!(
+            engine.update(slot, "p", &regions(vec![one])),
+            Err(crate::CallRefusal::Data(invalid("regions").unwrap_err()))
+        );
     }
 
     #[test]
     fn a_border_node_that_cannot_be_one_is_refused_naming_it_and_its_field() {
-        // Verifies: ARCH-border-nodes-ride-sides, API-edits-report-nested-changes, Q-7
+        // Verifies: ARCH-border-nodes-ride-sides, API-edits-report-division-moves, Q-7
         type Change = fn(&mut NodeInput);
         let cases: [(Change, Result<(), GraphDataProblem>); 9] = [
             (
@@ -265,5 +255,22 @@ mod tests {
             })
         );
         assert_eq!(graph.nodes_in_use(), 2);
+    }
+
+    #[test]
+    fn a_border_node_s_position_not_finite_is_refused_by_its_attachment_as_a_load_refuses_it() {
+        // Verifies: ARCH-border-nodes-ride-sides, Q-7
+        // A border node has no position of its own: one given is refused by the rule of its
+        // attachment, whatever number it is, in a load and by `addNode` alike.
+        for x in [f64::NAN, f64::INFINITY, 1e39] {
+            let mut p = pin("p", "a", Side::Top, 0.0);
+            p.x = x.into();
+            assert_eq!(load(&[p]).map(drop), invalid("x"));
+            let mut p = pin("p", "a", Side::Top, 0.0);
+            p.x = x.into();
+            let mut graph = load(&[]).unwrap();
+            let added = add_node_to(&mut graph, &p, (None, Some(0)), &Fonts::default(), 0);
+            assert_eq!(added.map(drop), invalid("x"));
+        }
     }
 }

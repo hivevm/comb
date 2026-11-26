@@ -1,5 +1,5 @@
 //! The reading and checking of graph data, the one place that validates it
-//! (ARCH-one-workspace-per-example, API-bridge-columns-carry-nesting). The exports in the crate
+//! (ARCH-one-workspace-per-example, API-bridge-columns-keep-no-size). The exports in the crate
 //! root hand graph data here and pass on what it returns: a load's columns become the engine's
 //! graph, the node of `addNode` and the edge of `addEdge` join it, and a patch of `updateNode` or
 //! `updateEdge` becomes what the graph and the store take.
@@ -8,8 +8,9 @@
 //! lenient reading of a field, `input` the types the host application hands over, `strings` the
 //! decoding of the string columns, `node_columns` and `edge_columns` the columns of a load's nodes
 //! and edges, `problem` the refusals, `item` the reading of a node or an edge, `checks` the rules
-//! of each, `load` a load and `addNode`, `edit` `addEdge` and the patches, `regions` the regions
-//! a node is divided into, and `content` the node content; `snapshot` builds, for the tests, the
+//! of each, `load` a load and `addNode`, `edit` `addEdge` and the patches, `update` a patch of
+//! `updateNode` given to the graph, answered with what the store takes, `regions` the regions a
+//! node is divided into, and `content` the node content; `snapshot` builds, for the tests, the
 //! columns the shell builds. This root keeps what the columns of both lists share: the first value
 //! a load's first pass refuses.
 
@@ -29,9 +30,10 @@ mod regions;
 #[cfg(test)]
 mod snapshot;
 mod strings;
+mod update;
 
 use checks::rgb;
-pub(crate) use checks::{content_top, node_height, within_by_height};
+pub(crate) use checks::{check_attachment, checked_height, content_top, names_within, node_height};
 use content::Cursor;
 #[cfg(test)]
 pub(crate) use content::TEST_BUDGET;
@@ -64,11 +66,14 @@ pub use node_columns::{NodeColumns, NodeField, NodeShapeCode, OutlineCode};
 pub use problem::{GraphDataProblem, GraphList};
 pub(crate) use problem::{malformed, slot, unshaped};
 pub use regions::{Divide, Line, RegionColumns, RegionInput};
-pub(crate) use regions::{Region, add_regions, check_regions, divide_of, holding, regions_of};
+pub(crate) use regions::{
+    Region, check_regions, divide_of, division_problem, parts_of, regions_of, within_world_divided,
+};
 #[cfg(test)]
 pub(crate) use snapshot::{EdgeCells, GraphBatch, OwnedColumns, OwnedEdgeColumns};
 use strings::{bounds_fit, lengths, runs_fit, string_at, value_at, values};
 pub(crate) use strings::{numbered, text_spans, utf16_length};
+pub(crate) use update::{Held, NodeRefusal, Updated, update_node_in};
 
 /// The node shape and width of a rectangle 100 wide, as the tests patch a node of.
 #[cfg(test)]

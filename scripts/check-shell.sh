@@ -8,14 +8,13 @@
 # directory the project ignores is no part of the gate. The scripts under scripts/ and the hooks
 # are the repository's entire enforcement layer, so they are held to a lint gate themselves.
 #
-# ShellCheck is the one check dependency beyond bash + coreutils/git. CI does not install it — the
-# GitHub-hosted runner image ships it preinstalled, and the Dev Container installs it on creation
-# (.devcontainer/devcontainer.json). Elsewhere, when shellcheck is not on PATH, the check skips
-# it with a notice (CI remains the gate); in a CI run (CI=true) it is an error, never a silent skip.
-# The two sources may differ in release: the Dev Container takes the Debian package of its base
-# image, and the runner image ships a newer release that moves with the image. A newer release
-# may report a code the older one does not, so a disable comment may need the codes of both, and a
-# green local lint does not imply a green shell job. The shell job in CI is the gate.
+# ShellCheck is the one check dependency beyond bash + coreutils/git. The Dev Container's image and
+# the shell job of CI both install the one release .devcontainer/install-shellcheck.sh names
+# (DEV-container-adds-bun-rust-shellcheck), so a green lint in the container predicts the shell
+# job's. The lint prints the version of the ShellCheck it ran and its path first, which shows a
+# host outside the container linting with another release, and the shell job's log the one it
+# ran. Elsewhere, when shellcheck is not on PATH, the check skips it with a notice (CI remains the
+# gate); in a CI run (CI=true) it is an error, never a silent skip.
 #
 # Beyond ShellCheck it refuses GNU sed's in-place flag, `sed -i`, which BSD sed on macOS reads as
 # taking a suffix: check-all.sh, and with it the pre-push hook, runs on any host. Comment lines are
@@ -89,7 +88,7 @@ rest_args "${BASH_SOURCE[0]}" "$usage" 0 "${ARGS[@]}"
 have_shellcheck=1
 if ! command -v shellcheck >/dev/null 2>&1; then
   if [[ "${CI:-}" == "true" ]]; then
-    echo "ERROR: shellcheck not found in a CI run — the runner image is expected to ship it." >&2
+    echo "ERROR: shellcheck not found in a CI run — the job installs it with .devcontainer/install-shellcheck.sh." >&2
     exit 1
   fi
   have_shellcheck=0
@@ -117,6 +116,9 @@ QUIET_PIPE='(^|[^|])[|][[:space:]]*grep([[:space:]]+-[a-zA-Z]+)*[[:space:]]+(-[a
 
 failed=0
 if ((have_shellcheck)); then
+  version="$(shellcheck --version 2>/dev/null)"
+  version="$(sed -n 's/^version:[[:space:]]*//p' <<< "$version")"
+  echo "ShellCheck ${version:-of no known version} ($(command -v shellcheck))"
   shellcheck "${scripts[@]}" || failed=1
 else
   echo "shellcheck is not installed — ShellCheck skipped (CI enforces it); the sed and grep rules run."

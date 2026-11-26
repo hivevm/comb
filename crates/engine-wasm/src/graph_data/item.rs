@@ -4,6 +4,7 @@
 use comb_engine::geometry::{Dock, Side, Sides};
 use comb_engine::shape::NodeShape;
 
+use super::checks::Given;
 use super::content;
 use super::problem::{
     A_BORDER_SIDE, A_CONTENT, A_FLAG, A_HEIGHT, A_NODE_ID_OR_NONE, A_NUMBER, A_ROW, A_SEGMENT_LIST,
@@ -29,22 +30,20 @@ pub(super) struct Node<'a> {
     /// The height its data gives, or none (REN-node-shapes-cover-uml, *Height*), not yet checked
     /// as the engine keeps it.
     pub(super) height: Option<f64>,
-    /// Whether the user may resize it by its resize handles (API-edits-report-nested-changes).
+    /// Whether the user may resize it by its resize handles (API-edits-report-division-moves).
     pub(super) resizable: bool,
     /// Whether it is a container: read from the node of `addNode`; a load keeps its marks in its
-    /// columns of nesting (API-bridge-columns-carry-nesting).
+    /// columns of nesting (API-bridge-columns-keep-no-size).
     pub(super) is_container: bool,
     /// Its place where it is a border node (ARCH-border-nodes-ride-sides).
     pub(super) border: Option<Border>,
 }
 
-/// The place of a border node as its data gives it, and the first of its fields `x`, `y`, and
-/// `container` that stands beside its `attachedTo`, which refuses it.
+/// The place of a border node as its data gives it.
 #[derive(Clone, Copy)]
 pub(super) struct Border {
     pub(super) side: Side,
     pub(super) offset: f64,
-    pub(super) beside: Option<&'static str>,
 }
 
 /// An edge label with every field read, its path parameter and offset filled in where it named
@@ -200,29 +199,30 @@ impl<'a> Item<'a> {
     }
 }
 
-/// The node at `index` with every field read, and its content, or the refusal that names its
-/// first missing or mistyped field or the first shape of its content that cannot be read.
+/// A node's division and its regions, read (ARCH-regions-are-container-slots).
+pub(super) type Division = (Option<comb_engine::graph::Axis>, Vec<super::Region>);
+
+/// The node at `index` with every field read, its content, and its division and regions, or the
+/// refusal that names its first missing or mistyped field or the first shape of its content that
+/// cannot be read.
 pub(super) fn node_of(
     index: usize,
     node: &NodeInput,
-) -> Result<(Node<'_>, &ContentData), GraphDataProblem> {
+) -> Result<(Node<'_>, &ContentData, Division), GraphDataProblem> {
     let mut item = Item::new(GraphList::Nodes, index);
     let id = item.id("id", &node.id)?;
     item.id = Some(id);
-    // A border node has no position of its own; any other node has one.
+    // A border node has no position of its own, at 0 as a load's columns give it, one given
+    // refused by the rule of its attachment; any other node has one.
     let bordered = matches!(node.attached_to.0, Some(Some(_)));
     let position = |field: &str, value: Field<Option<f64>>| {
         let value = item.read(field, value, A_NUMBER)?;
         match value {
-            None if !bordered => item.read(field, Field::<f64>(None), A_NUMBER),
-            _ => Ok(value.unwrap_or(0.0)),
+            _ if bordered => Ok(0.0),
+            None => item.read(field, Field::<f64>(None), A_NUMBER),
+            Some(value) => Ok(value),
         }
     };
-    let beside = [("x", node.x.0), ("y", node.y.0)]
-        .into_iter()
-        .find(|(_, value)| matches!(value, Some(Some(_))))
-        .map(|(field, _)| field)
-        .or_else(|| matches!(node.container.0, Some(Some(_))).then_some("container"));
     let mut read = Node {
         id,
         x: position("x", node.x)?,
@@ -248,6 +248,8 @@ pub(super) fn node_of(
             .unwrap_or(false),
         border: None,
     };
+    // Its division and its regions of their types, in the place a load's first pass reads them.
+    let division = super::regions_of(id, index, &node.divide, &node.regions)?;
     if item
         .read("attachedTo", node.attached_to.clone(), A_NODE_ID_OR_NONE)?
         .is_some()
@@ -259,11 +261,29 @@ pub(super) fn node_of(
         read.border = Some(Border {
             side: side.into(),
             offset,
-            beside,
         });
     }
     let content = content_of(&item, node.content.0.as_ref())?;
-    Ok((read, content))
+    Ok((read, content, division))
+}
+
+/// What `node` gives of `x`, `y`, `container`, `side`, and `offset`, each given where it holds a
+/// value, of any type, as the snapshot of a load says it in its column `given`; the rest of what
+/// the rule of its attachment reads its reading says (ARCH-border-nodes-ride-sides).
+pub(super) const fn given_of(node: &NodeInput) -> Given {
+    const fn gives<T>(field: &Field<Option<T>>) -> bool {
+        !matches!(field.0, Some(None))
+    }
+    Given {
+        x: gives(&node.x),
+        y: gives(&node.y),
+        container: gives(&node.container),
+        is_container: false,
+        regions: false,
+        resizable: false,
+        side: gives(&node.side),
+        offset: gives(&node.offset),
+    }
 }
 
 /// The content of the item `item`, or the refusal of content that is no list or of its first
@@ -455,7 +475,7 @@ pub(super) fn batch_of(batch: &GraphBatch) -> Result<Batch<'_>, GraphDataProblem
         .nodes
         .iter()
         .enumerate()
-        .map(|(i, n)| node_of(i, n).map(|(node, _)| node));
+        .map(|(i, n)| node_of(i, n).map(|(node, ..)| node));
     Ok(Batch {
         nodes: nodes.collect::<Result<_, _>>()?,
         edges: edges_read(&batch.edges)?,

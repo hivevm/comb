@@ -7,7 +7,7 @@
 // anchored at its middle (API-edges-dock-nodes-or-edges); a generalization between two actors or
 // two use cases ends in a hollow triangle. A use case dropped over the subject lands in it, an
 // actor on the canvas, and the example's veto refuses an actor moved into the subject
-// (API-edits-report-nested-changes). The building blocks were settled with the human for ticket 13
+// (API-edits-report-division-moves). The building blocks were settled with the human for ticket 13
 // of uml-diagrams on 2026-11-18.
 import type { Comb, ContainerMove, EdgeData, NodeContent, NodeData, NodeShape } from "comb";
 import { multiplicityLabelsOf, styleOf, type RelationshipKind } from "./relationships";
@@ -100,7 +100,7 @@ export function newUseCaseNode(id: string, kind: UseCaseKind): UseCaseNode {
  *  anchor, between two actors a generalization, between two use cases an include, which the
  *  sidebar changes to an extend or a generalization, and else an association, which the table of
  *  refusals refuses but between an actor and a use case. */
-export function connectedOf(source: NodeKind, target: NodeKind): RelationshipKind {
+function connectedOf(source: NodeKind, target: NodeKind): RelationshipKind {
   if (source === "use-case-comment") return "anchor";
   if (source === "actor" && target === "actor") return "use-case-generalization";
   return source === "use-case" && target === "use-case" ? "include" : "association";
@@ -108,7 +108,7 @@ export function connectedOf(source: NodeKind, target: NodeKind): RelationshipKin
 
 /** The example's veto of the user's move of a node of `kind` into a container: an actor stands
  *  outside the subject, so a move of one into it is refused; every other move is allowed. */
-export function canMoveInto({ container }: ContainerMove, kind: NodeKind | undefined): boolean {
+function canMoveInto({ container }: ContainerMove, kind: NodeKind | undefined): boolean {
   const outside = USE_CASE_SHAPES[kind as UseCaseKind]?.outside === true;
   return container === null || !outside;
 }
@@ -226,7 +226,7 @@ const CONDITION: EdgeData = {
 
 /** The use case diagram as graph data, each node placed by the height `heightOf` gives it, with
  *  the node of each node and the kind of each edge, by their identifiers. */
-export function useCaseDiagram(heightOf: Comb["heightOf"]): DiagramData {
+function useCaseDiagram(heightOf: Comb["heightOf"]): DiagramData {
   const edges = RELATIONSHIPS.map(edgeOf);
   return {
     graph: {

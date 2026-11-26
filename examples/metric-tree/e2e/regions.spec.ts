@@ -2,8 +2,9 @@
 // node's content, named in a band at its start and parted from the next by a line; a drag of the
 // line changes the two regions beside it and is told once in `regionsMoved`, never past what a
 // region holds; a press on an empty region drags the divided node; `updateNode` divides it anew and
-// a region left out goes with its content; and a region is no node to an edge or a call that names
-// a node (ARCH-regions-are-container-slots, API-edits-report-nested-changes).
+// a region left out goes with its content; Comb tells each region's size as the engine holds it,
+// so that a load of the host's copy draws the same; and a region is no node to an edge or a call
+// that names a node (ARCH-regions-are-container-slots, API-edits-report-division-moves).
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphData, PlacedNodeData } from "comb";
 import { clickWorld, dragWorld, loaded, node, open, pagePoint, selections, told } from "./shared";
@@ -70,7 +71,7 @@ async function topOf(page: Page) {
 test("an activity divided into partitions, one divided again, draws their boxes tiling the part below its content, their bands, and their lines", async ({
   page,
 }) => {
-  // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes, G-16
+  // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves, G-16
   await open(page);
   await loaded(page, ACTIVITY);
   const top = await topOf(page);
@@ -116,7 +117,7 @@ test("an activity divided into partitions, one divided again, draws their boxes 
 test("a drag of the line before a partition changes it and its neighbour, keeps what it holds in the world, tells one regionsMoved, and stops at what it holds", async ({
   page,
 }) => {
-  // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes, G-16
+  // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves, G-16
   await open(page);
   await loaded(page, ACTIVITY);
   const top = await topOf(page);
@@ -167,6 +168,79 @@ test("a drag of the line before a partition changes it and its neighbour, keeps 
   ).toBe("row-resize");
 });
 
+test("a drag of the line between regions one above the other moves it with the pointer", async ({
+  page,
+}) => {
+  // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves, G-16
+  await open(page);
+  await loaded(page, ACTIVITY);
+  const top = await topOf(page);
+  // The line below `p2a`, 80 high below the band of 24 of the middle partition, 20 down.
+  await dragWorld(page, [175, top + 104], [175, top + 124]);
+  const boxes = await drawnBoxes(page);
+  expect(boxes.p2a).toMatchObject({ y: top + 24, height: 100 });
+  expect(boxes.p2b).toMatchObject({ y: top + 124, height: 40 });
+  expect(await toldOf(page, "regionsMoved")).toEqual([
+    {
+      kind: "regionsMoved",
+      by: "user",
+      node: "act",
+      regions: [
+        { id: "p2a", size: 100 },
+        { id: "p2b", size: 40 },
+      ],
+      moved: [],
+    },
+  ]);
+});
+
+test("a drag of the line after a region its own regions grew past its size moves it with the pointer", async ({
+  page,
+}) => {
+  // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves, G-16
+  // `r0` of 30, divided across into two of 50, is laid out 100 wide; `r1` takes the rest.
+  const grown: GraphData = {
+    nodes: [
+      {
+        ...node("act", 0, 0),
+        width: 300,
+        height: 200,
+        divide: "across",
+        regions: [
+          {
+            id: "r0",
+            size: 30,
+            line: "solid",
+            divide: "across",
+            regions: [
+              { id: "a", size: 50, line: "solid" },
+              { id: "b", size: 50, line: "solid" },
+            ],
+          },
+          { id: "r1", size: 50, line: "solid" },
+        ],
+      },
+    ],
+    edges: [],
+  };
+  await open(page);
+  await loaded(page, grown);
+  const loadedBoxes = await drawnBoxes(page);
+  const top = loadedBoxes.r0!.y;
+  expect(loadedBoxes.r0).toMatchObject({ x: 0, width: 100 });
+  await dragWorld(page, [100, top + 60], [120, top + 60]);
+  const boxes = await drawnBoxes(page);
+  expect(boxes.r0).toMatchObject({ x: 0, width: 120 });
+  expect(boxes.r1).toMatchObject({ x: 120, width: 180 });
+  expect((await toldOf(page, "regionsMoved")).at(-1)).toMatchObject({
+    regions: [
+      { id: "r0", size: 120 },
+      { id: "b", size: 70 },
+      { id: "r1", size: 180 },
+    ],
+  });
+});
+
 test("a press on a partition where no node lies drags the activity with its partitions and what they hold", async ({
   page,
 }) => {
@@ -188,7 +262,7 @@ test("a press on a partition where no node lies drags the activity with its part
 test("a resize of the activity at its right side widens the last partition and tells it in nodeResized", async ({
   page,
 }) => {
-  // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes, G-15
+  // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves, G-15
   await open(page);
   await loaded(page, ACTIVITY);
   const top = await topOf(page);
@@ -215,7 +289,7 @@ test("a resize of the activity at its right side widens the last partition and t
 test("a node dropped from one partition into another lies in it, told once with the partition", async ({
   page,
 }) => {
-  // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes, G-14
+  // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves, G-14
   await open(page);
   await loaded(page, ACTIVITY);
   const top = await topOf(page);
@@ -225,10 +299,10 @@ test("a node dropped from one partition into another lies in it, told once with 
   ]);
 });
 
-test("updateNode with partitions that leave two out removes their content and tells it, and the others take the patch's sizes, the last the rest", async ({
+test("updateNode with partitions that leave two out removes their content and tells it, and the others take the patch's sizes, the last the rest, told by the size it holds", async ({
   page,
 }) => {
-  // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes, G-16
+  // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves, G-16
   await open(page);
   await loaded(page, ACTIVITY);
   const top = await topOf(page);
@@ -250,7 +324,9 @@ test("updateNode with partitions that leave two out removes their content and te
         divide: "across",
         regions: [
           { id: "p3", name: "Three", size: 120, line: "solid" },
-          { id: "p4", size: 180, line: [4, 4] },
+          // The size it holds, not the rest it is drawn at, so that a load of the host's copy
+          // lays it out alike.
+          { id: "p4", size: 50, line: [4, 4] },
         ],
       },
     },
@@ -267,7 +343,7 @@ test("updateNode with partitions that leave two out removes their content and te
 test("an edge whose end names a region, and removeNodes and updateNode naming one, are refused and the graph stays as it was", async ({
   page,
 }) => {
-  // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes, Q-7
+  // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves, Q-7
   await open(page);
   await loaded(page, ACTIVITY);
   const before = await drawnBoxes(page);
@@ -312,7 +388,7 @@ test("an edge whose end names a region, and removeNodes and updateNode naming on
 test("a node is refused in a divided partition by a load, by addNode, and by a drop on its band", async ({
   page,
 }) => {
-  // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes
+  // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves
   await open(page);
   await loaded(page, ACTIVITY);
   const top = await topOf(page);
@@ -372,7 +448,7 @@ test("a node is refused in a divided partition by a load, by addNode, and by a d
 test("updateNode into no regions, or a division without regions, leaves the activity undivided and no container", async ({
   page,
 }) => {
-  // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes
+  // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves
   for (const patch of [{ regions: [] }, { divide: "down" as const }]) {
     await open(page);
     await loaded(page, ACTIVITY);
@@ -416,10 +492,148 @@ test("updateNode lays the partitions out from the activity's data width, as a lo
   expect(updated.act).toMatchObject({ width: 300 });
 });
 
+/** An activity 300 × 200, divided across into a partition of 100, divided down into one of 30,
+ *  and one of 50: each of the regions of 30 and 50 takes the rest of what it divides. */
+const RESTING: GraphData = {
+  nodes: [
+    {
+      ...node("act", 0, 0),
+      width: 300,
+      height: 200,
+      resizable: true,
+      divide: "across",
+      regions: [
+        {
+          id: "p1",
+          size: 100,
+          line: "solid",
+          divide: "down",
+          regions: [{ id: "p1a", size: 30, line: "solid" }],
+        },
+        { id: "p2", size: 50, line: "solid" },
+      ],
+    },
+  ],
+  edges: [],
+};
+
+/** The boxes drawn now, and those a load of the example's copy, kept from `onChange`, draws. */
+async function drawnAndReloaded(page: Page) {
+  const drawn = await drawnBoxes(page);
+  await page.evaluate(() => window.useGraph(window.exampleGraph()));
+  return [drawn, await drawnBoxes(page)];
+}
+
+test("what Comb tells of the regions after a patch of content, a drag of a line, and a resize loads again to the same picture", async ({
+  page,
+}) => {
+  // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves, G-16
+  await open(page);
+  await loaded(page, RESTING);
+  // Content of five rows lowers the partitions; the region of 30 is laid out from its size, so the
+  // activity stays 200 high.
+  await page.evaluate(() =>
+    window.comb.updateNode("act", {
+      content: [
+        [{ kind: "text", role: "title", text: "act" }],
+        ...["one", "two", "three", "four"].map((text) => [
+          { kind: "text" as const, role: "body" as const, text },
+        ]),
+      ],
+    }),
+  );
+  const [patched, again] = await drawnAndReloaded(page);
+  expect(patched).toEqual(again);
+  expect(patched!.act).toMatchObject({ height: 200 });
+  const top = await topOf(page);
+  expect(top).toBeGreaterThan(64);
+  // The line between the partitions, from 100 to 150: each takes the extent it is drawn at.
+  await dragWorld(page, [100, top + 60], [150, top + 60]);
+  expect(await toldOf(page, "regionsMoved")).toMatchObject([
+    {
+      regions: [
+        { id: "p1", size: 150 },
+        { id: "p2", size: 150 },
+      ],
+    },
+  ]);
+  const [dragged, draggedAgain] = await drawnAndReloaded(page);
+  expect(dragged).toEqual(draggedAgain);
+  // A resize at the right side, 50 wider: the last partition takes it.
+  const height = (await drawnBoxes(page)).act!.height;
+  await clickWorld(page, 200, top + 60);
+  await dragWorld(page, [300, height / 2], [350, height / 2]);
+  expect(await toldOf(page, "nodeResized")).toMatchObject([
+    { width: 350, regions: [{ id: "p2", size: 200 }] },
+  ]);
+  const [resized, resizedAgain] = await drawnAndReloaded(page);
+  expect(resized).toEqual(resizedAgain);
+  expect(resized!.p2).toMatchObject({ x: 150, width: 200 });
+});
+
+/** Presses at the world point `from`, drags to `out`, back to `from`, and releases there. */
+async function dragOutAndBack(page: Page, from: [number, number], out: [number, number]) {
+  const [a, b] = [await pagePoint(page, ...from), await pagePoint(page, ...out)];
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await page.mouse.move(b.x, b.y, { steps: 8 });
+  await page.mouse.move(a.x, a.y, { steps: 8 });
+  await page.mouse.up();
+}
+
+test("a resize of a divided node out and back to the box it began at tells the last region's size, the extent it took the rest at", async ({
+  page,
+}) => {
+  // Verifies: API-edits-report-division-moves, ARCH-regions-are-container-slots, G-15
+  await open(page);
+  await loaded(page, RESTING);
+  const top = await topOf(page);
+  const before = await drawnBoxes(page);
+  await clickWorld(page, 200, top + 60);
+  await dragOutAndBack(page, [300, 100], [350, 100]);
+  // The box ends where it began, but the partition of 50 now holds the extent of 200 it shows.
+  expect(await drawnBoxes(page)).toEqual(before);
+  expect(await toldOf(page, "nodeResized")).toEqual([
+    {
+      kind: "nodeResized",
+      by: "user",
+      id: "act",
+      x: 0,
+      y: 0,
+      width: 300,
+      height: 200,
+      moved: [],
+      regions: [{ id: "p2", size: 200 }],
+    },
+  ]);
+});
+
+test("a drag of a line out and back to where it began tells the last region's size, the extent it took the rest at", async ({
+  page,
+}) => {
+  // Verifies: API-edits-report-division-moves, ARCH-regions-are-container-slots, G-16
+  await open(page);
+  await loaded(page, RESTING);
+  const top = await topOf(page);
+  const before = await drawnBoxes(page);
+  await dragOutAndBack(page, [100, top + 60], [150, top + 60]);
+  // The line ends where it began, but the partition of 50 now holds the extent of 200 it shows.
+  expect(await drawnBoxes(page)).toEqual(before);
+  expect(await toldOf(page, "regionsMoved")).toEqual([
+    {
+      kind: "regionsMoved",
+      by: "user",
+      node: "act",
+      regions: [{ id: "p2", size: 200 }],
+      moved: [],
+    },
+  ]);
+});
+
 test("a deletion of the activity asks canDelete about no region and tells none removed", async ({
   page,
 }) => {
-  // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes
+  // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves
   await open(page);
   await loaded(page, ACTIVITY);
   const top = await topOf(page);
@@ -443,7 +657,7 @@ test("a deletion of the activity asks canDelete about no region and tells none r
 test("a drag of a line between partitions divided again the same way tells the inner regions at the line too", async ({
   page,
 }) => {
-  // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes
+  // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves
   await open(page);
   await loaded(page, {
     nodes: [
@@ -528,7 +742,7 @@ test("a chain of regions ten thousand deep loads and draws without a walk that r
 test("updateNode that divides a kept partition moves what it held into its first region at its world position, told as the host's nodeMoved", async ({
   page,
 }) => {
-  // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes
+  // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves
   // The human's decision of 2026-11-18: nothing goes, `a` lies in `p3a` where it lay.
   await open(page);
   await loaded(page, ACTIVITY);
@@ -564,4 +778,60 @@ test("updateNode that divides a kept partition moves what it held into its first
     container: "p3a",
   });
   expect(Object.keys(after)).toContain("b");
+});
+
+test("updateNode that divides a container moves each node it held into the region at its position where it lay, else the first, told as the host's nodeMoved", async ({
+  page,
+}) => {
+  // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves,
+  // API-edits-report-division-moves
+  // The maintainer's decisions of 2026-11-25: a divided node holds its regions alone, so what `c`
+  // held directly goes, where it lay, into the region at its position, as a drop there would:
+  // `x` into `r1a`, the region of `r1`, and `y` into `r2`; `z`, beside every region, into the
+  // first, `r1a`.
+  await open(page);
+  await loaded(page, {
+    nodes: [
+      { ...node("c", 0, 0), width: 300, height: 200, isContainer: true },
+      { id: "x", x: 10, y: 150, width: 20, content: [], container: "c" },
+      { id: "y", x: 200, y: 150, width: 20, content: [], container: "c" },
+      { id: "z", x: 500, y: 150, width: 20, content: [], container: "c" },
+    ],
+    edges: [],
+  });
+  const before = await drawnBoxes(page);
+  await page.evaluate(() =>
+    window.comb.updateNode("c", {
+      divide: "across",
+      regions: [
+        {
+          id: "r1",
+          size: 150,
+          line: "solid",
+          divide: "down",
+          regions: [{ id: "r1a", size: 80, line: "solid" }],
+        },
+        { id: "r2", size: 150, line: "solid" },
+      ],
+    }),
+  );
+  const kinds = (await told<{ kind: string }>(page)).map(({ kind }) => kind);
+  expect(kinds).toEqual(["nodeUpdated", "nodeMoved", "nodeMoved", "nodeMoved"]);
+  const after = await drawnBoxes(page);
+  const moved = await toldOf(page, "nodeMoved");
+  for (const [id, into] of [
+    ["x", "r1a"],
+    ["y", "r2"],
+    ["z", "r1a"],
+  ] as const) {
+    expect([after[id]!.x, after[id]!.y]).toEqual([before[id]!.x, before[id]!.y]);
+    expect(moved.find((change) => (change as { id?: string }).id === id)).toEqual({
+      kind: "nodeMoved",
+      by: "host",
+      id,
+      x: before[id]!.x - after[into]!.x,
+      y: before[id]!.y - after[into]!.y,
+      container: into,
+    });
+  }
 });

@@ -205,7 +205,7 @@ test("an end on an edge that ends on an edge, on itself, or on its own edge is r
 test("removing the extend, or a use case at its end, removes the anchor too and names it", async ({
   page,
 }) => {
-  // Verifies: API-edges-dock-nodes-or-edges, API-edits-report-nested-changes
+  // Verifies: API-edges-dock-nodes-or-edges, API-edits-report-division-moves
   await open(page);
   await loaded(page, ANCHORED);
   await page.evaluate(() => window.comb.removeEdges(["extend"]));
@@ -229,7 +229,7 @@ test("removing the extend, or a use case at its end, removes the anchor too and 
 test("Delete on the selected extend names the extend and its anchor to canDelete", async ({
   page,
 }) => {
-  // Verifies: API-edges-dock-nodes-or-edges, API-edits-report-nested-changes, G-4
+  // Verifies: API-edges-dock-nodes-or-edges, API-edits-report-division-moves, G-4
   await open(page);
   await loaded(page, ANCHORED);
   await page.evaluate(() => {

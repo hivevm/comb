@@ -45,7 +45,7 @@ skimmed. The design revision drops what prevented nothing
   decide from the graph as it stands then, not from what was found before the call: a slot looked
   up before host code ran may hold another item after it. A veto during whose call Comb tells a
   change to `onChange` ends its gesture with nothing done, a rule `api/editors.ts` writes once for
-  every veto ([API-edits-report-nested-changes](adr/API-edits-report-nested-changes.md)).
+  every veto ([API-edits-report-division-moves](adr/API-edits-report-division-moves.md)).
 - **A refusal added at the bridge is traced to the shell's callers.** Before an export refuses a
   value it took until now, each caller in the shell that can hand it that value from inputs the
   host may give, such as an extreme viewport, either guards it or handles the refusal. A browser
@@ -94,6 +94,12 @@ skimmed. The design revision drops what prevented nothing
   holds, by a checked conversion or an `expect` whose reason names what bounds the value, since a
   narrowing written without a look at its range can lose what Q-4 or Q-7 needs. The lint makes the
   author look; it does not check the value after the narrowing, which this entry still asks.
+- **A graph mutation's failure is handled.** Where a mutation of the graph returns a `Result`, the
+  caller refuses the call with it, or calls `unreachable!` with the reason the mutation cannot
+  fail there, such as a slot just built. Clippy's `let_underscore_must_use`, denied in the
+  workspace, refuses a result dropped by `let _ =`, since a dropped one hides the failure from
+  every test that does not look at its effect. The lint does not see `.ok()` or `drop`, which
+  this entry still forbids.
 - **Cite the clause a test decides.** A `Verifies:` names the ADR or criterion whose text says what
   the test asserts, read in that text, not the one nearest the code; a test or check that decides
   none says so. A citation of a neighbour passes the traceability check and tells the next reader

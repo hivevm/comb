@@ -1,6 +1,6 @@
 // The edits of the graph: every method of `Comb` that changes it, and the user's connection and
 // deletion, each run through `edit`, which holds their order (Q-7,
-// API-edits-report-nested-changes, ARCH-one-workspace-per-example); and `heightOf`, which reads
+// API-edits-report-division-moves, ARCH-one-workspace-per-example); and `heightOf`, which reads
 // and checks as `addNode` does and changes nothing (REN-node-content-and-hits). Refuse once the
 // engine is lost; read the host's input once, whole, into plain data; refuse what the store's map
 // shows, as it stands after the read, since a getter of the input is the host's code and may have
@@ -9,7 +9,7 @@
 // record the change, by whom it names. The user's edits come after the host application's veto,
 // asked here for each, the connection, the deletion, and the move into a container, and a veto
 // during whose call the store records a change, which Comb tells to `onChange`, ends its gesture
-// with nothing done (API-edits-report-nested-changes, API-edits-report-nested-changes).
+// with nothing done (API-edits-report-division-moves).
 import {
   NO_SLOT,
   refuseIfLost,
@@ -31,11 +31,8 @@ import type {
   NodeShape,
   NodeData,
   NodePatch,
-  NodeSizing,
-  NodeView,
   Divided,
   KeptEdge,
-  KeptGraph,
 } from "../store";
 import { labelUnits } from "../store";
 import {
@@ -183,19 +180,8 @@ function load({ store, bridge, limits }: Editing, graph: GraphData): void {
       }
       return bridge.loadGraph(snapshot);
     },
-    record: (state, { kept, idUnits }) => state.load(widened(kept, bridge), idUnits),
+    record: (state, { kept, idUnits }) => state.load(kept, idUnits),
   });
-}
-
-/** `kept` with each node divided into regions as wide as the engine made it to hold them
- *  (ARCH-regions-are-container-slots). */
-function widened(kept: KeptGraph, bridge: Bridge): KeptGraph {
-  if (!kept.nodes.some((node) => node.divide !== undefined)) return kept;
-  const { sizes } = bridge.nodeBuffers();
-  const nodes = kept.nodes.map((node, slot) =>
-    node.divide === undefined ? node : { ...node, width: sizes[slot * 2]! },
-  );
-  return { ...kept, nodes };
 }
 
 /** `heightOf`: the content, width, and node shape read once as the node `addNode` reads, named
@@ -225,7 +211,7 @@ function updateNode({ store, bridge, limits }: Editing, id: string, patch: unkno
       const divides = "regions" in plain || "divide" in plain;
       const old = divides ? [...bridge.regionsOf(slot)] : [];
       const kept = divides ? keptOf(plain.regions, old, state) : new Uint32Array();
-      return { slot, plain, old, kept, moving: movingOf(plain.regions, kept, state) };
+      return { slot, plain, old, kept, held: divides ? heldIn(id, old, state) : [] };
     },
     idUnits(plain, state) {
       const old = [...bridge.regionsOf(state.slots.get(id)!)];
@@ -233,8 +219,7 @@ function updateNode({ store, bridge, limits }: Editing, id: string, patch: unkno
       return state.idUnits - before + idsIn(plain.regions).reduce((n, i) => n + i.length, 0);
     },
     engine: ({ slot, plain, kept }) => bridge.updateNode(slot, id, plain, kept),
-    record: (state, { slot, plain, old, moving }, removal) => {
-      const sizing = sizingOf(plain);
+    record: (state, { slot, plain, old, held }, removal) => {
       const divided = old.length > 0 || "regions" in plain || "divide" in plain;
       // What went with a region the patch left out goes as the host's removal, before the change
       // of the node (ARCH-regions-are-container-slots, *Removing a region*).
@@ -243,26 +228,14 @@ function updateNode({ store, bridge, limits }: Editing, id: string, patch: unkno
         state.removeNodes([...removal.nodes], [...removal.edges], "host");
       const after = store.getState();
       const anew = divided ? dividedAnew(plain, after, bridge, slot, old) : undefined;
-      after.updateNode(id, "content" in plain, sizing, anew);
-      // What a kept region divided anew held now lies in its first region, the host's move.
-      for (const { node, into } of moving) store.getState().nodeMoved(node, into, "host");
+      after.updateNode({ id, patch: plain, divided: anew });
+      // What the division moved into another region, where the engine put it, the host's move.
+      for (const { node, into } of movedBy(bridge, store.getState(), held))
+        store.getState().nodeMoved(node, into, "host");
       // The regions moved, or a border node, which a query the scene keeps does not survive.
-      if (divided || sizing.side || sizing.offset) store.getState().positionsMoved();
+      if (divided || "side" in plain || "offset" in plain) store.getState().positionsMoved();
     },
   });
-}
-
-/** What the patch `plain` set of a node's size, as the store keeps it, and whether it set a border
- *  node's side or offset, which the engine keeps (ARCH-border-nodes-ride-sides). */
-function sizingOf(plain: PlainPatch): NodeSizing {
-  const { height, resizable, outline } = plain;
-  return {
-    ...("height" in plain ? { height } : {}),
-    ...("resizable" in plain ? { resizable } : {}),
-    ...("outline" in plain ? { outline } : {}),
-    ...("side" in plain ? { side: true as const } : {}),
-    ...("offset" in plain ? { offset: true as const } : {}),
-  };
 }
 
 /** How the patch `plain` divided the node in `slot` anew, which held the regions in `old`: in
@@ -276,7 +249,6 @@ function dividedAnew(
   old: readonly number[],
 ): Divided {
   return {
-    width: bridge.nodeBuffers().sizes[slot * 2]!,
     divide: plain.divide ?? state.nodes[slot]!.divide,
     regions: (plain.regions || []) as RegionRead[],
     slots: [...bridge.regionsOf(slot)],
@@ -297,32 +269,41 @@ function idsIn(regions: unknown): string[] {
   return (regions as RegionRead[]).map(({ id }) => id);
 }
 
-/** The nodes a kept region holds that the patch `regions` divides into regions of its own, each
- *  with the region it moves into: its first region, to any depth, by the human's decision of
- *  2026-11-18 (ARCH-regions-are-container-slots); `kept` names the region the node has per region
- *  of the patch. */
-function movingOf(
-  regions: unknown,
-  kept: Uint32Array,
+/** The nodes that lie directly in the node `id` or in one of its regions `old`, no regions, each
+ *  with the identifier of what holds it: what a division anew may move into another region. */
+function heldIn(
+  id: string,
+  old: readonly number[],
   state: GraphState,
+): { node: string; from: string }[] {
+  const holders = new Set([id, ...old.map((slot) => state.nodes[slot]!.id)]);
+  const held: { node: string; from: string }[] = [];
+  for (const node of state.nodes)
+    if (node && !node.region && node.container !== undefined && holders.has(node.container))
+      held.push({ node: node.id, from: node.container });
+  return held;
+}
+
+/** Of `held`, the nodes a division anew left in the graph in another container than the one that
+ *  held them, each with the region the engine put it in (`containerOf`), as `state` names it once
+ *  it took the division: what a kept region divided anew held, which goes into its first region
+ *  (the human's decision of 2026-11-18), and what the node held directly, which goes into the
+ *  region at its position, else the first (the maintainer's decisions of 2026-11-25,
+ *  ARCH-regions-are-container-slots). One rule, the engine's, for both. */
+function movedBy(
+  bridge: Bridge,
+  state: GraphState,
+  held: readonly { node: string; from: string }[],
 ): { node: string; into: string }[] {
-  if (!Array.isArray(regions)) return [];
-  const read = regions as RegionRead[];
-  const first = new Map<number, number>();
-  read.forEach(({ of }, i) => {
-    if (of !== undefined && !first.has(of)) first.set(of, i);
-  });
-  const moving: { node: string; into: string }[] = [];
-  kept.forEach((slot, i) => {
-    if (slot === NO_SLOT || !first.has(i)) return;
-    let leaf = i;
-    while (first.has(leaf)) leaf = first.get(leaf)!;
-    const from = state.nodes[slot]!.id;
-    for (const node of state.nodes)
-      if (node && !node.region && node.container === from)
-        moving.push({ node: node.id, into: read[leaf]!.id });
-  });
-  return moving;
+  const moved: { node: string; into: string }[] = [];
+  for (const { node, from } of held) {
+    const slot = state.slots.get(node);
+    if (slot === undefined) continue;
+    const container = bridge.containerOf(slot);
+    const into = container === undefined ? undefined : state.nodes[container]?.id;
+    if (into !== undefined && into !== from) moved.push({ node, into });
+  }
+  return moved;
 }
 
 /** Per region of the patch `regions`, depth first, the slot of the region of its identifier in
@@ -338,34 +319,14 @@ function keptOf(regions: unknown, old: readonly number[], state: GraphState): Ui
   });
 }
 
-/** What `invalidContainer` says a node's container has to be, as a load says it
- *  (ARCH-engine-edits-nested-graph). */
-const A_NODE_OF_THE_GRAPH = "the identifier of a node of the graph";
-const A_MARKED_CONTAINER = "the identifier of a node marked isContainer";
-const AN_UNDIVIDED =
-  "the identifier of a container or a region, not of a node divided into regions";
-
-/** What `invalidContainer` says a container has to be where `view` is none, or none where it may
- *  hold a node: a node or a region divided into regions holds its regions alone
- *  (ARCH-regions-are-container-slots, *Regions in a slot*). */
-function refusedAs(view: NodeView | undefined): string | undefined {
-  if (view === undefined) return A_NODE_OF_THE_GRAPH;
-  if ((view.divide ?? view.region?.divide) !== undefined) return AN_UNDIVIDED;
-  return view.isContainer === true ? undefined : A_MARKED_CONTAINER;
-}
-
-/** The slot of the container the node `snapshot` names in the map of `state`, or none on the
- *  canvas; refuses a container the graph does not hold, or one that is no container, as a load
- *  refuses it (API-edits-report-nested-changes). A container that is no string the bridge refuses
- *  by its field. */
-function containerOf(snapshot: unknown, state: GraphState): number | undefined {
-  const { id, container } = snapshot as { id?: unknown; container?: unknown };
+/** The slot of the container the node `snapshot` names in the map of `state`, `NO_SLOT` where
+ *  the map holds no such identifier, or none on the canvas. The bridge crate refuses a container
+ *  by the one rule a load refuses it by, `NO_SLOT` as no node of the graph
+ *  (API-edits-report-division-moves), and a container that is no string by its field. */
+function containerSlotOf(snapshot: unknown, state: GraphState): number | undefined {
+  const { container } = snapshot as { container?: unknown };
   if (typeof container !== "string") return undefined;
-  const slot = state.slots.get(container);
-  const expected = refusedAs(slot === undefined ? undefined : state.nodes[slot]!);
-  if (expected === undefined) return slot;
-  const node = typeof id === "string" ? id : "";
-  throw new GraphDataError({ kind: "invalidContainer", node, field: "container", expected });
+  return state.slots.get(container) ?? NO_SLOT;
 }
 
 /** The slot of the node the border node `snapshot` names by its `attachedTo` in the map of
@@ -381,9 +342,10 @@ function attachedOf(snapshot: unknown, state: GraphState): number | undefined {
   throw new GraphDataError({ kind: "missingNode", borderNode, node: attachedTo });
 }
 
-/** `addNode`: an identifier the map holds already refused, and a container it does not hold as
- *  one; the engine chooses the slot the store keeps the node in, and places it relative to its
- *  container (ARCH-engine-edits-nested-graph). */
+/** `addNode`: an identifier the map holds already refused; the bridge refuses a container that
+ *  cannot hold the node, one the map does not hold among them; the engine chooses the slot the
+ *  store keeps the node in, and places it relative to its container
+ *  (ARCH-engine-edits-nested-graph). */
 function addNode({ store, bridge, limits }: Editing, node: unknown): void {
   edit(store, bridge, {
     read: () => nodeSnapshotOf(node, limits),
@@ -394,7 +356,7 @@ function addNode({ store, bridge, limits }: Editing, node: unknown): void {
         if (typeof named === "string" && state.slots.has(named))
           throw new GraphDataError({ kind: "duplicateNode", node: named });
       const attached = attachedOf(plain.snapshot, state);
-      return { ...plain, container: containerOf(plain.snapshot, state), attached };
+      return { ...plain, container: containerSlotOf(plain.snapshot, state), attached };
     },
     idUnits: (plain, state) => state.idUnits + plain.idUnits,
     engine: ({ snapshot, container, attached }) => bridge.addNode(snapshot, container, attached),
@@ -403,10 +365,7 @@ function addNode({ store, bridge, limits }: Editing, node: unknown): void {
       const regions = [...bridge.regionsOf(slot)];
       // The bridge took the regions, each of its fields of its type, in one list.
       const read = ((snapshot as { regions?: unknown }).regions ?? []) as RegionRead[];
-      const { sizes } = bridge.nodeBuffers();
-      // As wide as the engine made it to hold its regions.
-      const taken = { ...(snapshot as unknown as NodeData), width: sizes[slot * 2]! };
-      state.addNode(taken, slot, { read, slots: regions });
+      state.addNode(snapshot as unknown as NodeData, slot, { read, slots: regions });
       // Regions laid out in the engine, which a query the scene keeps does not survive.
       if (regions.length > 0) store.getState().positionsMoved();
     },
@@ -550,7 +509,7 @@ function removeEdges({ store, bridge, limits }: Editing, ids: unknown, by: By): 
 }
 
 /** The host application's vetoes of the user's connection, deletion, and move into a container
- *  (API-edits-report-nested-changes, API-edits-report-nested-changes). */
+ *  (API-edits-report-division-moves). */
 export interface Vetoes {
   readonly canConnect?: ((proposal: Proposal) => unknown) | undefined;
   readonly canDelete?: ((deletion: Deletion) => unknown) | undefined;
@@ -559,7 +518,7 @@ export interface Vetoes {
 
 /** What the veto `ask` answers, or `undefined` where the store recorded a change of the graph
  *  during its call, a change Comb tells to `onChange`: its answer was given about a graph that is
- *  gone, so the gesture ends with nothing done, and no error (API-edits-report-nested-changes).
+ *  gone, so the gesture ends with nothing done, and no error (API-edits-report-division-moves).
  *  An error it throws is
  *  thrown on. */
 function answerOf(store: GraphStore, ask: () => unknown): unknown {
@@ -571,7 +530,7 @@ function answerOf(store: GraphStore, ask: () => unknown): unknown {
 /** The user's move of a node into a container, or onto the canvas, after the host application's
  *  `canMoveInto`, without which it is allowed: the engine puts the node there at the world
  *  position it has, and the store records `nodeMoved` with its container
- *  (API-edits-report-nested-changes). */
+ *  (API-edits-report-division-moves). */
 function moveIntoOf({ store, bridge }: Editing, canMoveInto: Vetoes["canMoveInto"]): MoveInto {
   return ({ node, container }) => {
     if (canMoveInto && answerOf(store, () => canMoveInto({ node, container })) !== true)

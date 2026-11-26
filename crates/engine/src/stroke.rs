@@ -18,7 +18,7 @@
 //! grown by the stroke's width, is drawn as its chord, unflattened. A segment of the flattened
 //! path that meets the grown rectangle with an end outside it is split where it enters and leaves
 //! it, so that what the rectangle shows rounds by its distance from the query's origin, not by
-//! that of ends far beyond it (API-bridge-columns-carry-nesting). Each edge's floor, its chord,
+//! that of ends far beyond it (API-bridge-columns-keep-no-size). Each edge's floor, its chord,
 //! or its arrowhead alone where that is its full mesh, is reserved before the first edge is meshed;
 //! in slot order, an edge is meshed in full while it fits beside the floors of the edges still to
 //! come, and from the first that does not, it and every later edge are drawn as their floors, and
@@ -251,7 +251,7 @@ pub struct Mesh {
     /// Per edge of the last build, whether its full mesh is its arrowhead alone.
     arrowheads: Vec<bool>,
     /// The world point the positions of the last build are relative to
-    /// (API-bridge-columns-carry-nesting).
+    /// (API-bridge-columns-keep-no-size).
     origin: Point,
 }
 
@@ -390,19 +390,19 @@ impl Mesh {
         let Point { x, y } = self.origin;
         #[expect(
             clippy::cast_possible_truncation,
-            reason = "less the query's origin and only then rounded (API-bridge-columns-carry-nesting): a vertex the split \
+            reason = "less the query's origin and only then rounded (API-bridge-columns-keep-no-size): a vertex the split \
                       keeps near the rectangle rounds by its distance from it, and an end left far \
                       beyond it keeps the rounding REN-virtualized-nested-scene records, which Q-4 allows past 2^21 \
                       px; a vertex lies within three times `WORLD_LIMIT` of the world's origin, a \
                       stroke's width within `PIXEL_LIMIT`'s, and the origin of a rectangle that \
-                      finds it within 2^127 of it (API-bridge-columns-carry-nesting), within f32"
+                      finds it within 2^127 of it (API-bridge-columns-keep-no-size), within f32"
         )]
         self.positions
             .extend([(at.x - x) as f32, (at.y - y) as f32]);
         #[expect(
             clippy::cast_possible_truncation,
             reason = "the distance along the path crosses as f32 from the source, rounded by up to \
-                      2^-24 of itself, the residual API-bridge-columns-carry-nesting and REN-virtualized-nested-scene record; Q-4 bounds \
+                      2^-24 of itself, the residual API-bridge-columns-keep-no-size and REN-virtualized-nested-scene record; Q-4 bounds \
                       dashes at 2^21 px along the path, where that is under 0.5 px; a path between \
                       nodes within `WORLD_LIMIT` is far shorter than f32::MAX"
         )]

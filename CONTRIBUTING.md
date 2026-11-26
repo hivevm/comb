@@ -28,8 +28,9 @@ Authority runs **specification → accepted ADRs → task**
    ([§5](AGENTS.md#5-quality-bar--definition-of-done)). It runs the same checks CI runs on every
    pull request, and the repository's git hooks run them for you ([Git hooks](#git-hooks)). They
    need bash 4.4 or later and coreutils, already in the Dev Container. Only the shell lint
-   additionally needs [ShellCheck](https://www.shellcheck.net), which the Dev Container installs;
-   elsewhere it skips itself where that is missing, and CI runs it always. On macOS, whose bash
+   additionally needs [ShellCheck](https://www.shellcheck.net). The Dev Container and CI install
+   the one release `.devcontainer/install-shellcheck.sh` names, and the lint prints the version it
+   ran; elsewhere it skips itself where that is missing, and CI runs it always. On macOS, whose bash
    is 3.2, install a current one, such as Homebrew's. On Windows they run under Git Bash in a
    clone made with `git clone -c core.symlinks=true`, so that `.claude/skills/` holds links and
    not copies; links need the Developer Mode of Windows. `ln -s` makes a link there under
@@ -53,7 +54,7 @@ docs/ARCHITECTURE.md  # the system as it currently stands
 docs/adr/             # Architecture Decision Records (+ template): the template's NUC- base,
                       # held by its blob list NUC.blobs, and the project's own
 crates/engine/        # the engine's pure Rust core: geometry over values and buffers (ARCH-one-workspace-per-example)
-crates/engine-wasm/   # the bridge's Rust side: every WebAssembly export (API-bridge-columns-carry-nesting)
+crates/engine-wasm/   # the bridge's Rust side: every WebAssembly export (API-bridge-columns-keep-no-size)
 packages/comb/        # the library: api, store, interaction, render, bridge
 examples/metric-tree/ # the example host application, with its browser tests (G-9)
 bench/                # the benchmark: the example in Chromium against Q-1 and Q-2, and the baselines

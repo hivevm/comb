@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use super::{CANVAS, Graph, SlotError};
+use super::{CANVAS, Graph, SlotError, TooManySlots};
 use crate::geometry::{Point, Rect};
 use crate::shape::BAR_HEIGHT;
 
@@ -42,10 +42,13 @@ impl Axis {
 /// What a node slot is of regions: whether it is a region, whether a region has a name and so a
 /// band, the direction it is divided in, or none, and for a divided node the height of its
 /// content, below which its regions lie, the width its data gives, from which `arrange` grows it
-/// to what its regions need, and whether only its division made it a container.
+/// to what its regions need, and whether only its division made it a container; for a region its
+/// size along the direction of the division it lies in, held apart from its extent, which the last
+/// region of a division stretches to the rest.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(super) struct Division {
     pub(super) region: bool,
+    pub(super) size: f32,
     pub(super) band: bool,
     pub(super) divide: Option<Axis>,
     pub(super) top: f32,
@@ -68,6 +71,94 @@ impl From<SlotError> for LineError {
     fn from(error: SlotError) -> Self {
         Self::Slot(error)
     }
+}
+
+/// A region of a division `divide` makes (ARCH-regions-are-container-slots): its size along the
+/// direction of the division it lies in, whether it has a name and so a band, its own division,
+/// which it takes where parts lie in it, the index among the parts of the part it lies in, before
+/// it, or none for one of the node itself, and the region of the node whose content it keeps, or
+/// none.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Part {
+    pub size: f32,
+    pub named: bool,
+    pub divide: Option<Axis>,
+    pub of: Option<usize>,
+    pub keeps: Option<u32>,
+}
+
+/// Where the parts of a division take their slots: `Added`, slots the engine adds, each into what
+/// it divides; or `Built`, the slots a load built for them, one per part in their order, each in
+/// what it divides, the divided node a container for them, which its data marks one where
+/// `marked`.
+#[derive(Clone, Copy, Debug)]
+pub enum RegionSlots<'a> {
+    Added,
+    Built { slots: &'a [u32], marked: bool },
+}
+
+/// What a division changed: the slots of its regions in the order of its parts, and those of the
+/// nodes and the edges that went with the regions the node had, as `remove_nodes` returns them.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Divided {
+    pub regions: Vec<u32>,
+    pub nodes: Vec<u32>,
+    pub edges: Vec<u32>,
+}
+
+/// Why a division was refused: a slot that holds no node, a slot that holds a region, which only
+/// the division of its node divides, more slots than the graph holds, or a part, at `index`, that
+/// lies in no part before it, in a part divided in no direction, or whose built slot does not fit
+/// it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DivideError {
+    Slot(SlotError),
+    Region { slot: u32 },
+    TooManySlots(TooManySlots),
+    Part { index: usize },
+}
+
+impl From<SlotError> for DivideError {
+    fn from(error: SlotError) -> Self {
+        Self::Slot(error)
+    }
+}
+
+impl From<TooManySlots> for DivideError {
+    fn from(error: TooManySlots) -> Self {
+        Self::TooManySlots(error)
+    }
+}
+
+/// Where a node a kept region held lands once the node is divided anew: at its position relative
+/// to the region of its part, or at its world position in a region inside that part.
+#[derive(Clone, Copy, Debug)]
+enum Landing {
+    Relative([f64; 2]),
+    World([f64; 2]),
+}
+
+/// Whether each of `parts` holds parts of its own.
+fn holding(parts: &[Part]) -> Vec<bool> {
+    let mut holds = vec![false; parts.len()];
+    for of in parts.iter().filter_map(|part| part.of) {
+        holds[of] = true;
+    }
+    holds
+}
+
+/// The part of `parts` a node held by the region the part at `index` keeps moves into: that part
+/// where it holds none, else its first part, to any depth (the human's decision of 2026-11-18).
+fn first_leaf(parts: &[Part], holds: &[bool], index: usize) -> usize {
+    let mut at = index;
+    while holds[at] {
+        // A part that holds parts holds one after it, the first of them next in the list.
+        match (at + 1..parts.len()).find(|&next| parts[next].of == Some(at)) {
+            Some(next) => at = next,
+            None => break,
+        }
+    }
+    at
 }
 
 /// The low and the high end of `rect` along `axis`.
@@ -95,6 +186,74 @@ const fn with_span(rect: Rect, axis: usize, ends: [f64; 2]) -> Rect {
 )]
 const fn kept(value: f64) -> f32 {
     value as f32
+}
+
+/// The least box, `width, height`, each of `parts` of the division `divide` of a node needs, in
+/// their order, and the node itself, `top` high above them (ARCH-regions-are-container-slots,
+/// *Division*): a region its band where it is named, at the start of what it divides, and what
+/// its own parts need, at least `LEAST_REGION` a side; what is divided, along its division the sum
+/// of its parts in their order, each at least its size, and across it the most of them. The one
+/// computation of what a division grows a node to, which `arrange` lays out by and the bridge
+/// checks against the world's limit before it divides. Parts that `check_order` refuses refuse it.
+/// `top` must be finite and not negative: the old `needs()` held the node's need at 0 or more,
+/// which this sum keeps only for such a `top`; the bridge's `content_top` never yields another.
+pub fn division_needs(
+    divide: Axis,
+    top: f32,
+    parts: &[Part],
+) -> Result<(Vec<[f64; 2]>, [f64; 2]), DivideError> {
+    check_order(parts)?;
+    // The parts in each part, and in the node, in their order.
+    let mut within: Vec<Vec<usize>> = vec![Vec::new(); parts.len()];
+    let mut top_level = Vec::new();
+    for (index, part) in parts.iter().enumerate() {
+        match part.of {
+            Some(of) => within[of].push(index),
+            None => top_level.push(index),
+        }
+    }
+    // What `holds`, divided by `axis`, needs inside, from `needs` of the parts it holds.
+    let inner = |holds: &[usize], axis: Axis, needs: &[[f64; 2]]| {
+        let (a, b) = (axis.index(), 1 - axis.index());
+        let mut inner = [0.0_f64; 2];
+        for &index in holds {
+            let need = needs[index];
+            inner[a] += f64::from(parts[index].size).max(LEAST_REGION).max(need[a]);
+            inner[b] = inner[b].max(need[b]);
+        }
+        inner
+    };
+    let mut needs = vec![[0.0_f64; 2]; parts.len()];
+    // The deepest first: a part lies after the part it lies in.
+    for (index, part) in parts.iter().enumerate().rev() {
+        let along = part.of.and_then(|of| parts[of].divide).unwrap_or(divide);
+        let band = match (part.named, along) {
+            (false, _) => [0.0; 2],
+            (true, Axis::Down) => [BAND, 0.0],
+            (true, Axis::Across) => [0.0, BAND],
+        };
+        let held = part
+            .divide
+            .map_or([0.0; 2], |axis| inner(&within[index], axis, &needs));
+        // A region is never less than the least region on either side.
+        needs[index] = [0, 1].map(|k| (band[k] + held[k]).max(LEAST_REGION));
+    }
+    let node = inner(&top_level, divide, &needs);
+    Ok((needs, [node[0], f64::from(top) + node[1]]))
+}
+
+/// Refuses `parts` where one lies in no part before it, or in a part that is divided in no
+/// direction, as `Part` at its index.
+fn check_order(parts: &[Part]) -> Result<(), DivideError> {
+    for (index, part) in parts.iter().enumerate() {
+        if part
+            .of
+            .is_some_and(|of| of >= index || parts[of].divide.is_none())
+        {
+            return Err(DivideError::Part { index });
+        }
+    }
+    Ok(())
 }
 
 impl Graph {
@@ -172,17 +331,237 @@ impl Graph {
             .filter(|&s| self.is_region(s))
     }
 
-    /// Divides the node in `slot`, which lies in no divided node, in the direction `divide`, or
-    /// takes its division for none, its regions below its content, `top` high: a node divided is a
-    /// container (ARCH-regions-are-container-slots, *Division*). Its regions are added by
-    /// `add_region`, and `arrange` gives them their boxes. A slot that holds no node refuses the
-    /// call.
-    pub fn divide(&mut self, slot: u32, divide: Option<Axis>, top: f32) -> Result<(), SlotError> {
+    /// Divides the node in `slot` into the regions `parts`, in the direction `divide`, below its
+    /// content, `top` high, in place of the regions it has; or leaves it undivided where `divide`
+    /// or `parts` is none (ARCH-regions-are-container-slots, *Division*). The one operation a
+    /// division takes, in this order:
+    ///
+    /// - what each part `keeps` held directly, nodes and no regions, leaves that region: into the
+    ///   part where it holds no parts, at its position relative to it, else into the first part
+    ///   it holds, to any depth, at its world position (the human's decision of 2026-11-18);
+    /// - what the node held directly, nodes and no regions, goes at its world position into the
+    ///   region that holds that position, as a drop there lands, else into the first part, or that
+    ///   part's first part to any depth (the maintainer's decisions of 2026-11-25);
+    /// - the regions the node had go, with all they still hold and every edge at it
+    ///   (*Removing a region*);
+    /// - the node keeps the width its data gives, from which `arrange` grows it, is a container
+    ///   while divided, and is none again once undivided where only its division made it one;
+    /// - each part takes a slot, `slots` says which, and is marked a region and a container, with
+    ///   a band where it is named, divided where parts lie in it;
+    /// - `arrange` lays the regions out, and what each part keeps lands in it.
+    ///
+    /// Returns the slots of the regions in the order of `parts`, and of the nodes and the edges
+    /// that went. A slot that holds no node, a region, or parts that `check_parts` refuses, refuse
+    /// the call before it changes anything. Past the limit of node slots, which a caller checks
+    /// first, it stops at the part that found no slot. `top` must be finite and not negative, as
+    /// `division_needs` requires.
+    pub fn divide(
+        &mut self,
+        slot: u32,
+        divide: Option<Axis>,
+        top: f32,
+        parts: &[Part],
+        slots: RegionSlots<'_>,
+    ) -> Result<Divided, DivideError> {
         self.nodes_held(&[slot])?;
+        if self.is_region(slot) {
+            return Err(DivideError::Region { slot });
+        }
+        self.check_parts(slot, divide, parts, &slots)?;
+        let divide = divide.filter(|_| !parts.is_empty());
+        let parts = if divide.is_some() { parts } else { &[] };
+        let old = self.regions_of(slot);
+        let holds = holding(parts);
+        let moved = self.take_out_kept(parts, &holds, &old);
+        let tops: Vec<u32> = old
+            .iter()
+            .copied()
+            .filter(|&r| self.container(r) == slot)
+            .collect();
+        let (nodes, edges) = self.remove_nodes(&tops)?;
+        let marked = match slots {
+            RegionSlots::Added => None,
+            RegionSlots::Built { marked, .. } => Some(marked),
+        };
+        self.set_divided(slot, divide, top, marked);
+        let regions = match slots {
+            RegionSlots::Added => self.add_parts(slot, divide, parts)?,
+            RegionSlots::Built { slots, .. } => slots.to_vec(),
+        };
+        for ((&region, part), &holds) in regions.iter().zip(parts).zip(&holds) {
+            self.mark_region(region, part, part.divide.filter(|_| holds));
+        }
+        let direct = self.held_directly(slot, parts);
+        self.arrange(slot);
+        let mut moved = moved;
+        for (held, at) in direct {
+            let point = Point::new(at[0], at[1]);
+            let into = self
+                .region_at(&regions, point)
+                .unwrap_or_else(|| first_leaf(parts, &holds, 0));
+            moved.push((into, held, Landing::World(at)));
+        }
+        for (index, held, landing) in moved {
+            let region = regions[index];
+            let at = &self.positions[region as usize * 2..];
+            let world = match landing {
+                Landing::Relative([x, y]) => [f64::from(at[0]) + x, f64::from(at[1]) + y],
+                Landing::World(world) => world,
+            };
+            // A node that lay in a region of the node, on the canvas since `take_out_kept`, or
+            // directly in the node, which the part's region, a container just marked, now holds
+            // at a finite world position.
+            self.move_into(held, region)
+                .unwrap_or_else(|_| unreachable!("a held node moves into a region just marked"));
+            self.place(held, world[0], world[1])
+                .unwrap_or_else(|_| unreachable!("a held node lands at a finite position"));
+        }
+        Ok(Divided {
+            regions,
+            nodes,
+            edges,
+        })
+    }
+
+    /// Refuses `parts` of the node in `slot` that `check_order` refuses, or where the slots a load
+    /// `Built` for them are not one per part, each a node that lies in what its part divides and no
+    /// region yet, or are built for a division in no direction, `divide` none.
+    fn check_parts(
+        &self,
+        slot: u32,
+        divide: Option<Axis>,
+        parts: &[Part],
+        slots: &RegionSlots<'_>,
+    ) -> Result<(), DivideError> {
+        check_order(parts)?;
+        let RegionSlots::Built { slots: built, .. } = slots else {
+            return Ok(());
+        };
+        if divide.is_none() && !built.is_empty() {
+            return Err(DivideError::Part { index: 0 });
+        }
+        if built.len() != parts.len() {
+            return Err(DivideError::Part {
+                index: built.len().min(parts.len()),
+            });
+        }
+        for (index, (&region, part)) in built.iter().zip(parts).enumerate() {
+            let within = part.of.map_or(slot, |of| built[of]);
+            let fits = self.holds_node(region)
+                && self.is_container(region)
+                && !self.is_region(region)
+                && self.container(region) == within;
+            if !fits {
+                return Err(DivideError::Part { index });
+            }
+        }
+        Ok(())
+    }
+
+    /// Takes what each of `parts` keeps of the regions `old` out onto the canvas, nodes and no
+    /// regions, and returns where each goes: the index of its part, as `first_leaf` finds it, the
+    /// node, and where it lands.
+    fn take_out_kept(
+        &mut self,
+        parts: &[Part],
+        holds: &[bool],
+        old: &[u32],
+    ) -> Vec<(usize, u32, Landing)> {
+        let mut moved = Vec::new();
+        for (index, part) in parts.iter().enumerate() {
+            let Some(from) = part.keeps.filter(|from| old.contains(from)) else {
+                continue;
+            };
+            let into = first_leaf(parts, holds, index);
+            let origin = [0, 1].map(|axis| f64::from(self.positions[from as usize * 2 + axis]));
+            for held in self.held_by(from) {
+                if self.is_region(held) {
+                    continue;
+                }
+                let at = [0, 1].map(|axis| f64::from(self.positions[held as usize * 2 + axis]));
+                let landing = if into == index {
+                    Landing::Relative([at[0] - origin[0], at[1] - origin[1]])
+                } else {
+                    Landing::World(at)
+                };
+                moved.push((into, held, landing));
+            }
+        }
+        for &(_, held, _) in &moved {
+            // A node a region holds, which the canvas takes.
+            self.move_into(held, CANVAS)
+                .unwrap_or_else(|_| unreachable!("the canvas takes a node a region holds"));
+        }
+        moved
+    }
+
+    /// The nodes the node in `slot` holds directly, no regions, each with its world position,
+    /// which a division moves into a region (`region_at`); none where `parts` is empty, a
+    /// division into none.
+    fn held_directly(&self, slot: u32, parts: &[Part]) -> Vec<(u32, [f64; 2])> {
+        if parts.is_empty() {
+            return Vec::new();
+        }
+        self.held(slot)
+            .iter()
+            .copied()
+            .filter(|&held| !self.is_region(held))
+            .map(|held| {
+                let at = [0, 1].map(|axis| f64::from(self.positions[held as usize * 2 + axis]));
+                (held, at)
+            })
+            .collect()
+    }
+
+    /// The index in `regions`, the regions a division just laid out, of the region a node held
+    /// directly at `point`, its world position, moves into: of the regions not divided again
+    /// whose box holds the point, the last in the order of containers, as a drop there lands
+    /// (`container_at`); none where no region holds it, which then takes the first region, or
+    /// that region's first region (the maintainer's decisions of 2026-11-25, after the human's of
+    /// 2026-11-18).
+    fn region_at(&self, regions: &[u32], point: Point) -> Option<usize> {
+        (0..regions.len())
+            .filter(|&k| {
+                let region = regions[k];
+                !self.holds_regions(region) && self.node_bounds(region).contains(point)
+            })
+            .max_by_key(|&k| self.container_order[regions[k] as usize])
+    }
+
+    /// Adds a container for each of `parts` into what it divides, the node in `slot`, divided by
+    /// `divide`, or the part it lies in, at its size along that division, at the node's top left
+    /// corner, and returns their slots in their order.
+    fn add_parts(
+        &mut self,
+        slot: u32,
+        divide: Option<Axis>,
+        parts: &[Part],
+    ) -> Result<Vec<u32>, TooManySlots> {
+        let at = [0, 1].map(|axis| self.positions[slot as usize * 2 + axis]);
+        let mut added: Vec<u32> = Vec::with_capacity(parts.len());
+        for part in parts {
+            let (into, axis) = part
+                .of
+                .map_or((slot, divide), |of| (added[of], parts[of].divide));
+            let mut size = [0.0; 2];
+            size[axis.map_or(0, Axis::index)] = part.size;
+            added.push(self.add_nested(into, true, [at[0], at[1], size[0], size[1]])?);
+        }
+        Ok(added)
+    }
+
+    /// Divides the node in `slot` in the direction `divide`, or takes its division for none, its
+    /// regions below its content, `top` high, as `divide` says. `marked` says, for a node a load
+    /// built a container for its regions, whether its data marks it one; none where it is a
+    /// container by its data alone until it is divided here.
+    fn set_divided(&mut self, slot: u32, divide: Option<Axis>, top: f32, marked: Option<bool>) {
         let mut division = self.division(slot);
         let width = self.sizes[slot as usize * 2];
         if divide.is_some() && division.divide.is_none() {
             division.width = width;
+        }
+        if divide.is_some() && marked == Some(false) {
+            division.made = true;
         }
         if divide.is_some() && !self.is_container(slot) {
             self.mark_container(slot);
@@ -209,40 +588,50 @@ impl Graph {
                 ..division
             },
         );
-        Ok(())
-    }
-
-    /// Records that the divided node in `slot` is a container by its division alone, as a load
-    /// marks it one, so that it is none once it is divided into no regions.
-    pub fn made_by_division(&mut self, slot: u32) {
-        let division = self.division(slot);
-        if division.divide.is_some() {
-            self.set_division(
-                slot,
-                Division {
-                    made: true,
-                    ..division
-                },
-            );
-        }
     }
 
     /// Gives the divided node in `slot` the width its data gives, or a resize left, from which
     /// `arrange` grows it to what its regions need.
-    pub fn set_divided_width(&mut self, slot: u32, width: f32) {
+    pub(super) fn set_divided_width(&mut self, slot: u32, width: f32) {
         let division = self.division(slot);
         if division.divide.is_some() {
             self.set_division(slot, Division { width, ..division });
         }
     }
 
+    /// The width the node in `slot` lays its content out at: of a divided node the width its data
+    /// gives, or a resize left, from which `arrange` grows it; of any other its width; 0 for a
+    /// slot past the list.
+    pub fn own_width(&self, slot: u32) -> f32 {
+        let division = self.division(slot);
+        if division.divide.is_some() {
+            return division.width;
+        }
+        self.sizes.get(slot as usize * 2).copied().unwrap_or(0.0)
+    }
+
     /// Gives the divided node in `slot` the height of its content, `top`, below which its regions
-    /// lie; `arrange` places them anew.
-    pub fn set_top(&mut self, slot: u32, top: f32) {
+    /// lie, and lays them out anew with `arrange`; a node that is not divided keeps nothing of it.
+    /// A region, which holds no content, refuses it.
+    pub fn set_top(&mut self, slot: u32, top: f32) -> Result<(), DivideError> {
+        if self.is_region(slot) {
+            return Err(DivideError::Region { slot });
+        }
         let division = self.division(slot);
         if division.divide.is_some() {
             self.set_division(slot, Division { top, ..division });
+            self.arrange(slot);
         }
+        Ok(())
+    }
+
+    /// The size of the region in `slot` along the direction of the division it lies in, as the
+    /// engine holds it apart from its extent: as a division gave it, or as a drag of a line or a
+    /// resize last changed the region's extent along that direction; none for a slot that holds no
+    /// region (ARCH-regions-are-container-slots, *Division*).
+    pub fn region_size(&self, slot: u32) -> Option<f32> {
+        let division = self.division(slot);
+        (division.region && self.holds_node(slot)).then_some(division.size)
     }
 
     /// The height of the content of the divided node in `slot`, below which its regions lie.
@@ -250,31 +639,20 @@ impl Graph {
         self.division(slot).top
     }
 
-    /// Marks the node in `slot` a region of the node or region it lies in, with a band where
-    /// `band`, divided in the direction `divide` or not at all; a region is a container
-    /// (ARCH-regions-are-container-slots, *Regions in a slot*). The node is one the caller just
-    /// added into what it divides, a container, and lays out with `arrange`. A slot that holds no
-    /// node refuses the call.
-    pub fn mark_region(
-        &mut self,
-        slot: u32,
-        band: bool,
-        divide: Option<Axis>,
-    ) -> Result<(), SlotError> {
-        self.nodes_held(&[slot])?;
+    /// Marks the node in `slot`, a container in what it divides, a region of it, of the size of
+    /// `part`, with a band where `part` is named, divided in the direction `divide` or not at all
+    /// (ARCH-regions-are-container-slots, *Regions in a slot*).
+    fn mark_region(&mut self, slot: u32, part: &Part, divide: Option<Axis>) {
         self.set_division(
             slot,
             Division {
                 region: true,
-                band,
+                size: part.size,
+                band: part.named,
                 divide,
                 ..Division::default()
             },
         );
-        if !self.is_container(slot) {
-            self.mark_container(slot);
-        }
-        Ok(())
     }
 
     /// Marks the node in `slot` a container, among the containers by its rank.
@@ -308,44 +686,40 @@ impl Graph {
     }
 
     /// The least box each of the node or region in `slot` and its regions, at every depth, needs,
-    /// `width, height`, by slot: its band or its content above its regions, each region at least
-    /// `LEAST_REGION` a side, its size along the direction of its division, and what its own
-    /// regions need. Each region is looked at once, the deepest first, in time linear in them.
+    /// `width, height`, by slot, as `division_needs` computes it from the regions as they stand.
     pub(super) fn needs(&self, slot: u32) -> HashMap<u32, [f64; 2]> {
-        let mut needs = HashMap::new();
-        for at in self.regions_of(slot).into_iter().rev().chain([slot]) {
-            let inset = self.inset(at);
-            // A region is never less than the least region on either side.
-            let least = if self.is_region(at) {
-                LEAST_REGION
-            } else {
-                0.0
-            };
-            let mut inner = [0.0; 2];
-            if let Some(axis) = self.divided(at) {
-                let (a, b) = (axis.index(), 1 - axis.index());
-                for region in self.regions_in(at) {
-                    let need: [f64; 2] = needs[&region];
-                    let size = f64::from(self.sizes[region as usize * 2 + a]);
-                    inner[a] += size.max(LEAST_REGION).max(need[a]);
-                    inner[b] = f64::max(inner[b], need[b]);
+        let regions = self.regions_of(slot);
+        let index: HashMap<u32, usize> = regions.iter().enumerate().map(|(i, &r)| (r, i)).collect();
+        let parts: Vec<Part> = regions
+            .iter()
+            .map(|&region| {
+                let container = self.container(region);
+                Part {
+                    size: self.division(region).size,
+                    named: self.division(region).band,
+                    divide: self.divided(region),
+                    of: index.get(&container).copied(),
+                    keeps: None,
                 }
-            }
-            needs.insert(
-                at,
-                [0, 1].map(|axis| (inset[axis] + inner[axis]).max(least)),
-            );
-        }
-        needs
+            })
+            .collect();
+        let divide = self.divided(slot).unwrap_or(Axis::Across);
+        let (each, node) = division_needs(divide, self.division(slot).top, &parts)
+            .unwrap_or_else(|_| unreachable!("each region lies after the divided one it lies in"));
+        regions
+            .into_iter()
+            .zip(each)
+            .chain([(slot, node)])
+            .collect()
     }
 
-    /// Lays out the regions of the divided node in `slot` from their sizes, the extent of each
-    /// along the direction of its division (ARCH-regions-are-container-slots, *Division*): the node
+    /// Lays out the regions of the divided node in `slot` from their sizes, as the engine holds
+    /// them apart from their extents (ARCH-regions-are-container-slots, *Division*): the node
     /// grows from the width its data gives and the height it has to what its regions need, each
     /// region takes its size, or more where its own regions need it, the last of them the rest,
     /// and what each region holds moves with it, its position relative to the region kept. A slot
     /// that holds no divided node changes nothing.
-    pub fn arrange(&mut self, slot: u32) {
+    pub(super) fn arrange(&mut self, slot: u32) {
         if !self.holds_node(slot) || self.divided(slot).is_none() {
             return;
         }
@@ -380,7 +754,7 @@ impl Graph {
             let mut sizes: Vec<f64> = regions
                 .iter()
                 .map(|&r| {
-                    let size = f64::from(self.sizes[r as usize * 2 + a]);
+                    let size = f64::from(self.division(r).size);
                     size.max(LEAST_REGION).max(needs[&r][a])
                 })
                 .collect();
@@ -415,7 +789,8 @@ impl Graph {
                     continue;
                 }
                 let [x, y] = self.summed(held);
-                let _ = self.place(held, x, y);
+                self.place(held, x, y)
+                    .unwrap_or_else(|_| unreachable!("a held node stays at its finite position"));
             }
         }
     }
@@ -508,9 +883,17 @@ impl Graph {
     }
 
     /// Gives the node in `slot` the box `to`, what it holds kept where it lies in the world, its
-    /// position relative to its container and theirs relative to it kept anew.
+    /// position relative to its container and theirs relative to it kept anew. A region whose
+    /// extent along the direction of its division changes holds that extent as its size from now
+    /// on, as a drag of a line and a resize change the size of the regions they move
+    /// (ARCH-regions-are-container-slots, *Lines* and *Resizing what is divided*).
     fn set_box(&mut self, slot: u32, to: &Rect) {
         let i = slot as usize * 2;
+        let along = self
+            .divided(self.container(slot))
+            .filter(|_| self.is_region(slot))
+            .map(Axis::index);
+        let before = along.map(|a| self.sizes[i + a]);
         self.positions[i] = kept(to.min_x);
         self.positions[i + 1] = kept(to.min_y);
         self.sizes[i] = kept(to.max_x - f64::from(self.positions[i]));
@@ -520,6 +903,13 @@ impl Graph {
         }
         for held in self.held(slot).to_vec() {
             self.keep_relative(held);
+        }
+        if let Some(a) = along
+            && before != Some(self.sizes[i + a])
+        {
+            let size = self.sizes[i + a];
+            let division = self.division(slot);
+            self.set_division(slot, Division { size, ..division });
         }
         self.reboxed(slot);
     }
@@ -607,8 +997,143 @@ impl Graph {
 #[cfg(test)]
 mod tests {
     use super::super::tests::Lcg;
-    use super::super::{Handle, Level, Target, Visible};
+    use super::super::{Handle, Level, MoveIntoError, Target, Visible};
     use super::*;
+
+    /// A part of `size`, unnamed and undivided, in the part at `of`, or in the node for none.
+    fn part(size: f32, of: Option<usize>) -> Part {
+        Part {
+            size,
+            of,
+            ..Part::default()
+        }
+    }
+
+    #[test]
+    fn a_division_needs_its_parts_summed_in_their_order_along_it_and_their_most_across_it() {
+        // Verifies: ARCH-regions-are-container-slots
+        // 2^60, then two of 100: in their order each 100 rounds away against 2^60, whose spacing
+        // in f64 is 256; summed back to front, 200 would round 2^60 up by 256.
+        let big = 2_f32.powi(60);
+        let parts = [part(big, None), part(100.0, None), part(100.0, None)];
+        let (each, node) = division_needs(Axis::Across, 30.0, &parts).unwrap();
+        assert_eq!(node, [f64::from(big), LEAST_REGION + 30.0]);
+        assert_eq!(each[1], [LEAST_REGION; 2]);
+        // Within a named part divided down, the same order; its band on top, whose 24 rounds away
+        // against 2^60 too.
+        let parts = [
+            Part {
+                size: 50.0,
+                named: true,
+                divide: Some(Axis::Down),
+                ..Part::default()
+            },
+            part(big, Some(0)),
+            part(100.0, Some(0)),
+            part(100.0, Some(0)),
+        ];
+        let (each, node) = division_needs(Axis::Across, 0.0, &parts).unwrap();
+        assert_eq!(each[0], [LEAST_REGION, f64::from(big)]);
+        assert_eq!(node, [50.0, f64::from(big)]);
+    }
+
+    #[test]
+    fn a_division_s_needs_refuse_a_part_in_none_before_it_or_in_one_divided_in_no_direction() {
+        // Verifies: ARCH-regions-are-container-slots
+        let refused = |parts: &[Part]| division_needs(Axis::Across, 0.0, parts).err();
+        assert_eq!(
+            refused(&[part(10.0, Some(0))]),
+            Some(DivideError::Part { index: 0 })
+        );
+        assert_eq!(
+            refused(&[part(10.0, None), part(10.0, Some(5))]),
+            Some(DivideError::Part { index: 1 })
+        );
+        assert_eq!(
+            refused(&[part(10.0, None), part(10.0, Some(0))]),
+            Some(DivideError::Part { index: 1 })
+        );
+        // The engine's division refuses them alike, and the graph is as it was.
+        let mut graph = Graph::new(vec![0.0, 0.0], vec![100.0, 50.0], Vec::new()).unwrap();
+        let parts = [part(10.0, None), part(10.0, Some(0))];
+        assert_eq!(
+            graph.divide(0, Some(Axis::Across), 0.0, &parts, RegionSlots::Added),
+            Err(DivideError::Part { index: 1 })
+        );
+        assert!(graph.regions_of(0).is_empty());
+    }
+
+    #[test]
+    fn a_node_its_regions_grew_keeps_the_width_its_data_gives_as_its_own() {
+        // Verifies: ARCH-regions-are-container-slots
+        let mut graph = Graph::new(vec![0.0, 0.0], vec![60.0, 50.0], Vec::new()).unwrap();
+        assert_eq!(graph.own_width(0), 60.0);
+        let parts = [part(40.0, None), part(40.0, None)];
+        graph
+            .divide(0, Some(Axis::Across), 0.0, &parts, RegionSlots::Added)
+            .unwrap();
+        assert_eq!(graph.sizes()[0], 80.0);
+        assert_eq!(graph.own_width(0), 60.0);
+        // Undivided, it is as wide as its data gives again; a slot past the list has no width.
+        graph.divide(0, None, 0.0, &[], RegionSlots::Added).unwrap();
+        assert_eq!(graph.own_width(0), 60.0);
+        assert_eq!(graph.own_width(9), 0.0);
+    }
+
+    #[test]
+    fn a_divided_node_laid_out_again_lays_its_regions_out_from_their_sizes_not_the_rest_they_took()
+    {
+        // Verifies: ARCH-regions-are-container-slots
+        // 60 × 60, divided across into a region of 30, divided down into one of 30: each takes
+        // the rest of what it divides, 60.
+        let mut graph = Graph::new(vec![0.0, 0.0], vec![60.0, 60.0], Vec::new()).unwrap();
+        let parts = [
+            Part {
+                divide: Some(Axis::Down),
+                ..part(30.0, None)
+            },
+            part(30.0, Some(0)),
+        ];
+        let divided = graph
+            .divide(0, Some(Axis::Across), 0.0, &parts, RegionSlots::Added)
+            .unwrap();
+        let [outer, inner] = divided.regions[..] else {
+            panic!("two regions");
+        };
+        assert_eq!(rect(&graph, inner), [0.0, 0.0, 60.0, 60.0]);
+        assert_eq!(graph.region_size(outer), Some(30.0));
+        assert_eq!(graph.region_size(inner), Some(30.0));
+        // Content 64 high above them: the node needs 64 + 30, not 64 + the 60 the region took.
+        graph.set_top(0, 64.0).unwrap();
+        assert_eq!(rect(&graph, 0), [0.0, 0.0, 60.0, 94.0]);
+        assert_eq!(rect(&graph, inner), [0.0, 64.0, 60.0, 94.0]);
+        assert_eq!(graph.region_size(inner), Some(30.0));
+        // The node and a slot past the list hold no region's size.
+        assert_eq!(graph.region_size(0), None);
+        assert_eq!(graph.region_size(9), None);
+    }
+
+    #[test]
+    fn a_region_refuses_a_division_and_a_top_of_its_own() {
+        // Verifies: ARCH-regions-are-container-slots
+        let mut graph = Graph::new(vec![0.0, 0.0], vec![100.0, 50.0], Vec::new()).unwrap();
+        let parts = [part(40.0, None), part(40.0, None)];
+        let divided = graph
+            .divide(0, Some(Axis::Across), 10.0, &parts, RegionSlots::Added)
+            .unwrap();
+        let region = divided.regions[0];
+        let sizes = graph.sizes().to_vec();
+        assert_eq!(
+            graph.divide(region, Some(Axis::Down), 0.0, &parts, RegionSlots::Added),
+            Err(DivideError::Region { slot: region })
+        );
+        assert_eq!(
+            graph.set_top(region, 30.0),
+            Err(DivideError::Region { slot: region })
+        );
+        assert_eq!(graph.sizes(), sizes);
+        assert_eq!(graph.set_top(0, 30.0), Ok(()));
+    }
 
     /// A region of a test: its size, whether it has a name, and its own division and regions.
     struct Spec {
@@ -627,23 +1152,30 @@ mod tests {
         }
     }
 
-    /// Adds the regions `specs` into the node or region in `slot`, divided by `axis`, depth first,
-    /// each at its size along `axis`, and returns their slots in that order.
-    fn add_regions(graph: &mut Graph, slot: u32, axis: Axis, specs: &[Spec]) -> Vec<u32> {
-        let mut slots = Vec::new();
+    /// The parts of `specs`, depth first, each region followed by its own, those of `specs` lying
+    /// in the part at `of`, or in the node for none.
+    fn parts_of(specs: &[Spec], of: Option<usize>, parts: &mut Vec<Part>) {
         for spec in specs {
-            let mut size = [0.0; 2];
-            size[axis.index()] = spec.size;
-            let region = graph
-                .add_node_in(slot, true, [0.0, 0.0, size[0], size[1]])
-                .unwrap();
-            graph.mark_region(region, spec.band, spec.divide).unwrap();
-            slots.push(region);
-            if let Some(divide) = spec.divide {
-                slots.extend(add_regions(graph, region, divide, &spec.regions));
-            }
+            let at = parts.len();
+            parts.push(Part {
+                size: spec.size,
+                named: spec.band,
+                divide: spec.divide,
+                of,
+                keeps: None,
+            });
+            parts_of(&spec.regions, Some(at), parts);
         }
-        slots
+    }
+
+    /// Divides the node in `slot` by `axis` into the regions `specs`, depth first, each at its
+    /// size along the division it lies in, below its content, `top` high, and returns their slots
+    /// in that order.
+    fn add_regions(graph: &mut Graph, slot: u32, axis: Axis, top: f32, specs: &[Spec]) -> Vec<u32> {
+        let mut parts = Vec::new();
+        parts_of(specs, None, &mut parts);
+        let divided = graph.divide(slot, Some(axis), top, &parts, RegionSlots::Added);
+        divided.unwrap().regions
     }
 
     /// An activity at (100, 100), 300 × 40, its content 30 high, divided across into three named
@@ -653,7 +1185,6 @@ mod tests {
     /// the node after them.
     fn activity() -> (Graph, Vec<u32>, u32) {
         let mut graph = Graph::new(vec![100.0, 100.0], vec![300.0, 40.0], Vec::new()).unwrap();
-        graph.divide(0, Some(Axis::Across), 30.0).unwrap();
         let specs = [
             leaf(100.0, true),
             Spec {
@@ -664,8 +1195,7 @@ mod tests {
             },
             leaf(100.0, true),
         ];
-        let regions = add_regions(&mut graph, 0, Axis::Across, &specs);
-        graph.arrange(0);
+        let regions = add_regions(&mut graph, 0, Axis::Across, 30.0, &specs);
         let first = graph.node_bounds(regions[0]);
         let node = graph
             .add_node_in(
@@ -709,7 +1239,6 @@ mod tests {
      {
         // Verifies: ARCH-regions-are-container-slots
         let mut graph = Graph::new(vec![0.0, 0.0], vec![200.0, 300.0], Vec::new()).unwrap();
-        graph.divide(0, Some(Axis::Down), 0.0).unwrap();
         let specs = [
             Spec {
                 size: 100.0,
@@ -719,8 +1248,7 @@ mod tests {
             },
             leaf(50.0, false),
         ];
-        let r = add_regions(&mut graph, 0, Axis::Down, &specs);
-        graph.arrange(0);
+        let r = add_regions(&mut graph, 0, Axis::Down, 0.0, &specs);
         assert_eq!(rect(&graph, 0), [0.0, 0.0, 200.0, 300.0]);
         assert_eq!(rect(&graph, r[0]), [0.0, 0.0, 200.0, 100.0]);
         // Its band, 24 wide, at its left; the last of its regions takes the rest.
@@ -752,6 +1280,62 @@ mod tests {
             Err(LineError::NoLine { slot: r[4] })
         );
         assert_eq!(graph.move_line(0, 0.0), Err(LineError::NoLine { slot: 0 }));
+    }
+
+    #[test]
+    fn a_line_and_a_resize_give_the_regions_they_change_their_new_extents_as_their_sizes() {
+        // Verifies: ARCH-regions-are-container-slots
+        let (mut graph, r, _) = activity();
+        let sizes = |graph: &Graph| r.iter().map(|&s| graph.region_size(s).unwrap()).collect();
+        let held: Vec<f32> = sizes(&graph);
+        assert_eq!(held, [100.0, 150.0, 80.0, 60.0, 100.0]);
+        // The line after the first partition: the two partitions beside it, and nothing inside
+        // the middle one, whose regions follow one another across the line's direction.
+        graph.move_line(r[0], 250.0).unwrap();
+        let held: Vec<f32> = sizes(&graph);
+        assert_eq!(held, [150.0, 100.0, 80.0, 60.0, 100.0]);
+        // A resize at the bottom right: the last partition, and the lower region of the middle
+        // one, which takes the height; each laid out again from those sizes keeps its box.
+        graph.set_sizing(0, None, true).unwrap();
+        let from = graph.node_bounds(0);
+        graph
+            .resize(0, Handle::BottomRight, &from, [50.0, 40.0], 30.0)
+            .unwrap();
+        let held: Vec<f32> = sizes(&graph);
+        assert_eq!(held, [150.0, 100.0, 80.0, 100.0, 150.0]);
+        let boxes: Vec<[f64; 4]> = r.iter().map(|&s| rect(&graph, s)).collect();
+        graph.set_top(0, 30.0).unwrap();
+        let again: Vec<[f64; 4]> = r.iter().map(|&s| rect(&graph, s)).collect();
+        assert_eq!(again, boxes);
+    }
+
+    #[test]
+    fn a_line_leaves_the_size_of_a_region_whose_extent_along_its_division_it_does_not_change() {
+        // Verifies: ARCH-regions-are-container-slots
+        // 300 × 200, divided across into a region of 100, divided down into one of 30, which
+        // takes the rest, 200 high, and a region of 50, which takes the rest, 200 wide.
+        let mut graph = Graph::new(vec![0.0, 0.0], vec![300.0, 200.0], Vec::new()).unwrap();
+        let parts = [
+            Part {
+                divide: Some(Axis::Down),
+                ..part(100.0, None)
+            },
+            part(30.0, Some(0)),
+            part(50.0, None),
+        ];
+        let r = graph
+            .divide(0, Some(Axis::Across), 0.0, &parts, RegionSlots::Added)
+            .unwrap()
+            .regions;
+        assert_eq!(rect(&graph, r[1]), [0.0, 0.0, 100.0, 200.0]);
+        // The line between the two widens the inner region too, across its division: it keeps 30.
+        assert_eq!(graph.move_line(r[0], 150.0), Ok(150.0));
+        assert_eq!(rect(&graph, r[1]), [0.0, 0.0, 150.0, 200.0]);
+        let held: Vec<Option<f32>> = r.iter().map(|&s| graph.region_size(s)).collect();
+        assert_eq!(held, [Some(150.0), Some(30.0), Some(150.0)]);
+        // Laid out again below content 64 high, the node needs 64 + 30 and stays 200 high.
+        graph.set_top(0, 64.0).unwrap();
+        assert_eq!(rect(&graph, 0), [0.0, 0.0, 300.0, 200.0]);
     }
 
     #[test]
@@ -792,6 +1376,202 @@ mod tests {
             .unwrap();
         assert_eq!(rect(&graph, r[0]), [110.0, 130.0, 200.0, 334.0]);
         assert_eq!(rect(&graph, node), [110.0, 170.0, 160.0, 200.0]);
+    }
+
+    #[test]
+    fn a_division_anew_keeps_what_a_kept_region_held_and_removes_the_rest_in_one_operation() {
+        // Verifies: ARCH-regions-are-container-slots
+        let (mut graph, r, node) = activity();
+        // A second node, in the third partition.
+        let third = graph.node_bounds(r[4]);
+        let other = graph
+            .add_node_in(
+                r[4],
+                false,
+                [
+                    third.min_x as f32 + 5.0,
+                    third.min_y as f32 + 30.0,
+                    10.0,
+                    10.0,
+                ],
+            )
+            .unwrap();
+        let before = rect(&graph, node);
+        // The first partition is kept as a part divided down, the rest left out.
+        let parts = [
+            Part {
+                size: 120.0,
+                named: true,
+                divide: Some(Axis::Down),
+                keeps: Some(r[0]),
+                ..Part::default()
+            },
+            Part {
+                size: 90.0,
+                of: Some(0),
+                ..Part::default()
+            },
+            Part {
+                size: 60.0,
+                ..Part::default()
+            },
+        ];
+        let divided = graph
+            .divide(0, Some(Axis::Across), 30.0, &parts, RegionSlots::Added)
+            .unwrap();
+        assert_eq!(divided.regions.len(), 3);
+        assert!(divided.nodes.contains(&other) && !divided.nodes.contains(&node));
+        assert_eq!(graph.regions_of(0), divided.regions);
+        // What the kept partition held lies in the first part it now holds, where it lay.
+        assert_eq!(graph.container(node), divided.regions[1]);
+        assert_eq!(rect(&graph, node), before);
+        assert!(graph.holds_regions(divided.regions[0]));
+        assert!(!graph.holds_regions(divided.regions[1]));
+        // Into no parts, the node is undivided, no container, and as wide as before it was.
+        let undivided = graph
+            .divide(0, Some(Axis::Across), 30.0, &[], RegionSlots::Added)
+            .unwrap();
+        assert!(undivided.nodes.contains(&node));
+        assert!(graph.regions_of(0).is_empty());
+        assert_eq!(graph.divided(0), None);
+        assert!(!graph.is_container(0));
+        assert_eq!(graph.sizes()[0], 300.0);
+    }
+
+    #[test]
+    fn a_move_into_a_node_or_a_region_divided_into_regions_is_refused_and_changes_nothing() {
+        // Verifies: ARCH-regions-are-container-slots
+        // A divided node holds its regions alone, as a load and a drop (`container_at`) hold it.
+        let (mut graph, r, node) = activity();
+        let before = (graph.positions().to_vec(), graph.ranks.clone());
+        for divided in [0, r[1]] {
+            assert_eq!(
+                graph.move_into(node, divided),
+                Err(MoveIntoError::NoContainer { slot: divided })
+            );
+            assert_eq!(graph.container(node), r[0]);
+        }
+        assert_eq!((graph.positions().to_vec(), graph.ranks.clone()), before);
+        // Its regions not divided again take the node.
+        assert_eq!(graph.move_into(node, r[2]), Ok(()));
+        assert_eq!(graph.container(node), r[2]);
+    }
+
+    #[test]
+    fn a_container_divided_moves_each_node_it_held_into_the_region_at_its_position_where_it_lay() {
+        // Verifies: ARCH-regions-are-container-slots
+        // The maintainer's decisions of 2026-11-25: what the node held directly goes, at its world
+        // position, into the innermost region whose box holds its position, as a drop there would
+        // land, and into the first region, or that region's first region, where none does, as a
+        // kept region's content goes (the human's decision of 2026-11-18).
+        let mut graph = Graph::default();
+        let c = graph
+            .add_node_in(CANVAS, true, [0.0, 0.0, 400.0, 200.0])
+            .unwrap();
+        let node = |graph: &mut Graph, within, x, y| {
+            graph
+                .add_node_in(within, false, [x, y, 10.0, 10.0])
+                .unwrap()
+        };
+        // `a`, a container, and `z` in the first partition's part, `y` and `v` in the second's two
+        // regions, `b` in `a`, and `w` beside every region.
+        let a = graph
+            .add_node_in(c, true, [20.0, 30.0, 80.0, 60.0])
+            .unwrap();
+        let b = node(&mut graph, a, 30.0, 40.0);
+        let z = node(&mut graph, c, 10.0, 150.0);
+        let y = node(&mut graph, c, 250.0, 20.0);
+        let v = node(&mut graph, c, 250.0, 150.0);
+        let w = node(&mut graph, c, 500.0, 20.0);
+        let all = [a, b, z, y, v, w];
+        let before = all.map(|s| rect(&graph, s));
+        // Across into `r0` from 0 to 200 and `r1` from 200, `r1` down into two of 100 each.
+        let parts = [
+            Part {
+                size: 200.0,
+                ..Part::default()
+            },
+            Part {
+                size: 200.0,
+                divide: Some(Axis::Down),
+                ..Part::default()
+            },
+            Part {
+                size: 100.0,
+                of: Some(1),
+                ..Part::default()
+            },
+            Part {
+                size: 100.0,
+                of: Some(1),
+                ..Part::default()
+            },
+        ];
+        let divided = graph
+            .divide(c, Some(Axis::Across), 0.0, &parts, RegionSlots::Added)
+            .unwrap();
+        assert!(divided.nodes.is_empty() && divided.edges.is_empty());
+        let r = &divided.regions;
+        assert_eq!(rect(&graph, r[0]), [0.0, 0.0, 200.0, 200.0]);
+        assert_eq!(graph.held(c), &[r[0], r[1]]);
+        let containers = all.map(|s| graph.container(s));
+        assert_eq!(containers, [r[0], a, r[0], r[2], r[3], r[0]]);
+        assert_eq!(all.map(|s| rect(&graph, s)), before);
+        // A first part divided: a node beside every region goes into its first region.
+        let mut graph = Graph::default();
+        let c = graph
+            .add_node_in(CANVAS, true, [0.0, 0.0, 400.0, 200.0])
+            .unwrap();
+        let w = node(&mut graph, c, 500.0, 20.0);
+        let parts = [parts[1], parts[2], parts[3], parts[0]].map(|part| Part {
+            of: part.of.map(|_| 0),
+            ..part
+        });
+        let divided = graph
+            .divide(c, Some(Axis::Across), 0.0, &parts, RegionSlots::Added)
+            .unwrap();
+        assert_eq!(graph.container(w), divided.regions[1]);
+    }
+
+    #[test]
+    fn a_division_refuses_a_part_that_lies_in_none_before_it_or_a_built_slot_that_does_not_fit() {
+        // Verifies: ARCH-regions-are-container-slots
+        let mut graph =
+            Graph::new(vec![0.0; 4], vec![100.0, 40.0, 10.0, 10.0], Vec::new()).unwrap();
+        let late = [Part {
+            of: Some(0),
+            ..Part::default()
+        }];
+        let refused = graph.divide(0, Some(Axis::Across), 0.0, &late, RegionSlots::Added);
+        assert_eq!(refused, Err(DivideError::Part { index: 0 }));
+        // Slot 1 lies on the canvas, not in the node it would divide.
+        let built = RegionSlots::Built {
+            slots: &[1],
+            marked: false,
+        };
+        let refused = graph.divide(0, Some(Axis::Across), 0.0, &[Part::default()], built);
+        assert_eq!(refused, Err(DivideError::Part { index: 0 }));
+        // Slot 1 put in the node, but built for a division in no direction.
+        let nesting = super::super::Nesting {
+            containers: vec![CANVAS, 0],
+            is_container: vec![true, true],
+        };
+        let sizes = vec![100.0, 40.0, 10.0, 10.0];
+        let mut built_in = Graph::nested(vec![0.0; 4], sizes, Vec::new(), nesting).unwrap();
+        let undivided = RegionSlots::Built {
+            slots: &[1],
+            marked: true,
+        };
+        let refused = built_in.divide(0, None, 0.0, &[Part::default()], undivided);
+        assert_eq!(refused, Err(DivideError::Part { index: 0 }));
+        assert!(!built_in.is_region(1));
+        let missing = graph.divide(7, None, 0.0, &[], RegionSlots::Added);
+        assert_eq!(
+            missing,
+            Err(DivideError::Slot(SlotError::NoNode { slot: 7 }))
+        );
+        assert_eq!(graph.divided(0), None);
+        assert!(!graph.is_container(0));
     }
 
     #[test]
@@ -978,10 +1758,8 @@ mod tests {
             let node = graph.add_node(origin[0], origin[1], 50.0, 20.0).unwrap();
             let axis = [Axis::Across, Axis::Down][rng.below(2) as usize];
             let top = [0.0, 30.0][rng.below(2) as usize];
-            graph.divide(node, Some(axis), top).unwrap();
             let specs = random_specs(rng, 3);
-            let regions = add_regions(&mut graph, node, axis, &specs);
-            graph.arrange(node);
+            let regions = add_regions(&mut graph, node, axis, top, &specs);
             graph.set_sizing(node, None, true).unwrap();
             let mut held = Vec::new();
             for &region in &regions {

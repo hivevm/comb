@@ -1,4 +1,4 @@
-// The user deletes the selection (G-4, API-edits-report-nested-changes): with the canvas focused,
+// The user deletes the selection (G-4, API-edits-report-division-moves): with the canvas focused,
 // Delete or Backspace hands what would go, a selected node with everything it holds and every edge
 // at any of them, or a selected edge, each with every edge that ends on one of those edges, to the
 // deletion `api` gives, which asks the host application's `canDelete` and records the removal as
@@ -45,7 +45,7 @@ function doomed(store: GraphStore, bridge: Bridge): Deletion | undefined {
 }
 
 /** Hands what deleting the selection would remove to `remove`, which asks the veto; an error it
- *  throws is thrown on once nothing has changed (API-edits-report-nested-changes). */
+ *  throws is thrown on once nothing has changed (API-edits-report-division-moves). */
 export function deleteSelection(store: GraphStore, bridge: Bridge, remove: Delete): void {
   refuseIfLost();
   const found = doomed(store, bridge);

@@ -1,4 +1,4 @@
-// The type checker pins `GraphChange` to the table of API-edits-report-nested-changes: exactly
+// The type checker pins `GraphChange` to the table of API-edits-report-division-moves: exactly
 // its kinds, each with the `by` the table gives it. Each assignment below compiles only while the
 // types are equal, and `tsc` fails on a `@ts-expect-error` that has no error to expect.
 import { expect, test } from "bun:test";
@@ -41,7 +41,7 @@ function narrows(change: GraphChange): void {
   change.by = "user";
 }
 
-test("GraphChange admits exactly the kinds of API-edits-report-nested-changes's table, each by whom it names", () => {
-  // Verifies: API-edits-report-nested-changes
+test("GraphChange admits exactly the kinds of API-edits-report-division-moves's table, each by whom it names", () => {
+  // Verifies: API-edits-report-division-moves
   expect([kinds, by, typeof narrows]).toEqual([true, true, "function"]);
 });

@@ -1,9 +1,9 @@
 //! The graph data the tests of the modules of `graph_data` build: content of each kind, batches
 //! of nodes and edges, and their columns, and a load of them into an engine.
 //!
-//! The malformed-data tests of those modules verify API-bridge-columns-carry-nesting: every
+//! The malformed-data tests of those modules verify API-bridge-columns-keep-no-size: every
 //! export that receives graph data returns a typed error that names the offender, and none panics.
-//! They are the tests API-bridge-columns-carry-nesting names as those of `lib.rs`, the crate root
+//! They are the tests API-bridge-columns-keep-no-size names as those of `lib.rs`, the crate root
 //! of this module.
 
 use comb_engine::content::Fonts;
@@ -178,7 +178,7 @@ pub(super) fn invalid_text(node: &str, row: u32, column: u32) -> GraphDataProble
 }
 
 /// The node of `batch` at `(x, y)` with `change` made to it.
-pub(super) fn added(x: f64, y: f64, change: impl FnOnce(&mut NodeInput)) -> NodeInput {
+pub(crate) fn added(x: f64, y: f64, change: impl FnOnce(&mut NodeInput)) -> NodeInput {
     let mut node = batch(&[("n", x, y)], &[]).nodes.remove(0);
     change(&mut node);
     node
@@ -187,7 +187,7 @@ pub(super) fn added(x: f64, y: f64, change: impl FnOnce(&mut NodeInput)) -> Node
 /// Adds `node` to `graph` as `addNode` does, in the fonts of no font handed over, and returns
 /// its slot.
 pub(super) fn add(graph: &mut Graph, node: &NodeInput) -> Result<u32, GraphDataProblem> {
-    add_node_to(graph, node, (None, None), &Fonts::default(), 0).map(|(slot, _)| slot)
+    add_node_to(graph, node, (None, None), &Fonts::default(), 0).map(|added| added.slot)
 }
 
 /// The load of `columns` and no edges, as `loadGraph` checks it.
@@ -341,7 +341,7 @@ pub(crate) fn load_into(
         &n.attached,
         &n.side,
         &n.offset,
-        &n.beside,
+        &n.given,
         n.attached_missing.clone(),
         c.row_bounds.clone(),
         c.element_bounds.clone(),

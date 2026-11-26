@@ -48,7 +48,7 @@ statement and goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), th
 
 Inside the Dev Container, which provides Bun, Rust, wasm-pack, and Chromium
 ([DEV-bun-vite-wasm-pack](docs/adr/DEV-bun-vite-wasm-pack.md),
-[DEV-container-adds-bun-and-rust](docs/adr/DEV-container-adds-bun-and-rust.md)).
+[DEV-container-adds-bun-rust-shellcheck](docs/adr/DEV-container-adds-bun-rust-shellcheck.md)).
 [`scripts/check-code.sh`](scripts/check-code.sh) runs, in order, the first three below, build, lint,
 and test, the engine check before the tests, and then the bundle budget of Q-3 (`bun run build:lib`,
 at most 300 kB gzipped without PixiJS). The checks that need no toolchain, the structural check of
@@ -231,7 +231,9 @@ regions side by side or one above the other, each `{ id, name?, size, line, divi
 its identifier, shared with no node, its size along the division, `line` `"solid"` or a dash and a
 gap for the line after it, and optionally regions of its own. Each region is a container that nodes
 lie in by its identifier, which no edge, `removeNodes`, or `updateNode` names as a node; the node
-grows to what its regions add up to, and the last region takes any rest. A region's name stands in a
+grows to what its regions add up to, and the last region takes any rest. Comb tells a region's
+`size` as it holds it, never that rest: as given, or as a drag of a line or a resize left its
+extent, so that a load of the host's copy draws the same. A region's name stands in a
 band 24 high at its top, or 24 wide at its left, turned, for regions one above the other, cut to the
 band's length. A drag of the line between two regions changes their sizes, never past the nodes they
 hold, and is told once as `regionsMoved` with the divided `node`, the `regions` whose `size`
@@ -241,9 +243,12 @@ divides; a drop into a region places the node there. `updateNode(id, { regions }
 regions: one kept by its identifier keeps what it holds, or, divided now into regions of its own,
 moves it at its place on the canvas into its first region, told after `nodeUpdated` as a `nodeMoved`
 by the host, and one left out goes with what it holds, told first as `nodesRemoved`, the node laid
-out from its own `width` as a load of it would be; `regions: []`, or a `divide` without regions,
-leaves it undivided. A region's name counts against the budget of content. `load` and `addNode`
-refuse a `container` that names a divided node, or a region divided again, as `invalidContainer`.
+out from its own `width` as a load of it would be. A node divided while it holds nodes moves each,
+where it lies, into the region its position falls in, as a drop there would, else into its first
+region, told the same way, since a divided node holds its regions alone; `regions: []`,
+or a `divide` without regions, leaves it undivided. A region's name counts against the budget of
+content. `load` and `addNode` refuse a `container` that names a divided node, or a region divided
+again, as `invalidContainer`.
 
 A node with `attachedTo`, `side`, and `offset`, and no `x`, `y`, or `container`, is a border node,
 such as a pin of an action: it sits centred on the outline of the node `attachedTo` names, on `side`

@@ -14,7 +14,7 @@
 // the edges at the dragged nodes and of the added edges; dragged views and their edges' labels move
 // where the query bound them. A drag's release queries once.
 //
-// The world is drawn relative to the origin of the last query (API-bridge-columns-carry-nesting):
+// The world is drawn relative to the origin of the last query (API-bridge-columns-keep-no-size):
 // the `world` render group stands at the screen point of the origin, the edges and the edge labels,
 // which the engine hands over relative to it, at (0, 0) in it, and the nodes and particles, placed
 // by the positions buffer, at minus the origin. The GPU, which takes PixiJS's transforms as `f32`,
@@ -144,7 +144,7 @@ export interface SceneSnapshot {
   /** How many times the connectors layer drew its connectors anew. */
   connectorRedraws: number;
   /** The resize handles the overlay draws of the selected node, each its node, which one it is,
-   *  and its middle in world units (API-edits-report-nested-changes). */
+   *  and its middle in world units (API-edits-report-division-moves). */
   handles: DrawnHandle[];
   /** The squares of those handles as the overlay fills them, in screen pixels. */
   handleSquares: { x: number; y: number; width: number; height: number }[];

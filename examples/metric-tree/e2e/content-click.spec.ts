@@ -209,7 +209,7 @@ test("a click on an icon reports kind icon, on its square, and beside it in its 
 test("a press on an element that moves past 4 pixels drags the node and reports no click; within them it clicks", async ({
   page,
 }) => {
-  // Verifies: REN-node-content-and-hits, API-edits-report-nested-changes
+  // Verifies: REN-node-content-and-hits, API-edits-report-division-moves
   await openClicks(page);
   const from = await pagePoint(page, ...ACTION);
   // Within the slop: released 3 pixels from the press, a click, and the node stays.

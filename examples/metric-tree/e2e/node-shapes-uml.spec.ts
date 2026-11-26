@@ -207,7 +207,7 @@ test("content whose second row is a separator draws a line across the inner rect
 test("updateNode with an outline of six and four draws the node's outline in those dashes", async ({
   page,
 }) => {
-  // Verifies: REN-node-shapes-cover-uml, API-edits-report-nested-changes
+  // Verifies: REN-node-shapes-cover-uml, API-edits-report-division-moves
   await open(page);
   await loaded(page, { nodes: [outlined("note")], edges: [] });
   const [solid] = await drawnViews(page);

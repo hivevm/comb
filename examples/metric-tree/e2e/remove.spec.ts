@@ -1,5 +1,5 @@
 // The host application removes nodes and edges through `removeNodes` and `removeEdges` (G-4,
-// ARCH-engine-edits-nested-graph, API-edits-report-nested-changes): the canvas draws them no
+// ARCH-engine-edits-nested-graph, API-edits-report-division-moves): the canvas draws them no
 // more, a node takes its edges along, `onChange` tells one change, a freed slot is the next
 // addition's, and an identifier the graph does not hold refuses the call, which then removes
 // nothing (ARCH-one-workspace-per-example, Q-7).
@@ -31,7 +31,7 @@ async function drawn(page: Page) {
 test("removeNodes removes a node and its three edges, and tells one nodesRemoved", async ({
   page,
 }) => {
-  // Verifies: G-4, ARCH-engine-edits-nested-graph, API-edits-report-nested-changes
+  // Verifies: G-4, ARCH-engine-edits-nested-graph, API-edits-report-division-moves
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -48,7 +48,7 @@ test("removeNodes removes a node and its three edges, and tells one nodesRemoved
 test("removeEdges removes edges and keeps their nodes, and tells one edgesRemoved", async ({
   page,
 }) => {
-  // Verifies: G-4, ARCH-engine-edits-nested-graph, API-edits-report-nested-changes
+  // Verifies: G-4, ARCH-engine-edits-nested-graph, API-edits-report-division-moves
   await open(page);
   await loaded(page, STAR, HALF);
   await page.evaluate(() => window.comb.removeEdges(["b-c", "a-c", "b-c"]));
@@ -174,7 +174,7 @@ for (const { name, call, problem } of REFUSED) {
 test("removing the selected node reports null to onSelectionChange, after its change", async ({
   page,
 }) => {
-  // Verifies: API-edits-report-nested-changes
+  // Verifies: API-edits-report-division-moves
   await open(page);
   await loaded(page, STAR, HALF);
   const at = await screenCentre(page, "a");
@@ -209,7 +209,7 @@ test("fitView fits the nodes a removal kept", async ({ page }) => {
 test("a node the host removes during a drag ends it: no error, and no move of the node in its slot", async ({
   page,
 }) => {
-  // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-nested-changes
+  // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-division-moves
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);

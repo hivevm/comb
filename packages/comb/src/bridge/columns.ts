@@ -1,4 +1,4 @@
-// The writers of a load's columns (API-bridge-columns-carry-nesting, *Graph data of a load*): the
+// The writers of a load's columns (API-bridge-columns-keep-no-size, *Graph data of a load*): the
 // columns of the nodes, their content among them, and of the edges, which `api/snapshot.ts` writes
 // from the primitives it reads, one string column in pieces and one typed array per field, and the
 // codes of kinds, roles, directions, arrowheads, and sides they cross as. `index.ts` re-exports
@@ -22,12 +22,12 @@ import {
 } from "../../wasm/engine.js";
 
 /** The most UTF-16 code units of a piece of a string column the snapshot hands the engine
- *  (API-bridge-columns-carry-nesting): half of V8's maximum string length, the smallest of the
+ *  (API-bridge-columns-keep-no-size): half of V8's maximum string length, the smallest of the
  *  evergreen engines'. */
 export const PIECE_BOUND = 2 ** 28;
 
 /** The content of a load's nodes as the engine's `loadGraph` takes it
- *  (API-bridge-columns-carry-nesting), the nodes' elements in slot order, each node's rows in
+ *  (API-bridge-columns-keep-no-size), the nodes' elements in slot order, each node's rows in
  *  their order and each row's elements in theirs: the boundaries of each node's rows, one more than
  *  there are nodes; of each row's elements, one more than there are rows; per row whether it is a
  *  separator, 1 or 0, which holds no element (REN-node-content-and-hits, *Separator*); per element
@@ -59,7 +59,7 @@ export interface ContentColumns {
   readonly nameValid: Uint8Array;
 }
 
-/** The nodes of a load as the engine's `loadGraph` takes them (API-bridge-columns-carry-nesting),
+/** The nodes of a load as the engine's `loadGraph` takes them (API-bridge-columns-keep-no-size),
  *  each column in slot
  *  order: the identifiers as the values concatenated and cut into pieces, each ending where a value
  *  ends, with their boundaries in UTF-16 code units across all pieces, one more than there are
@@ -85,11 +85,11 @@ export interface NodeColumns {
   readonly outlineGap: Float64Array;
   /** Per node whether it names a container, 1 or 0, the slot of the node it names, `NO_SLOT`
    *  where no node has that identifier, and whether it is a container, 1 or 0
-   *  (API-bridge-columns-carry-nesting). */
+   *  (API-bridge-columns-keep-no-size). */
   readonly hasContainer: Uint8Array;
   readonly container: Uint32Array;
   readonly isContainer: Uint8Array;
-  /** Per node whether the user may resize it, 1 or 0 (API-edits-report-nested-changes). */
+  /** Per node whether the user may resize it, 1 or 0 (API-edits-report-division-moves). */
   readonly resizable: Uint8Array;
   /** Per node the direction its regions divide it in, 0 for none, 1 across, 2 down, and the
    *  regions of the load (ARCH-regions-are-container-slots). */
@@ -97,14 +97,14 @@ export interface NodeColumns {
   readonly regions: RegionColumns;
   /** Per node whether it is a border node, 1 or 0; the slot of the node its `attachedTo` names
    *  among the nodes, `NO_SLOT` where none has that identifier; its side as its code; its offset;
-   *  and the first of its `x`, `y`, and `container` beside its `attachedTo`, 1 to 3, or of a node
-   *  that is no border node a `side` or an `offset`, 4 or 5, or 0; and the
-   *  identifier the first border node attached to no node names (ARCH-border-nodes-ride-sides). */
+   *  which of its `x`, `y`, `container`, `side`, and `offset` it gives at all, by the bits of
+   *  `GIVEN`, by which the bridge crate checks its attachment; and the identifier the first border
+   *  node attached to no node names (ARCH-border-nodes-ride-sides). */
   readonly hasAttached: Uint8Array;
   readonly attached: Uint32Array;
   readonly side: Uint8Array;
   readonly offset: Float64Array;
-  readonly beside: Uint8Array;
+  readonly given: Uint8Array;
   readonly attachedMissing: string | undefined;
   readonly content: ContentColumns;
   readonly refused:
@@ -118,7 +118,7 @@ export interface NodeColumns {
 }
 
 /** The regions of a load as the engine's `loadGraph` takes them
- *  (API-bridge-columns-carry-nesting): region `k` in the node slot after the nodes and the regions
+ *  (API-bridge-columns-keep-no-size): region `k` in the node slot after the nodes and the regions
  *  before it, each after what it divides, depth first: its identifier as the nodes' are, the slot
  *  of the node or region it divides, its size, its own division as a code, whether the line after
  *  it is dashed, 1 or 0, with its dash and gap, and whether it has a name, 1 or 0, the names as the
@@ -290,7 +290,7 @@ type Typed = Uint8Array | Uint32Array | Float64Array;
 
 /** The code of each kind of element and each role by its name, typed by the generated names so
  *  that a kind or a role added in the engine fails here until it has its code
- *  (API-bridge-columns-carry-nesting). */
+ *  (API-bridge-columns-keep-no-size). */
 const KINDS: Readonly<Record<ContentElement["kind"], KindCode>> = {
   text: KindCode.Text,
   action: KindCode.Action,
@@ -361,8 +361,12 @@ function roleCode(role: unknown): RoleCode {
 }
 
 /** The slot a container crosses as where it names no node: past every slot, which the engine
- *  refuses as naming no node of the graph (API-bridge-columns-carry-nesting). */
+ *  refuses as naming no node of the graph (API-bridge-columns-keep-no-size). */
 export const NO_SLOT = 0xffff_ffff;
+
+/** The bit of each field of a node in the column `given`, as the bridge crate's `Given` reads it
+ *  (ARCH-border-nodes-ride-sides). */
+const GIVEN = { x: 1, y: 2, container: 4, side: 8, offset: 16 } as const;
 
 /** Whether `value` stands for a field left out: null or undefined. */
 const absent = (value: unknown) => value === undefined || value === null;
@@ -395,7 +399,7 @@ class NodeWriter implements NodeColumnWriter {
   private readonly attached: Uint32Array;
   private readonly side: ReturnType<typeof codeColumn<SideCode>>;
   private readonly offset: Float64Array;
-  private readonly beside: Uint8Array;
+  private readonly given: Uint8Array;
   /** The identifier each border node's `attachedTo` names, by the node's index. */
   private readonly attachments = new Map<number, string>();
   /** The regions written, each by what it divides: a node by its index, a region by its own
@@ -462,7 +466,7 @@ class NodeWriter implements NodeColumnWriter {
     this.attached = new Uint32Array(count);
     this.side = codeColumn(count, SIDES, SideCode.Unnamed);
     this.offset = new Float64Array(count);
-    this.beside = new Uint8Array(count);
+    this.given = new Uint8Array(count);
     this.regionIds = stringColumn(16, bound);
     this.regionNames = stringColumn(16, bound);
     this.rowBounds = new Uint32Array(count + 1);
@@ -549,10 +553,13 @@ class NodeWriter implements NodeColumnWriter {
   }
 
   /** The position of the node being written: a border node has none, one left out is none, and
-   *  one given stands beside its `attachedTo`, which refuses it (ARCH-border-nodes-ride-sides). */
+   *  one given, as a container given, the bridge refuses beside its `attachedTo`
+   *  (ARCH-border-nodes-ride-sides). */
   private position(x: unknown, y: unknown, container: unknown, attachedTo: unknown): void {
     const bordered = typeof attachedTo === "string";
-    if (bordered) this.beside[this.at] = [x, y, container].findIndex((v) => !absent(v)) + 1;
+    this.give(GIVEN.x, x);
+    this.give(GIVEN.y, y);
+    this.give(GIVEN.container, container);
     if (!bordered || !absent(x)) this.number(this.x, x, NodeField.X);
     if (!bordered || !absent(y)) this.number(this.y, y, NodeField.Y);
   }
@@ -689,7 +696,7 @@ class NodeWriter implements NodeColumnWriter {
   /** The next element, of the fields read of it: a `text` fills its role and a text, an
    *  `action` a text and a name, a `badge` its colour and a text, a `progress` no string, its
    *  segments following it, an `icon` a name, and any other kind none
-   *  (API-bridge-columns-carry-nesting). */
+   *  (API-bridge-columns-keep-no-size). */
   element(
     kind: unknown,
     role: unknown,
@@ -731,11 +738,17 @@ class NodeWriter implements NodeColumnWriter {
     if (endsRow) this.endRow();
   }
 
+  /** Sets `bit` in `given` of the node being written where it gives `value` at all. */
+  private give(bit: number, value: unknown): void {
+    if (!absent(value)) this.given[this.at] = this.given[this.at]! | bit;
+  }
+
   border(attachedTo: unknown, side: unknown, offset: unknown): void {
+    // A side or an offset of a node that is no border node, which the bridge refuses.
+    this.give(GIVEN.side, side);
+    this.give(GIVEN.offset, offset);
     if (typeof attachedTo !== "string") {
       if (!absent(attachedTo)) this.refuse(NodeField.AttachedTo);
-      // A side or an offset of a node that is no border node, which refuses it.
-      else this.beside[this.at] = !absent(side) ? 4 : !absent(offset) ? 5 : 0;
       return;
     }
     this.hasAttached[this.at] = 1;
@@ -824,7 +837,7 @@ class NodeWriter implements NodeColumnWriter {
       attached,
       side: this.side.column(this.at),
       offset: this.offset.subarray(0, this.at),
-      beside: this.beside.subarray(0, this.at),
+      given: this.given.subarray(0, this.at),
       attachedMissing,
     };
   }
@@ -891,7 +904,7 @@ export function nodeColumns(count: number, bound: number): NodeColumnWriter {
 }
 
 /** The edges of a load as the engine's `loadGraph` takes them
- *  (API-bridge-columns-carry-nesting), each column in slot order: the identifiers, sources, and
+ *  (API-bridge-columns-keep-no-size), each column in slot order: the identifiers, sources, and
  *  targets each as the values concatenated and cut into pieces, each ending where a value ends,
  *  with their boundaries in UTF-16 code units across all pieces, one more than there are edges, a
  *  refused value empty, a source or a target the identifier of the edge it lies on where

@@ -1,7 +1,7 @@
 // The diagram the example edits (G-12, G-20): its copy of the graph, the classifier, the state, the
 // activity node, or the use case diagram's node of each node, the kind of each relationship, the
 // trigger, guard, and effect of each transition, and the guard and weight of each flow, kept from
-// every change Comb tells (API-edits-report-nested-changes), as a host application that
+// every change Comb tells (API-edits-report-division-moves), as a host application that
 // persists keeps its own. An edge the user connected arrives without a kind; it becomes the kind a
 // connection adds in the diagram shown, drawn as one, and docked as the diagram's descriptor says.
 // The diagram also answers where a node lies in the world, from its copy, so that a drop lands in
@@ -64,7 +64,7 @@ export interface Refusal {
 }
 
 /** A box in the world: its top left corner and its size. */
-export interface Box {
+interface Box {
   x: number;
   y: number;
   width: number;
@@ -576,7 +576,7 @@ function patched(edge: EdgeData, patch: EdgePatch): void {
 }
 
 /** `regions` and the regions within them, at every depth, each before those it holds. */
-export function depthFirst(regions: readonly RegionData[]): RegionData[] {
+function depthFirst(regions: readonly RegionData[]): RegionData[] {
   return regions.flatMap((region) => [region, ...depthFirst(region.regions ?? [])]);
 }
 

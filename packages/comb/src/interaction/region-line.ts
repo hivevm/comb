@@ -4,47 +4,56 @@
 // engine keeps from passing what the regions beside it hold. The divided node and what it holds
 // are dragged as a drag's are, so that the moving layer redraws them and the query is kept until
 // the release (REN-moving-layer-moves-content). The release records once which regions the drag
-// changed in size and which nodes in them it moved relative to their region, unless it changed
-// none (API-edits-report-nested-changes).
+// changed in size, as the engine holds it, and which nodes in them it moved relative to their
+// region, unless it changed none. Comb still tells a region's changed size after a drag whose
+// line or box ends where it began. Each region the drag changed then holds the extent it ended at
+// (API-edits-report-division-moves).
 import type { Bridge, Hit } from "../bridge";
 import type { GraphState } from "../store";
 import type { Context, Gesture } from "./gesture";
 import { draggedOf } from "./node-drag";
 
-/** The boxes of the regions of the divided node in `slot`, `x, y, width, height` each, by slot,
- *  as the engine keeps them now. */
-export function regionBoxes(bridge: Bridge, slot: number): Map<number, number[]> {
+/** Where a region stands: the top left corner of its box, `x, y`, and its size as the engine
+ *  holds it apart from its extent. */
+export type RegionPlace = readonly [x: number, y: number, size: number];
+
+/** The places of the regions of the divided node in `slot`, by slot, as the engine keeps them
+ *  now. */
+export function regionPlaces(bridge: Bridge, slot: number): Map<number, RegionPlace> {
+  const places = new Map<number, RegionPlace>();
   // Asked before the buffers are read, since a call into the engine may detach their views.
   const regions = bridge.regionsOf(slot);
-  const { positions, sizes } = bridge.nodeBuffers();
-  const boxes = new Map<number, number[]>();
-  for (const region of regions) {
-    const at = region * 2;
-    boxes.set(region, [positions[at]!, positions[at + 1]!, sizes[at]!, sizes[at + 1]!]);
-  }
-  return boxes;
+  const held = Array.from(regions, (region) => bridge.regionSize(region)!);
+  const { positions } = bridge.nodeBuffers();
+  regions.forEach((region, k) => {
+    places.set(region, [positions[region * 2]!, positions[region * 2 + 1]!, held[k]!]);
+  });
+  return places;
 }
 
-/** What changed of the regions whose boxes were `before`: the regions whose size along the
- *  direction of their division changed, and the nodes that lie directly in a region whose top
- *  left corner moved, whose position relative to it changed with it, since they keep their world
- *  position; each by identifier. */
+/** What changed of the regions whose places were `before`: the regions whose size, as
+ *  the engine holds it apart from their extent, changed, and the nodes that lie directly in a
+ *  region whose top left corner moved, whose position relative to it changed with it, since they
+ *  keep their world position; each by identifier. */
 export function regionChanges(
   state: GraphState,
   bridge: Bridge,
-  before: ReadonlyMap<number, number[]>,
+  before: ReadonlyMap<number, RegionPlace>,
 ): { regions: string[]; moved: string[] } {
-  const { positions, sizes } = bridge.nodeBuffers();
+  const slots = [...before.keys()];
+  // Asked before the buffers are read, since a call into the engine may detach their views.
+  const held = slots.map((slot) => bridge.regionSize(slot));
+  const { positions } = bridge.nodeBuffers();
   const regions: string[] = [];
   const shifted = new Set<string>();
-  for (const [slot, box] of before) {
+  slots.forEach((slot, k) => {
     const view = state.nodes[slot];
-    if (!view?.region) continue;
+    const [x, y, size] = before.get(slot)!;
+    if (!view?.region) return;
     const at = slot * 2;
-    const axis = view.region.axis === "across" ? 0 : 1;
-    if (sizes[at + axis] !== box[2 + axis]) regions.push(view.id);
-    if (positions[at] !== box[0] || positions[at + 1] !== box[1]) shifted.add(view.id);
-  }
+    if (held[k] !== size) regions.push(view.id);
+    if (positions[at] !== x || positions[at + 1] !== y) shifted.add(view.id);
+  });
   const moved =
     shifted.size === 0
       ? []
@@ -77,9 +86,10 @@ export function lineDrag(
   const axis = hit.divide === "across" ? 0 : 1;
   const node = dividedOf(store.getState(), slot);
   const nodeId = store.getState().nodes[node]!.id;
-  const before = regionBoxes(bridge, node);
-  const box = before.get(slot)!;
-  const from = box[axis]! + box[2 + axis]!;
+  const before = regionPlaces(bridge, node);
+  // The line at the far side of the region's box, its extent, whatever size it holds.
+  const { positions, sizes } = bridge.nodeBuffers();
+  const from = positions[slot * 2 + axis]! + sizes[slot * 2 + axis]!;
   let started = false;
   return {
     grabs: false,

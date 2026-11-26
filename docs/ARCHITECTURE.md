@@ -114,7 +114,7 @@ role as byte codes, the boundaries of each node's rows and each row's elements a
 labels as `Uint32Array`, whether a label's background, a dash, and a lightning bolt are present as
 bytes, and the first value refused by its type as its position, a shape of content the snapshot
 cannot flatten with its row and column, a field of a label with the label's place in its edge's list
-([API-bridge-columns-carry-nesting](adr/API-bridge-columns-carry-nesting.md));
+([API-bridge-columns-keep-no-size](adr/API-bridge-columns-keep-no-size.md));
 serde-wasm-bindgen converts nothing of a load. A string with a lone surrogate, which the bridge
 would read as U+FFFD, `api` hands over as `false`, so that it is refused. `updateNode` and
 `updateEdge` read their patch the same way, every own key of a plain object, before they look up the
@@ -179,7 +179,7 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   among it, or than the boxes of the nodes that lie directly in it, a circle, a crossed circle, and
   a cross as high as wide, the nodes it
   holds kept at their world positions and their positions relative to it kept anew
-  ([API-edits-report-nested-changes](adr/API-edits-report-nested-changes.md)); `containers`,
+  ([API-edits-report-division-moves](adr/API-edits-report-division-moves.md)); `containers`,
   which node each node lies in: a load's `Nesting` checked so that a node lies only in a container
   and never in itself or a node it holds, the world positions as the sums along each chain of
   containers, the lists of what each container holds, and the order of the containers, each after
@@ -188,17 +188,28 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   container moving everything it holds
   ([ARCH-engine-edits-nested-graph](adr/ARCH-engine-edits-nested-graph.md)); `regions`, the
   regions a node is divided into, each a container in a node slot of its own marked as a region,
-  in the node or region it divides: `arrange` lays them out from their sizes below the divided
-  node's content, a named region's band of 24 at its start, the node grown to what they need and
-  the last region taking the rest, what each holds moved along; `move_line` moves the line after a
-  region toward the pointer as far as `reach` lets the regions beside it shrink, never below 8,
-  their bands, or the boxes of the nodes they hold, and never back past where it stands where a
-  node overhangs its region, and `refit` fits the regions inside them, the one at the moved side
-  of each division or all across it, keeping what they hold where it lies in the world, as a resize
-  of the divided node does; `line_at` finds the line within 4 screen pixels at the near and middle
-  level, the innermost, which `hit_at` names before a connector, a region hit is named as the node
-  it divides, and `container_at` passes over a divided node or region to its regions; each walk
-  over regions is a loop over `regions_of`, the deepest first where a region needs its own
+  in the node or region it divides: `divide` is the one operation a load, `addNode`, and
+  `updateNode` divide a node by, or leave it undivided, its regions in slots it adds or a load
+  built, what a kept region held moved into its part, what the node held directly moved, at its
+  world position, into the innermost region not divided again whose box holds that position, as a
+  drop there lands, else into the first region, or that region's first region, to any depth, and a
+  region refuses it; `move_into` refuses a target divided into regions, which holds its regions
+  alone; each region holds its size apart from its extent, as a division gave it or as a drag of a
+  line or a resize last changed its extent (`region_size`), so that a layout anew reads no rest
+  back as a size; `arrange` lays them out from those sizes below the divided node's content, a
+  named region's band of 24 at its start, the node grown to what they need and the last region
+  taking the rest, what each holds moved along. `division_needs` computes what a division needs
+  from its parts alone; `arrange` calls it, and so does the bridge, which checks a division
+  against the world's limit before it divides.
+  `move_line` moves the line after a region toward the pointer as far as `reach` lets the regions
+  beside it shrink, never below 8, their bands, or the boxes of the nodes they hold, and never back
+  past where it stands where a node overhangs its region, and `refit` fits the regions inside them,
+  the one at the moved side of each division or all across it, keeping what they hold where it lies
+  in the world, as a resize of the divided node does; `line_at` finds the line within 4 screen
+  pixels at the near and middle level, the innermost, which `hit_at` names before a connector, a
+  region hit is named as the node it divides, and `container_at` passes over a divided node or
+  region to its regions; each walk over regions is a loop over `regions_of`, the deepest first where
+  a region needs its own
   ([ARCH-regions-are-container-slots](adr/ARCH-regions-are-container-slots.md)); `borders`, the
   border nodes, each a node slot of its own attached to another node by a side of its box and an
   offset along it, which `attach`, `set_place`, and `slide`, the drag, hold within the side's
@@ -283,7 +294,7 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   mark as a container, refuses a node out of place (`invalidContainer`) once every node is checked
   and before the edges, and loads the nodes at their world positions, a sum past the world's limit
   refused as `beyondWorld`
-  ([API-bridge-columns-carry-nesting](adr/API-bridge-columns-carry-nesting.md)),
+  ([API-bridge-columns-keep-no-size](adr/API-bridge-columns-keep-no-size.md)),
   keeps the content of the nodes, gives each node its node shape,
   refusing content in a filled one, and makes each node as high as its node shape needs for its
   content laid out in its inner rectangle in the fonts `setFont` handed over
@@ -334,7 +345,7 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   name whole, as one string `contentTexts` returns, cut by `contentTextBounds…`, the found edge
   slots, and the edge mesh into buffers the engine owns, the label points and the mesh's positions
   relative to the query's origin, which `originX` and `originY` read
-  ([API-bridge-columns-carry-nesting](adr/API-bridge-columns-carry-nesting.md)), and returns the
+  ([API-bridge-columns-keep-no-size](adr/API-bridge-columns-keep-no-size.md)), and returns the
   mesh's detail, complete or coarsened, and refuses a pixel that is not a finite number above zero,
   with where each found edge's indices start in the mesh (`meshEdgeStarts…`); `meshAt` meshes the
   edges at given node slots and the given edge slots, each once, in the rectangle, at the level, and
@@ -348,16 +359,19 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   a connector where the shell asks for connectors, a label, a node, or an edge by its slot, or
   nothing, as one generated value, refusing a pixel as `query` does and a point that is not finite,
   `resizeNode` resizes a node by a handle from the box it had at the press, its content's height the
-  least, `regionsOf` names the regions of a divided node depth first, `moveLine` moves the line
+  least, `regionsOf` names the regions of a divided node depth first, `containerOf` names the
+  container a node lies in, where a division chose it, `regionSize` the size a region holds apart
+  from its extent, `moveLine` moves the line
   after a region, `bandName` cuts a region's name to its band in the font of `title`,
   `bandThickness` hands the shell the band's thickness the engine lays regions out by, a load takes
   the regions as columns of their own in the slots after the nodes, and `addNode` and `updateNode`
   take them as the node's `regions`, which `api` flattens into one list, each region after the one
   it lies in, so that no walk over regions recurses; `updateNode` divides the node anew and returns
   what went with a region left out, and a region's name counts against the budget of content; a load
-  takes the border nodes as columns of their own, the slot each rides, its side, its offset, and
-  what stands beside its `attachedTo`, `addNode` takes the slot of the node it rides beside its
-  container, `updateNode` sets a border node's `side` and `offset`, `borderOf` names where one sits,
+  takes the border nodes as columns of their own, the slot each rides, its side, and its offset, and
+  per node which of its `x`, `y`, `container`, `side`, and `offset` it gives, `addNode` takes the
+  slot of the node it rides beside its container, a container `api`'s map does not hold as
+  `NO_SLOT`, `updateNode` sets a border node's `side` and `offset`, `borderOf` names where one sits,
   and `slide` drags one to the point of the outline nearest the pointer; a load, `addNode`, and
   `updateNode` take a node's `outline` and a content row's separator byte, and `innerOf` names the
   inner rectangle a node's content lies in, a frame's tab; `setLabelSize` takes the measure of a
@@ -388,21 +402,25 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   `limits` holds the limits of a load, `field` the lenient reading of a field, `input` the types the
   host application hands over, `strings` the decoding of every string column, `node_columns` and
   `edge_columns` the columns of a load's nodes and edges, `problem` the refusals, `item` the reading
-  of a node or an edge, `checks` the rules of each, `load` a load and `addNode`, `edit` `addEdge`
-  and the patches, `regions` the regions of a divided node as `addNode`, `updateNode`, and a load's
-  columns hand them over, checked and built into node slots of their own, `borders` the checks of a
-  border node's `attachedTo`, `side`, and `offset` and its attachment once the graph holds the node
-  it rides, and `content` node content, itself split into `codes`, its codes and limits,
-  `check`, the one check of a load's content columns and of a single node's content, `data`, the
-  content the engine keeps, `layout`, the content as the engine's layout and hit test read it,
-  `node_content`, the content as the host application's type describes it, and `input`, the content
-  of a single node read through serde-wasm-bindgen; `snapshot`, built for the tests alone, writes
-  the columns the shell writes, and `tests` holds the builders the tests share. Its module `kept`
-  holds what the bridge keeps of node content between calls: the content of the nodes by slot
-  (`ContentStore`) and the buffers of what a query places of it (`Drawn`).
+  of a node or an edge, `checks` the rules of each, each rule of a node, its attachment and its
+  container among them, one function a load, `addNode`, and `updateNode` reach alike, `load` a load
+  and `addNode`, `edit` `addEdge`
+  and the patches, `update` the work of `updateNode`, a patch given to the graph and answered with
+  what the content `kept` holds takes of it, `regions` the regions of a divided node as `addNode`,
+  `updateNode`, and a load's columns hand them over, checked and built into node slots of their
+  own, `borders` the checks of a border node's `attachedTo`, `side`, and `offset` and its
+  attachment once the graph holds the node it rides, and `content` node content, itself split into
+  `codes`, its codes and limits, `check`, the one check of a load's content columns and of a single
+  node's content, `data`, the content the engine keeps, `layout`, the content as the engine's
+  layout and hit test read it, `node_content`, the content as the host application's type
+  describes it, and `input`, the content of a single node read through serde-wasm-bindgen;
+  `snapshot`, built for the tests alone, writes the columns the shell writes, and `tests` holds the
+  builders the tests share. Its module `kept` holds what the bridge keeps of node content between
+  calls: the content of the nodes by slot (`ContentStore`) and the buffers of what a query places
+  of it (`Drawn`). `kept` reads the types of `graph_data`, and `graph_data` names no `kept`.
   `packages/comb/src/bridge` is the one module that imports the WebAssembly package and reads those
   buffers through fresh typed-array views per read
-  ([API-bridge-columns-carry-nesting](adr/API-bridge-columns-carry-nesting.md)): its
+  ([API-bridge-columns-keep-no-size](adr/API-bridge-columns-keep-no-size.md)): its
   `columns.ts` holds the writers of a load's columns and the codes they cross as, its `index.ts` the
   facade of the engine, which re-exports them.
 - **Store** (`packages/comb/src/store`) — a vanilla Zustand store with the graph's structure, its
@@ -458,8 +476,9 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   engine's `resizeNode` the box the node had at the press and the drag from it on every move, and
   signals the node and what it holds as dragged, as a drag of a container does; its release
   records `nodeResized` once, with the nodes that lie directly in it where its left or top side
-  moved, unless no box changed, and of a divided node with the regions whose size changed and the
-  nodes in a region whose top left corner moved. `region-line.ts`: a press on the line between two
+  moved, unless no box and no region's size changed, and of a divided node with the regions whose
+  size, as the engine holds it (`regionSize`), changed and the nodes in a region whose top left
+  corner moved. `region-line.ts`: a press on the line between two
   regions hands the engine's `moveLine` the line's place at the press moved by the drag on every
   move, signals the divided node and what it holds as dragged, and records `regionsMoved` once at
   the release where a region's size changed, with the nodes in a region whose top left corner
@@ -578,7 +597,7 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   and an image Comb would fetch, cannot draw, that has not loaded, or whose pixels the page may not
   read, and copies the image into a canvas of its own (`api/icons.ts`), and `destroy`; `onChange`
   delivers each change the store records as a `GraphChange`
-  ([API-edits-report-nested-changes](adr/API-edits-report-nested-changes.md)), its positions
+  ([API-edits-report-division-moves](adr/API-edits-report-division-moves.md)), its positions
   read from the engine's buffer, synchronously from one subscription to the store that tells a
   change before the selection it cleared (`api/changes.ts`); `whenRendered` resolves once a change
   is drawn, with one render per animation frame scheduled by `api/frames.ts`. `api/scenes.ts` is the
@@ -604,12 +623,14 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   layer's, without asking the engine; `showLayers` hides layers for a reference image;
   `sceneNumbers` gives the numbers the scene draws by (where the levels of detail begin, the culling
   margin, the label reach, the rescale); `work` counts what the canvas did: GPU buffers created and
-  allocated, bytes uploaded, those of the edge mesh among them, and texture uploads, counted at the
-  WebGL context from its first call, resizes of the edge mesh's buffers, and views the pools made,
-  and refuses with an `UncountedRendererError` where the canvas draws without WebGL; `edgeVertices`
-  gives the screen point of every vertex of the edge mesh as its shader computes it in `f32`, and
-  `gpuEdgeIndices` the indices its GPU buffer holds, read back; for tests, the benchmark, and
-  tooling. Its shape follows the scene and is outside the stable interface of `comb`.
+  allocated, bytes uploaded, and texture uploads, counted at the WebGL context from its first
+  call; the bytes the edge mesh uploaded, which Comb counts from the marks it hands its buffers, at
+  each draw the last of each, with nothing internal to PixiJS; resizes of the edge mesh's buffers,
+  and views the pools made, and refuses with an `UncountedRendererError` where the canvas draws
+  without WebGL; `edgeVertices` gives the screen point of every vertex of the edge mesh as its
+  shader computes it in `f32`, `gpuEdgeIndices` the indices its GPU buffer holds, read back, and
+  `edgeIndices` those Comb handed it; for tests, the benchmark, and tooling. Its shape follows the
+  scene and is outside the stable interface of `comb`.
 - **Example** (`examples/metric-tree`) — a host application with a metric tree and an HTML sidebar
   (G-9), each type of node told only by the content the example describes from its fields (G-10):
   a bet its hypothesis and status badge, an epic its progress bar and status badge, an input
@@ -898,7 +919,7 @@ connection, deletion, and move into a container, which `interaction` hands to `a
 are asked of their veto there, in one place: only an identifier `canConnect` returns connects, only
 `true` from `canDelete` deletes and from `canMoveInto` moves, and a veto during whose call Comb
 tells a change to `onChange` ends its gesture with nothing done and no error, whatever it returned
-([API-edits-report-nested-changes](adr/API-edits-report-nested-changes.md)). Then the
+([API-edits-report-division-moves](adr/API-edits-report-division-moves.md)). Then the
 connection and the deletion run through the same function, the deletion through `removeNodes` where
 its `Deletion` names nodes, else through `removeEdges`, recorded as `by: "user"`, which every store
 action whose change may be either's requires; a move into a container calls the bridge's `moveInto`
@@ -991,14 +1012,14 @@ its gzipped JavaScript and the engine file reach the 300 kB of Q-3, when no engi
 when the JavaScript inlines the engine (API-host-hands-comb-engine), and when the bundle carries
 either seam of the bridge's test mode, each by a mark of its own the bridge's source names once,
 `DETACHING_MARK` in the message of `detaching` and `TRAP_EXPORT`, the name of the trap's export
-(API-bridge-columns-carry-nesting, API-trapped-engine-is-lost); it fails too when it does not
+(API-bridge-columns-keep-no-size, API-trapped-engine-is-lost); it fails too when it does not
 recognise each in the library built in test mode, and the trap in the engine of
 `packages/comb/wasm/test-mode/`, and when that engine's generated glue differs from the production
 engine's, which the example hands it over with. The benchmark and the browser test of the built
 example fail where `testMode()` says the build runs the bridge in test mode.
 `scripts/check-dependencies.sh` fails on a lockfile of another package manager beside `bun.lock`
 (DEV-bun-vite-wasm-pack), on tsify's default or `json` features or `serde_json` in the bridge
-crate (API-bridge-columns-carry-nesting), in whatever form the entry takes, and on a listed state
+crate (API-bridge-columns-keep-no-size), in whatever form the entry takes, and on a listed state
 library other than zustand in the library's dependency lists (ARCH-graph-in-zustand-store).
 `scripts/check-devcontainer.sh`, the template's, which `scripts/check-all.sh` and the **Checks**
 workflow run beside `scripts/check-code.sh`, fails on a host Docker socket mounted, a Feature not
@@ -1007,12 +1028,21 @@ referenced by its major tag alone, or a lock that does not name the Features
 `~/.config/gh` writable, no longer creates that source in `initializeCommand`, or no longer runs
 `gh auth setup-git --force` on start (DEV-gh-login-outlives-rebuild). `scripts/check-container.sh`
 fails where the Dev Container does not build from its Dockerfile, where the Dockerfile names an
-image without a digest, or where a Feature installs Node.js (DEV-container-adds-bun-and-rust), on a
-Feature that brings a container engine or a Compose file (SEC-no-container-engine), and where the
+image without a digest, or where a Feature installs Node.js
+(DEV-container-adds-bun-rust-shellcheck), on a Feature that brings a container engine or a Compose
+file (SEC-no-container-engine), and where the
 container does not reach the host by `--add-host=host.docker.internal:host-gateway` or does not
-forward port 4173, which the benchmark on the host needs (PERF-benchmark-drives-host-chrome); the
-workflow `.github/workflows/devcontainer.yml` builds the container and asserts the pinned Bun, Cargo
-with the WebAssembly target, and no Node.js inside it (DEV-container-adds-bun-and-rust). The type
+forward port 4173, which the benchmark on the host needs (PERF-benchmark-drives-host-chrome). It
+also fails where `.devcontainer/install-shellcheck.sh`, the one place that names the ShellCheck
+release, names no version, no SHA-256 beside each architecture, or no `sha256sum --check`, where
+the Dockerfile does not run that script or installs ShellCheck from a package, where the Dockerfile
+downloads anything by its own command, a URL outside `FROM` and `COPY`, `curl`, `wget`, or an `ADD`
+of a repository, and where it marks an unsigned archive or package as trusted
+(DEV-container-adds-bun-rust-shellcheck). The workflow `.github/workflows/devcontainer.yml` builds
+the container and asserts the pinned Bun, Cargo with the WebAssembly target, the ShellCheck version
+the install script names, and no Node.js inside it, and the `shell` job of
+`.github/workflows/checks.yml` installs the same release with the same script
+(DEV-container-adds-bun-rust-shellcheck). The type
 checker does the rest for the render layer: `GraphView` has no action to call. ESLint forbids the
 DOM markup sinks (Q-5) and `eval`, implied eval, and `new Function` (Q-6) in Comb's library sources,
 outside its tests.

@@ -3,7 +3,7 @@
 // each node by its own box, and hits a node that is no container first, then an edge, then a
 // container; a load whose container names a node that is no container, the node itself, or a node
 // it holds is refused, and the graph stays as it was (ARCH-engine-edits-nested-graph,
-// REN-virtualized-nested-scene, API-bridge-columns-carry-nesting).
+// REN-virtualized-nested-scene, API-bridge-columns-keep-no-size).
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphData, PlacedNodeData } from "comb";
 import {
@@ -75,7 +75,7 @@ test("a loaded container is drawn in the containers layer below the edge, and th
   page,
 }) => {
   // Verifies: ARCH-engine-edits-nested-graph, REN-virtualized-nested-scene,
-  // Verifies: API-bridge-columns-carry-nesting, G-14
+  // Verifies: API-bridge-columns-keep-no-size, G-14
   await open(page);
   for (const [level, scale] of await levels(page)) {
     await loaded(page, HELD, { x: 100, y: 100, scale });
@@ -162,7 +162,7 @@ for (const { name, graph, node: refused, expected } of REFUSED) {
   test(`a load whose container names ${name} is refused, naming the node and the field`, async ({
     page,
   }) => {
-    // Verifies: ARCH-engine-edits-nested-graph, API-bridge-columns-carry-nesting, Q-7
+    // Verifies: ARCH-engine-edits-nested-graph, API-bridge-columns-keep-no-size, Q-7
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
@@ -235,7 +235,7 @@ async function shown(page: Page, nodes: string[], edges: string[]) {
 test("removeNodes of a container removes what it holds and the edges at any of it, told once and drawn at no level", async ({
   page,
 }) => {
-  // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-nested-changes,
+  // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-division-moves,
   // Verifies: REN-moving-layer-moves-content, G-14
   await open(page);
   for (const [level, scale] of await levels(page)) {
@@ -268,7 +268,7 @@ test("removeNodes of a container removes what it holds and the edges at any of i
 test("Delete of a selected container asks canDelete with what it holds and their edges, and deletes only on true", async ({
   page,
 }) => {
-  // Verifies: API-edits-report-nested-changes, ARCH-engine-edits-nested-graph, G-4, G-14
+  // Verifies: API-edits-report-division-moves, ARCH-engine-edits-nested-graph, G-4, G-14
   await open(page);
   await loaded(page, HELD_AND_OUTSIDE);
   await page.evaluate(() => {
@@ -314,7 +314,7 @@ const ADDED = [
 test("addNode with a container draws the node in it at its relative position, and nodeAdded carries it as Comb took it", async ({
   page,
 }) => {
-  // Verifies: API-edits-report-nested-changes, ARCH-engine-edits-nested-graph, G-14
+  // Verifies: API-edits-report-division-moves, ARCH-engine-edits-nested-graph, G-14
   await open(page);
   for (const [level, scale] of await levels(page)) {
     await loaded(page, HELD, { x: 100, y: 100, scale });
@@ -356,7 +356,7 @@ for (const { name, container: refused, expected } of ADD_REFUSED) {
   test(`addNode whose container names ${name} is refused as invalidContainer, and the graph stays`, async ({
     page,
   }) => {
-    // Verifies: API-edits-report-nested-changes, ARCH-engine-edits-nested-graph, Q-7
+    // Verifies: API-edits-report-division-moves, ARCH-engine-edits-nested-graph, Q-7
     await open(page);
     await loaded(page, HELD);
     const before = await drawnGraph(page);
@@ -381,7 +381,7 @@ for (const { name, container: refused, expected } of ADD_REFUSED) {
 test("a drag of a node in a container tells nodeMoved relative to it, and of the container relative to the canvas", async ({
   page,
 }) => {
-  // Verifies: API-edits-report-nested-changes, G-14
+  // Verifies: API-edits-report-division-moves, G-14
   await open(page);
   await loaded(page, HELD);
   // Node a where it lies in the container, dragged by (30, 10) and released in it, then the
@@ -633,7 +633,7 @@ async function toldRounded(page: Page) {
 test("a node dropped into a container on canMoveInto true is told once with the container, drawn above it, and held by it", async ({
   page,
 }) => {
-  // Verifies: API-edits-report-nested-changes, ARCH-engine-edits-nested-graph, G-14
+  // Verifies: API-edits-report-division-moves, ARCH-engine-edits-nested-graph, G-14
   await open(page);
   await loaded(page, BESIDE);
   await vetoMoves(page, "true");
@@ -662,7 +662,7 @@ for (const answer of ["false", "throw", "remove"] as const) {
   test(`a node dropped into a container with canMoveInto ${answer === "remove" ? "removing the container and returning true" : answer === "throw" ? "throwing" : "returning false"} stands where it stood, and no change of the user's is told`, async ({
     page,
   }) => {
-    // Verifies: API-edits-report-nested-changes
+    // Verifies: API-edits-report-division-moves
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
@@ -692,7 +692,7 @@ for (const answer of ["false", "throw", "remove"] as const) {
 test("a node reaching past its container, grabbed there and dropped outside every container, asks canMoveInto with null and lies on the canvas", async ({
   page,
 }) => {
-  // Verifies: API-edits-report-nested-changes, G-14
+  // Verifies: API-edits-report-division-moves, G-14
   await open(page);
   await loaded(page, HELD);
   await vetoMoves(page, "true");
@@ -718,7 +718,7 @@ const NESTED: GraphData = {
 test("a container released with the pointer over a container it holds asks nothing, and moved within its own container", async ({
   page,
 }) => {
-  // Verifies: API-edits-report-nested-changes, G-14
+  // Verifies: API-edits-report-division-moves, G-14
   await open(page);
   await loaded(page, NESTED);
   await vetoMoves(page, "true");
@@ -739,7 +739,7 @@ test("a container released with the pointer over a container it holds asks nothi
 test("a node dropped within its own container asks nothing, and nodeMoved carries the same container", async ({
   page,
 }) => {
-  // Verifies: API-edits-report-nested-changes, G-14
+  // Verifies: API-edits-report-division-moves, G-14
   await open(page);
   await loaded(page, HELD);
   await vetoMoves(page, "true");
@@ -760,7 +760,7 @@ const BELOW: GraphData = {
 test("a node moved into a container takes the next rank: it is drawn and hit above a node there it overlaps", async ({
   page,
 }) => {
-  // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-nested-changes
+  // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-division-moves
   await open(page);
   await loaded(page, BELOW);
   // a's centre, released in c: a lies at (390, 98), over b at (400, 100).
@@ -838,7 +838,7 @@ const FAR_RIGHT: GraphData = {
 test("a container dropped into another and refused stands where it stood, and what it holds exactly where it lay in it", async ({
   page,
 }) => {
-  // Verifies: API-edits-report-nested-changes, ARCH-engine-edits-nested-graph
+  // Verifies: API-edits-report-division-moves, ARCH-engine-edits-nested-graph
   await open(page);
   await loaded(page, FAR_RIGHT, { x: -1_048_300 * 1.5 + 50, y: 50, scale: 1.5 });
   await vetoMoves(page, "false");

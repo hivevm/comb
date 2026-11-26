@@ -22,7 +22,7 @@
 // edge on a node or at the middle of an edge (API-edges-dock-nodes-or-edges). The frame of the
 // activity is divided side by side into its partitions, and a partition may be divided again. The
 // user moves a node between partitions and regions, never out of the frame onto the canvas
-// (API-edits-report-nested-changes).
+// (API-edits-report-division-moves).
 import type {
   BorderNodeData,
   Comb,
@@ -209,7 +209,7 @@ const NAMED_BESIDE: readonly ActivityKind[] = ["input-pin", "output-pin"];
 export const streamNodeId = (id: string) => `${id}-stream`;
 
 /** The identifier of the node that shows the value of the value pin `id` beside it. */
-export const valueNodeId = (id: string) => `${id}-value`;
+const valueNodeId = (id: string) => `${id}-value`;
 
 /** What a streaming pin shows beside it besides its name. */
 const STREAM = "{stream}";
@@ -229,7 +229,7 @@ export function nameOf(
 
 /** The identifiers of the two outer rectangles of the expansion node `id`, which is the middle one,
  *  before and after it along its side. */
-export const outerBoxesOf = (id: string) => [`${id}-before`, `${id}-after`];
+const outerBoxesOf = (id: string) => [`${id}-before`, `${id}-after`];
 
 /** The nodes that go with `node` and with no other: a pin's name or a value pin's value, and
  *  `{stream}` beside either where it streams; an expansion node's outer rectangles. */
@@ -242,7 +242,7 @@ export function companionsOf(node: ActivityNode): string[] {
 /** A region of a node: its identifier, its name, its size along the direction of its division,
  *  the last region taking the rest, and the regions it is divided into the same way, as a
  *  partition holds nested ones. */
-export interface Region {
+interface Region {
   id: string;
   name: string;
   size: number;
@@ -251,7 +251,7 @@ export interface Region {
 
 /** The size of a node that holds others or has regions, or of a parameter set: its width, its
  *  height, and its regions. */
-export interface Size {
+interface Size {
   width: number;
   height: number;
   regions?: readonly Region[];
@@ -529,7 +529,7 @@ export function flowLabelOf({ guard, weight }: Flow): string | null {
 /** The kind a connection adds between nodes of kinds `source` and `target`: from a comment its
  *  anchor; from an action to an input pin, where the rules allow one, an exception handler, as the
  *  human decided on 2026-11-20; else the flow `flowBetween` gives. */
-export function connectedOf(source: NodeKind, target: NodeKind): RelationshipKind {
+function connectedOf(source: NodeKind, target: NodeKind): RelationshipKind {
   if (source === "activity-comment") return "anchor";
   if (allows({ source, target, kind: "exception-handler" })) return "exception-handler";
   return flowBetween(source, target);
@@ -537,7 +537,7 @@ export function connectedOf(source: NodeKind, target: NodeKind): RelationshipKin
 
 /** The example's veto of the user's move of a node into a container: a move into a partition or a
  *  region is allowed, one onto the canvas, out of the activity's frame, refused. */
-export const canMoveInto = ({ container }: ContainerMove): boolean => container !== null;
+const canMoveInto = ({ container }: ContainerMove): boolean => container !== null;
 
 /** A node of a diagram as written in its file: its activity node, and its centre in its container,
  *  or its side and offset on the node it rides; a node that holds others or has regions, the

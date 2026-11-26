@@ -62,7 +62,7 @@ import {
 } from "./use-case-diagram";
 
 /** How the last load went: what the browser tests read. */
-export interface UmlLoadReport {
+interface UmlLoadReport {
   diagram: string;
   nodes: number;
   edges: number;
@@ -70,7 +70,7 @@ export interface UmlLoadReport {
 
 /** What the browser tests reach of the example, under one name, so that it declares nothing on
  *  `window` the metric tree declares too. */
-export interface UmlHooks {
+interface UmlHooks {
   comb: Comb;
   loadReport: Promise<UmlLoadReport>;
   /** The example's copy of the diagram's graph, a border node among its nodes as Comb took it. */

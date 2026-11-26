@@ -1,4 +1,4 @@
-//! The columns of a load the snapshot of `api` builds (API-bridge-columns-carry-nesting), written
+//! The columns of a load the snapshot of `api` builds (API-bridge-columns-keep-no-size), written
 //! by the tests: a batch of nodes and edges as the tests write it, each string column cut into
 //! pieces as the shell's writer cuts it.
 
@@ -59,7 +59,7 @@ impl Refusable for EdgeInput {
 }
 
 /// The bound on a piece of a string column the snapshot of `api` passes its writer
-/// (API-bridge-columns-carry-nesting).
+/// (API-bridge-columns-keep-no-size).
 #[cfg(test)]
 const SNAPSHOT_PIECE: usize = 1 << 28;
 
@@ -123,16 +123,21 @@ pub(crate) struct OwnedColumns {
     pub(super) attached: Vec<u32>,
     pub(super) side: Vec<u8>,
     pub(super) offset: Vec<f64>,
-    pub(super) beside: Vec<u8>,
+    pub(super) given: Vec<u8>,
     pub(super) attached_missing: Option<String>,
     /// The identifier each border node names, resolved once every node is written.
     attached_ids: Vec<Option<String>>,
+    /// The identifier each node's container names, resolved once every node is written.
+    container_ids: Vec<Option<String>>,
+    /// Per node whether its identifier is a string, which alone a container or an `attachedTo`
+    /// resolves to.
+    id_given: Vec<bool>,
     pub(crate) content: ContentData,
     pub(crate) refused: Option<Refused>,
 }
 
 /// The columns of a load's regions, owned, as the snapshot of `api` writes them
-/// (API-bridge-columns-carry-nesting): each region after the nodes, depth first, `of` naming what
+/// (API-bridge-columns-keep-no-size): each region after the nodes, depth first, `of` naming what
 /// it divides, a node by its index and a region by its own index past the nodes.
 #[cfg(test)]
 #[derive(Default)]
@@ -259,6 +264,7 @@ impl OwnedColumns {
             };
             let Some(node) = node else {
                 refuse(NodeField::Item, None, None);
+                columns.id_given.push(false);
                 push_value(&mut columns.ids, &mut columns.id_bounds, String::new());
                 for numbers in [&mut columns.x, &mut columns.y, &mut columns.width] {
                     numbers.push(f64::NAN);
@@ -270,13 +276,14 @@ impl OwnedColumns {
                 columns.on_canvas();
                 columns.resizable.push(0);
                 columns.divide.push(0);
-                columns.no_border();
+                columns.no_border(0);
                 columns.content.end_node();
                 continue;
             };
             if node.id.0.is_none() {
                 refuse(NodeField::Id, None, None);
             }
+            columns.id_given.push(node.id.0.is_some());
             let id = node.id.0.clone().unwrap_or_default();
             push_value(&mut columns.ids, &mut columns.id_bounds, id);
             // A border node has no position; any other node's left out is refused.
@@ -313,7 +320,7 @@ impl OwnedColumns {
             });
             columns.shape.push(shape);
             columns.push_outline(node.outline.0);
-            columns.on_canvas();
+            columns.push_nesting(index, node);
             columns.push_resizable(index, node);
             columns.push_regions(index, node);
             columns.push_border(index, node);
@@ -321,6 +328,7 @@ impl OwnedColumns {
             columns.content.end_node();
         }
         columns.resolve_borders();
+        columns.resolve_containers();
         columns.ids = pieces_of(&columns.ids, bound);
         let count = columns.x.len() as u32;
         columns.regions.number(count);
@@ -391,26 +399,28 @@ impl OwnedColumns {
         }
     }
 
-    /// Writes the next node as no border node.
-    fn no_border(&mut self) {
+    /// Writes the next node as no border node, its data giving the fields of the bits `given`.
+    fn no_border(&mut self, given: u8) {
         self.has_attached.push(0);
         self.attached.push(0);
         self.side.push(0);
         self.offset.push(0.0);
-        self.beside.push(0);
+        self.given.push(given);
         self.attached_ids.push(None);
     }
 
     /// Writes the attachment of the node at `index`, `node`, as the snapshot does
     /// (ARCH-border-nodes-ride-sides): its `attachedTo`, resolved once every node is written; its
     /// side as its code, `Unnamed` where missing or of another type; its offset, its refusal named
-    /// where missing or of another type; and the first of `x`, `y`, and `container` beside it.
+    /// where missing or of another type; and of any node which of `x`, `y`, `container`, `side`,
+    /// and `offset` it gives.
     fn push_border(&mut self, index: u32, node: &NodeInput) {
+        let given = super::item::given_of(node).bits();
         let Some(Some(on)) = node.attached_to.0.clone() else {
             if node.attached_to.0.is_none() {
                 self.refuse_at(index, NodeField::AttachedTo);
             }
-            self.no_border();
+            self.no_border(given);
             return;
         };
         self.has_attached.push(1);
@@ -434,23 +444,16 @@ impl OwnedColumns {
                 self.offset.push(f64::NAN);
             }
         }
-        let beside = [node.x.0, node.y.0]
-            .iter()
-            .position(|value| matches!(value, Some(Some(_))))
-            .map(|at| at as u8 + 1)
-            .or_else(|| matches!(node.container.0, Some(Some(_))).then_some(3));
-        self.beside.push(beside.unwrap_or(0));
+        self.given.push(given);
     }
 
     /// Resolves the `attachedTo` of each border node against the identifiers of the nodes, as the
     /// snapshot finds a slot: `CANVAS` where it names none, the first such identifier kept.
     fn resolve_borders(&mut self) {
-        let ids: Vec<String> = (0..self.x.len())
-            .map(|i| super::value_at(&self.ids, &self.id_bounds, i))
-            .collect();
+        let ids = self.node_ids();
         for (i, on) in self.attached_ids.iter().enumerate() {
             let Some(on) = on else { continue };
-            match ids.iter().position(|id| id == on) {
+            match ids.iter().position(|id| id.as_ref() == Some(on)) {
                 Some(slot) => self.attached[i] = slot as u32,
                 None => {
                     self.attached[i] = comb_engine::graph::CANVAS;
@@ -458,6 +461,14 @@ impl OwnedColumns {
                 }
             }
         }
+    }
+
+    /// The identifier of each node written, none where it is no string, which nothing resolves
+    /// to, as the snapshot's map of identifiers holds only strings.
+    fn node_ids(&self) -> Vec<Option<String>> {
+        (0..self.x.len())
+            .map(|i| self.id_given[i].then(|| super::value_at(&self.ids, &self.id_bounds, i)))
+            .collect()
     }
 
     /// Names `field` of the node at `index` as refused, unless a value before it is.
@@ -475,11 +486,56 @@ impl OwnedColumns {
         self.has_container.push(0);
         self.container.push(0);
         self.is_container.push(0);
+        self.container_ids.push(None);
+    }
+
+    /// Writes the nesting of the node at `index`, `node`, as the snapshot does
+    /// (API-bridge-columns-keep-no-size): a container that is a string names one, resolved once
+    /// every node is written, and whether it is a container; a value of another type in either
+    /// crosses as none, its refusal named.
+    fn push_nesting(&mut self, index: u32, node: &NodeInput) {
+        let named = match &node.container.0 {
+            Some(named) => named.clone(),
+            None => {
+                self.refuse_at(index, NodeField::Container);
+                None
+            }
+        };
+        self.has_container.push(u8::from(named.is_some()));
+        self.container.push(0);
+        self.container_ids.push(named);
+        if node.is_container.0.is_none() {
+            self.refuse_at(index, NodeField::IsContainer);
+        }
+        let mark = node.is_container.0.flatten() == Some(true);
+        self.is_container.push(u8::from(mark));
+    }
+
+    /// Resolves the container each node names against the identifiers of the nodes that are
+    /// strings, then of the regions, each in the slot it takes after the nodes, as the snapshot
+    /// finds a slot: the first of an identifier shared, and past every slot where none has it,
+    /// which the bridge refuses as no node of the graph.
+    fn resolve_containers(&mut self) {
+        let regions = (0..self.regions.of.len()).map(|k| {
+            Some(super::value_at(
+                &self.regions.ids,
+                &self.regions.id_bounds,
+                k,
+            ))
+        });
+        let ids: Vec<Option<String>> = self.node_ids().into_iter().chain(regions).collect();
+        for (i, named) in self.container_ids.iter().enumerate() {
+            let Some(named) = named else { continue };
+            self.container[i] = ids
+                .iter()
+                .position(|id| id.as_ref() == Some(named))
+                .map_or(u32::MAX, |slot| slot as u32);
+        }
     }
 
     /// The columns with the nesting `containers`, per node the slot it names or none, and `marks`,
     /// per node whether it is a container, as the snapshot writes them
-    /// (API-bridge-columns-carry-nesting).
+    /// (API-bridge-columns-keep-no-size).
     pub(crate) fn nested(mut self, containers: &[Option<u32>], marks: &[bool]) -> Self {
         self.has_container = containers.iter().map(|c| u8::from(c.is_some())).collect();
         self.container = containers.iter().map(|c| c.unwrap_or(0)).collect();
@@ -545,7 +601,7 @@ impl OwnedColumns {
             attached: &self.attached,
             side: &self.side,
             offset: &self.offset,
-            beside: &self.beside,
+            given: &self.given,
             attached_missing: self.attached_missing.as_deref(),
             content: self.content.view(),
             refused: self.refused,
@@ -1081,6 +1137,22 @@ mod tests {
 
     // A field added to an input fails to compile in the tests below until they and `Refusable`
     // name it.
+
+    #[test]
+    fn a_container_or_an_attached_to_resolves_to_a_node_by_an_identifier_that_is_a_string() {
+        // Verifies: API-bridge-columns-keep-no-size
+        // An identifier of another type is in no map of the snapshot: `""` names no node.
+        let unnamed = read::<NodeInput>(&[("id", Value::Number(1.0))]);
+        let named = |field: &str| read::<NodeInput>(&[(field, Value::Text(String::new()))]);
+        let columns = OwnedColumns::of([
+            Some(&unnamed),
+            Some(&named("container")),
+            Some(&named("attachedTo")),
+        ]);
+        assert_eq!(columns.container[1], u32::MAX);
+        assert_eq!(columns.attached[2], comb_engine::graph::CANVAS);
+        assert_eq!(columns.attached_missing.as_deref(), Some(""));
+    }
 
     #[test]
     fn every_field_of_a_node_is_refusable() {

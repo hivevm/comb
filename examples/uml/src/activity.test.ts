@@ -7,15 +7,17 @@ import { expect, test } from "bun:test";
 import type { BorderNodeData, Comb, Divide, NodeData, NodeShape } from "comb";
 import {
   ACTIVITY_BORDERS,
+  ACTIVITY_EDITS,
   ACTIVITY_SHAPES,
-  canMoveInto,
-  connectedOf,
   droppedParameterSet,
   flowLabelOf,
   nodesOf,
   partitionedOf,
 } from "./activity";
 import { styleOf } from "./relationships";
+
+/** The veto of a move and the kind a connection adds, as the diagram's descriptor hands them on. */
+const { canMoveInto, connectedOf } = ACTIVITY_EDITS;
 
 /** Each kind's node shape, its outline where dashed, whether it holds nodes, a height where it
  *  is given one, and the direction it is divided in: a send signal action a pentagon, an accept
@@ -94,7 +96,7 @@ test("a pin, a value pin, and a parameter set ride an action, an expansion node 
 });
 
 test("the example allows a move into a partition or a region, and refuses one onto the canvas", () => {
-  // Verifies: API-edits-report-nested-changes
+  // Verifies: API-edits-report-division-moves
   expect(canMoveInto({ node: "build", container: "shell" })).toBe(true);
   expect(canMoveInto({ node: "build", container: "interruptible" })).toBe(true);
   expect(canMoveInto({ node: "lay-out", container: "engine" })).toBe(true);

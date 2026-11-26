@@ -1,7 +1,7 @@
 // The testing entry, `comb/testing`: what the canvas draws, for tests, benchmarks, and tooling,
 // which of its layers it shows, for reference images, and the transform between world and screen.
 // Its shape follows the scene and changes with it, outside the stable interface of `comb`.
-import type { Buffer, GlBuffer, Matrix, WebGLRenderer } from "pixi.js";
+import type { GlBuffer, Matrix, WebGLRenderer } from "pixi.js";
 import type { Comb } from "./api";
 import { scenes } from "./api/scenes";
 import { bridgeCalls, TEST_MODE, trapNextCall, type Hit, type Rect } from "./bridge";
@@ -71,9 +71,11 @@ export function renderCount(comb: Comb): number {
  *
  *  The GPU numbers are counted at the WebGL context, so that they hold whatever PixiJS does: GPU
  *  buffers created, buffer storage allocated (a buffer created or grown), bytes uploaded into
- *  buffers, of them the bytes of the edge mesh, and texture uploads. A resize is a buffer of the
- *  edge mesh given data of another length, which PixiJS reports so that a renderer replaces the
- *  GPU buffer. */
+ *  buffers, and texture uploads. The bytes of the edge mesh are counted by Comb, from what it
+ *  hands PixiJS and nothing internal to PixiJS: at each draw of the mesh, the bytes of the last
+ *  span of each of its buffers marked for upload since the draw before. A resize is a buffer of
+ *  the edge mesh given data of another length, which PixiJS reports so that a renderer replaces
+ *  the GPU buffer. */
 export interface Work {
   buffersCreated: number;
   bufferAllocations: number;
@@ -93,7 +95,12 @@ export class UncountedRendererError extends Error {
   }
 }
 
-type Counts = Omit<Work, "viewsCreated">;
+type Counts = Omit<Work, "viewsCreated" | "meshBytesUploaded"> & {
+  /** The edges layer, checked at the first call of `work`, and what its mesh had uploaded then,
+   *  from which `work` counts. */
+  edges: EdgesContainer;
+  meshBytesBefore: number;
+};
 
 const counted = new WeakMap<Comb, Counts>();
 
@@ -106,47 +113,23 @@ function bytesOf(data: unknown, offset = 0, length = 0): number {
   return length > 0 ? length * element : data.byteLength - offset * element;
 }
 
-/** The method of PixiJS's buffer system through which every buffer's upload runs: `updateBuffer`
- *  when a geometry is bound, the listener of a buffer's `update` event, and the index buffer's. It
- *  is internal to PixiJS, so a version without it fails here rather than count no upload. */
-type Upload = (buffer: Buffer, ...rest: unknown[]) => unknown;
-
-/** Counts the calls of `renderer`'s WebGL context into `counts`, from now on; uploads while
- *  PixiJS uploads one of `mesh` count as the mesh's too. Both buffer upload calls take the offset
- *  and the length of their data, in elements, fourth and fifth. */
-function countCalls(renderer: WebGLRenderer, mesh: Set<Buffer>, counts: Counts): void {
+/** Counts the calls of `renderer`'s WebGL context into `counts`, from now on. Both buffer upload
+ *  calls take the offset and the length of their data, in elements, fourth and fifth. */
+function countCalls(renderer: WebGLRenderer, counts: Counts): void {
   const { gl } = renderer;
-  const system = renderer.buffer as unknown as { _upload?: Upload };
-  const uploadBuffer = system._upload;
-  if (typeof uploadBuffer !== "function") {
-    throw new Error("comb/testing: PixiJS's buffer system has no _upload to count the mesh by");
-  }
   const { createBuffer, bufferData, bufferSubData } = gl;
-  let updating: Buffer | null = null;
-  const uploaded = (bytes: number) => {
-    counts.bytesUploaded += bytes;
-    if (updating && mesh.has(updating)) counts.meshBytesUploaded += bytes;
-  };
   type Args = [unknown, unknown, unknown, number?, number?];
-  system._upload = function (this: typeof system, buffer: Buffer, ...rest: unknown[]) {
-    updating = buffer;
-    try {
-      return uploadBuffer.call(this, buffer, ...rest);
-    } finally {
-      updating = null;
-    }
-  };
   gl.createBuffer = function (this: WebGL2RenderingContext) {
     counts.buffersCreated += 1;
     return createBuffer.call(this);
   };
   gl.bufferData = function (this: WebGL2RenderingContext, ...args: Args) {
     counts.bufferAllocations += 1;
-    uploaded(bytesOf(args[1], args[3], args[4]));
+    counts.bytesUploaded += bytesOf(args[1], args[3], args[4]);
     return Reflect.apply(bufferData, this, args);
   } as typeof bufferData;
   gl.bufferSubData = function (this: WebGL2RenderingContext, ...args: Args) {
-    uploaded(bytesOf(args[2], args[3], args[4]));
+    counts.bytesUploaded += bytesOf(args[2], args[3], args[4]);
     return Reflect.apply(bufferSubData, this, args);
   } as typeof bufferSubData;
   for (const name of [
@@ -184,12 +167,13 @@ export function work(comb: Comb): Work {
       bufferAllocations: 0,
       bufferResizes: 0,
       bytesUploaded: 0,
-      meshBytesUploaded: 0,
       textureUploads: 0,
+      edges,
+      meshBytesBefore: edges.uploaded(),
     };
     const { attributes, indexBuffer } = edges.geometry;
     const mesh = new Set([...Object.values(attributes).map((a) => a.buffer), indexBuffer]);
-    countCalls(renderer as WebGLRenderer, mesh, fresh);
+    countCalls(renderer as WebGLRenderer, fresh);
     for (const buffer of mesh) buffer.on("change", () => (fresh.bufferResizes += 1));
     counted.set(comb, (counts = fresh));
   }
@@ -200,13 +184,15 @@ export function work(comb: Comb): Work {
     particles.created +
     containerNodes.created +
     containerParticles.created;
-  return { ...counts, viewsCreated };
+  const { edges, meshBytesBefore, ...gpu } = counts;
+  const meshBytesUploaded = edges.uploaded() - meshBytesBefore;
+  return { ...gpu, meshBytesUploaded, viewsCreated };
 }
 
 /** The screen point, relative to the canvas, of every vertex the edge mesh of `comb` draws, `x, y`
  *  each, as its shader computes it: in `f32`, from the positions PixiJS uploads and the two
  *  transforms it hands the shader as `f32` uniforms, the world's and the mesh's within the world
- *  (API-bridge-columns-carry-nesting). The shader multiplies the projection into clip space
+ *  (API-bridge-columns-keep-no-size). The shader multiplies the projection into clip space
  *  first, a scale and a shift by the canvas's size, which rounds by about 2^-24 of the canvas's
  *  size more; it is left out, since that cannot move a vertex by a quarter pixel. WebGL only: the
  *  Canvas 2D fallback has no
@@ -266,6 +252,18 @@ export function gpuEdgeIndices(comb: Comb): Uint32Array {
   return indices;
 }
 
+/** The indices the edge mesh of `comb` drew last, a copy of those Comb handed its index buffer:
+ *  what `gpuEdgeIndices` holds where the GPU buffer took every mark. WebGL only: it throws
+ *  `UncountedRendererError` on the Canvas 2D fallback, which has no such mesh. */
+export function edgeIndices(comb: Comb): Uint32Array {
+  const { app, edges } = sceneOf(comb);
+  if (!(edges instanceof EdgesContainer)) {
+    throw new UncountedRendererError(app.renderer.name);
+  }
+  const data = edges.geometry.indexBuffer.data as Uint32Array;
+  return data.slice(0, edges.size().indices);
+}
+
 /** Shows or hides layers of the canvas of `comb`, so that a reference image can hold one layer
  *  alone, without the text of the others, whose fonts differ between machines. */
 export function showLayers(comb: Comb, layers: { nodes?: boolean; edgeLabels?: boolean }): void {
@@ -296,7 +294,7 @@ export function sceneNumbers(): {
 }
 
 /** Whether the bridge runs in test mode, in which every view kept across an engine call reads
- *  empty (API-bridge-columns-carry-nesting): what the browser tests assert before they trust that
+ *  empty (API-bridge-columns-keep-no-size): what the browser tests assert before they trust that
  *  a stale view fails. */
 export function testMode(): boolean {
   return TEST_MODE;

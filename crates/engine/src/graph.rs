@@ -1,6 +1,6 @@
 //! The loaded graph as the engine keeps it: node positions and sizes per node slot, edges per edge
 //! slot, a rank per node slot that orders drawing and hitting, and a spatial index over both that
-//! loads, additions, and moves keep current (API-bridge-columns-carry-nesting,
+//! loads, additions, and moves keep current (API-bridge-columns-keep-no-size,
 //! ARCH-engine-edits-nested-graph, REN-virtualized-nested-scene).
 //!
 //! A query answers which node slots, edge slots, and edge labels a rectangle meets, and writes
@@ -45,7 +45,9 @@ pub use nodes::PositionError;
 #[cfg(test)]
 pub(crate) use query::origin_of;
 pub use query::{Level, MeshAt, Visible};
-pub use regions::{Axis, BAND, LEAST_REGION, LineError};
+pub use regions::{
+    Axis, BAND, DivideError, Divided, LEAST_REGION, LineError, Part, RegionSlots, division_needs,
+};
 pub use resize::{Handle, LEAST_SIDE, resized};
 use slots::Slots;
 
@@ -186,7 +188,8 @@ impl From<TooManySlots> for AddNodeError {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MoveIntoError {
     Slot(SlotError),
-    /// The slot named as the container holds no node, or a node that is no container.
+    /// The slot named as the container holds no node, a node that is no container, or a node or
+    /// a region divided into regions, which holds its regions alone.
     NoContainer {
         slot: u32,
     },
@@ -251,7 +254,7 @@ pub struct Graph {
     /// past its end is solid.
     outlines: Vec<Outline>,
     /// The height each node slot's data gives, or a resize left, or none; a slot past its end
-    /// has none (API-edits-report-nested-changes).
+    /// has none (API-edits-report-division-moves).
     given: Vec<Option<f32>>,
     /// Whether the user may resize each node slot by its resize handles; a slot past its end may
     /// not.

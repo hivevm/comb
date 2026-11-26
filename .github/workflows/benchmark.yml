@@ -67,7 +67,7 @@ jobs:
             bun --bun bench/run.ts
             cp bench-results/latest.json "bench-results/run-$i.json"
           done
-      # Verifies: API-bridge-columns-carry-nesting, DEV-bun-vite-wasm-pack — the median first frame of the runner's kind stays within the
+      # Verifies: API-bridge-columns-keep-no-size, DEV-bun-vite-wasm-pack — the median first frame of the runner's kind stays within the
       # margin of its baseline, so a load that grows slow again is found at the next run.
       - name: Compare the median with the baseline of the runner's kind
         run: bun bench/compare.ts bench/baselines bench-results/run-*.json

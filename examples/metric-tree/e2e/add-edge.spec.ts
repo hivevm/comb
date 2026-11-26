@@ -1,5 +1,5 @@
 // The host application adds edges through `addEdge` and changes them through `updateEdge` (G-5,
-// G-11, API-edits-report-nested-changes): the next frame draws them with their colour, dash
+// G-11, API-edits-report-division-moves): the next frame draws them with their colour, dash
 // pattern, and label, `onChange` tells each change once, and an edge or a patch a load would
 // refuse, an edge the graph cannot hold, and a patch of an unknown edge or field change nothing
 // (ARCH-one-workspace-per-example, Q-7).
@@ -16,7 +16,7 @@ const BLUE = 0x2060e0;
 test("addEdge draws the edge with its colour, dash, and label, and tells edgeAdded with defaults", async ({
   page,
 }) => {
-  // Verifies: G-11, API-edits-report-nested-changes
+  // Verifies: G-11, API-edits-report-division-moves
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -56,7 +56,7 @@ test("addEdge draws the edge with its colour, dash, and label, and tells edgeAdd
 test("a label without a place arrives in edgeAdded and edgeUpdated at 0.5 and 0, and one without a background with none", async ({
   page,
 }) => {
-  // Verifies: API-edges-dock-nodes-or-edges, API-edits-report-nested-changes
+  // Verifies: API-edges-dock-nodes-or-edges, API-edits-report-division-moves
   await open(page);
   await loaded(page, PAIR);
   const bare = { id: "m", text: "name" };
@@ -194,7 +194,7 @@ async function inkAt(page: Page, color: number, points: [number, number][]): Pro
 test("with loops allowed, addEdge draws a loop above the node, its arrowhead into it and its label at the top", async ({
   page,
 }) => {
-  // Verifies: G-13, API-edges-dock-nodes-or-edges, API-edits-report-nested-changes
+  // Verifies: G-13, API-edges-dock-nodes-or-edges, API-edits-report-division-moves
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page, "?loops=allow");
@@ -264,7 +264,7 @@ test("a load of a loop that names no side draws both its ends on the top of its 
 test("updateEdge recolours an edge, clears its dash, moves its label, and tells edgeUpdated once", async ({
   page,
 }) => {
-  // Verifies: G-5, G-11, API-edits-report-nested-changes
+  // Verifies: G-5, G-11, API-edits-report-division-moves
   await open(page);
   await loaded(page, PAIR);
   const edge = { id: "a-b", source: "a", target: "b", color: RED, dash: [8, 8] as const };
@@ -429,7 +429,7 @@ test("addEdge refuses an edge past the limit of a load as tooMany", async ({ pag
 test("a patch of one field keeps the label and the dash, and moves a label the edge has", async ({
   page,
 }) => {
-  // Verifies: G-5, API-edits-report-nested-changes
+  // Verifies: G-5, API-edits-report-division-moves
   await open(page);
   await loaded(page, PAIR);
   const edge = {
@@ -535,7 +535,7 @@ test("a listener that writes into a delivered change reaches nothing Comb keeps"
 test("updateEdge moves an edge's end to another side, and the next frame draws it entering there", async ({
   page,
 }) => {
-  // Verifies: API-edges-dock-nodes-or-edges, API-edits-report-nested-changes
+  // Verifies: API-edges-dock-nodes-or-edges, API-edits-report-division-moves
   await open(page);
   // b below and to the right of a, so that its top and left connectors differ.
   await loaded(page, { nodes: [node("a"), node("b", 600, 300)], edges: [] });

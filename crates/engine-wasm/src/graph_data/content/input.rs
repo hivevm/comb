@@ -1,5 +1,5 @@
 //! The content of a single node read through serde-wasm-bindgen
-//! (API-bridge-columns-carry-nesting), the node of `addNode` or a patch of `updateNode`, as the
+//! (API-bridge-columns-keep-no-size), the node of `addNode` or a patch of `updateNode`, as the
 //! snapshot hands a load's over in columns, and the first shape of it the snapshot could not
 //! flatten.
 
@@ -68,7 +68,7 @@ macro_rules! other_shapes {
 pub type Shape = (u32, Option<u32>);
 
 /// What a shape of content the snapshot cannot flatten should have been
-/// (API-bridge-columns-carry-nesting).
+/// (API-bridge-columns-keep-no-size).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Unflat {
     /// A row: a list of elements.

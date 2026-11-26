@@ -244,7 +244,7 @@ mod tests {
     use super::super::tests::{Lcg, Model, random_inputs};
     use super::*;
     use crate::geometry::{EdgePath, PIXEL_LIMIT};
-    use crate::graph::{Axis, End};
+    use crate::graph::{Axis, End, Part, RegionSlots};
 
     #[test]
     fn a_pixel_beyond_any_zoom_hits_as_the_largest_a_query_strokes_for() {
@@ -1110,25 +1110,27 @@ mod tests {
         )]
         let kept = |v: f64| v as f32;
         let node = graph.add_node(kept(x), kept(y), kept(w), kept(h)).unwrap();
-        graph.divide(node, Some(Axis::Across), 0.0).unwrap();
-        graph.set_sizing(node, None, true).unwrap();
-        let mut region = |within: u32, [across, down]: [f64; 2], divide: Option<Axis>| {
-            let slot = graph
-                .add_node_in(within, true, [0.0, 0.0, kept(across), kept(down)])
-                .unwrap();
-            graph.mark_region(slot, false, divide).unwrap();
-            slot
+        let part = |size: f64, divide: Option<Axis>, of: Option<usize>| Part {
+            size: kept(size),
+            divide,
+            of,
+            ..Part::default()
         };
-        let slots = [
-            region(node, [first, 0.0], None),
-            region(node, [middle, 0.0], Some(Axis::Down)),
+        let parts = [
+            part(first, None, None),
+            part(middle, Some(Axis::Down), None),
+            part(upper, None, Some(1)),
+            part(0.0, None, Some(1)),
+            part(0.0, None, None),
         ];
-        let inner = [
-            region(slots[1], [0.0, upper], None),
-            region(slots[1], [0.0, 0.0], None),
-        ];
-        let last = region(node, [0.0, 0.0], None);
-        graph.arrange(node);
+        let added = graph.divide(node, Some(Axis::Across), 0.0, &parts, RegionSlots::Added);
+        let [first_slot, middle_slot, upper_slot, lower_slot, last] = added.unwrap().regions[..]
+        else {
+            unreachable!("a region per part")
+        };
+        graph.set_sizing(node, None, true).unwrap();
+        let slots = [first_slot, middle_slot];
+        let inner = [upper_slot, lower_slot];
         let (x1, x2) = (x + first, x + first + middle);
         let regions = vec![
             (slots[0], Rect::new(x, y, x1, y + h), Some(Axis::Across)),

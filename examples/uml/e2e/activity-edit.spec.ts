@@ -2,7 +2,7 @@
 // in its node shape where it was dropped, in the partition under the pointer, a pin, an expansion
 // node, or a parameter node on the border nearest the drop (ARCH-border-nodes-ride-sides); a move
 // between partitions the example's veto allows, and one out of the frame it refuses
-// (API-edits-report-nested-changes); the connections the table of refusals refuses, saying why,
+// (API-edits-report-division-moves); the connections the table of refusals refuses, saying why,
 // and others that add a control or an object flow; a pin dragged around its action; a flow's guard
 // and weight the sidebar edits; the names of the frame's partitions; and a press on a resize
 // handle, on a line between two partitions, and on a flow over a partition
@@ -211,7 +211,7 @@ async function dragNodeTo(page: Page, id: string, x: number, y: number): Promise
 test("an action dragged into another partition moves there, and one dragged out of the frame stands where it stood", async ({
   page,
 }) => {
-  // Verifies: G-20, G-14, API-edits-report-nested-changes
+  // Verifies: G-20, G-14, API-edits-report-division-moves
   await page.goto("/");
   await open(page);
   await chooseActivity(page);

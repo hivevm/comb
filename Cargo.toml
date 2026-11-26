@@ -21,6 +21,10 @@ cognitive_complexity = "deny"
 # tooling within DEV-bun-vite-wasm-pack; each crate root allows it in test code, under
 # `cfg(test)`.
 cast_possible_truncation = "deny"
+# A mutation of the graph whose result `let _ =` drops hides the failure it reports: each such
+# result is a refusal or an `unreachable!` that names why it cannot fail (docs/CONVENTIONS.md,
+# *A graph mutation's failure is handled*). Dev tooling within DEV-bun-vite-wasm-pack.
+let_underscore_must_use = "deny"
 
 [profile.release]
 lto = true

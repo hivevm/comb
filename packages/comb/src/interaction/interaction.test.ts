@@ -148,7 +148,7 @@ function dragged() {
 describe("interaction records where a drag left its node", () => {
   for (const release of ["pointerup", "pointerupoutside"]) {
     test(`a drag records one nodeMoved on ${release}, and none per frame`, () => {
-      // Verifies: API-edits-report-nested-changes
+      // Verifies: API-edits-report-division-moves
       const { emit, changes } = dragged();
       emit("pointerdown", 10, 10);
       for (let frame = 1; frame <= 6; frame += 1) emit("globalpointermove", 10 + frame * 5, 10);
@@ -163,7 +163,7 @@ describe("interaction records where a drag left its node", () => {
   }
 
   test("a press released where it began, or with moves that move nothing, records no change", () => {
-    // Verifies: API-edits-report-nested-changes
+    // Verifies: API-edits-report-division-moves
     const { emit, changes } = dragged();
     emit("pointerdown", 10, 10);
     emit("pointerup", 10, 10);
@@ -176,7 +176,7 @@ describe("interaction records where a drag left its node", () => {
 
 describe("interaction ends a drag the graph took its node from", () => {
   test("a load during a drag ends it, and its release tells nothing", () => {
-    // Verifies: API-edits-report-nested-changes
+    // Verifies: API-edits-report-division-moves
     const { store, emit, changes } = dragged();
     emit("pointerdown", 10, 10);
     emit("globalpointermove", 30, 10);
@@ -189,7 +189,7 @@ describe("interaction ends a drag the graph took its node from", () => {
   });
 
   test("a press after a drag whose release never came tells the drag's nodeMoved first", () => {
-    // Verifies: API-edits-report-nested-changes
+    // Verifies: API-edits-report-division-moves
     const { emit, changes } = dragged();
     emit("pointerdown", 10, 10);
     emit("globalpointermove", 30, 10);
@@ -200,7 +200,7 @@ describe("interaction ends a drag the graph took its node from", () => {
   });
 
   test("a listener that throws on release leaves the drag over and the cursor updated", () => {
-    // Verifies: API-edits-report-nested-changes
+    // Verifies: API-edits-report-division-moves
     const { store, app, emit, changes } = dragged();
     store.subscribe((state, previous) => {
       if (state.change !== previous.change) throw new Error("host listener");
@@ -217,7 +217,7 @@ describe("interaction ends a drag the graph took its node from", () => {
   });
 
   test("a removal of the dragged node ends the drag, which then moves and tells nothing", () => {
-    // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-nested-changes
+    // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-division-moves
     const { store, emit, changes } = dragged();
     emit("pointerdown", 10, 10);
     emit("globalpointermove", 30, 10);
@@ -277,7 +277,7 @@ describe("interaction tells a click on an element of a node's content", () => {
   });
 
   test("a press that moves beyond 4 pixels drags the node from the press and tells no click", () => {
-    // Verifies: REN-node-content-and-hits, API-edits-report-nested-changes
+    // Verifies: REN-node-content-and-hits, API-edits-report-division-moves
     const { store, emit, clicks, moves } = pressed(action);
     const changes: unknown[] = [];
     store.subscribe((state, previous) => {
@@ -329,7 +329,7 @@ describe("interaction tells a click where the pointer is released", () => {
   });
 
   test("a release outside the canvas or a cancelled pointer tells no click, and a cancel ends the drag", () => {
-    // Verifies: REN-node-content-and-hits, API-edits-report-nested-changes
+    // Verifies: REN-node-content-and-hits, API-edits-report-division-moves
     const { store, emit, clicks, moves } = pressed(action);
     const changes: unknown[] = [];
     store.subscribe((state, previous) => {
@@ -348,7 +348,7 @@ describe("interaction tells a click where the pointer is released", () => {
   });
 
   test("a cancel during a drag ends it where the drag left the node", () => {
-    // Verifies: API-edits-report-nested-changes
+    // Verifies: API-edits-report-division-moves
     const { store, emit, clicks, moves } = pressed(action);
     const changes: unknown[] = [];
     store.subscribe((state, previous) => {
@@ -644,7 +644,7 @@ describe("interaction writes a connection whose compatibility changed", () => {
 
 describe("interaction connects", () => {
   test("a connection a later press ends, its release never having come, proposes no edge", () => {
-    // Verifies: API-edits-report-nested-changes, API-edges-dock-nodes-or-edges
+    // Verifies: API-edits-report-division-moves, API-edges-dock-nodes-or-edges
     const store = createGraphStore();
     load(store, {
       nodes: [
@@ -676,7 +676,7 @@ describe("interaction connects", () => {
 
   for (const taken of ["a removal of its source, whose slot a node then takes", "a load"]) {
     test(`a connection ends at ${taken}, and its release proposes no edge`, () => {
-      // Verifies: API-edits-report-nested-changes
+      // Verifies: API-edits-report-division-moves
       const store = createGraphStore();
       const graph = {
         nodes: [
@@ -771,7 +771,7 @@ describe("interaction drops a dragged node into a container", () => {
 
   for (const veto of [undefined, () => true]) {
     test(`a drop over another container ${veto ? "asks canMoveInto and on true" : "without canMoveInto"} moves the node into it`, () => {
-      // Verifies: API-edits-report-nested-changes
+      // Verifies: API-edits-report-division-moves
       const { store, drag, calls, changes, asked } = dropping(veto);
       drag();
       expect(asked).toEqual(veto ? [{ node: "a", container: "c" }] : []);
@@ -786,11 +786,14 @@ describe("interaction drops a dragged node into a container", () => {
     ["undefined", () => undefined],
     [
       "true after updating a node",
-      (store: GraphStore) => (store.getState().updateNode("c", true), true),
+      (store: GraphStore) => (
+        store.getState().updateNode({ id: "c", patch: { content: [] } }),
+        true
+      ),
     ],
   ] as const) {
     test(`a veto answering ${name} places the node where it lay at the press and records no move`, () => {
-      // Verifies: API-edits-report-nested-changes
+      // Verifies: API-edits-report-division-moves
       const holder: { store?: GraphStore } = {};
       const { store, drag, calls, changes } = dropping(() => veto(holder.store!));
       holder.store = store;
@@ -804,7 +807,7 @@ describe("interaction drops a dragged node into a container", () => {
   }
 
   test("a veto that throws places the node back first, and its error is thrown on from the release", () => {
-    // Verifies: API-edits-report-nested-changes
+    // Verifies: API-edits-report-division-moves
     const { drag, calls, changes } = dropping(() => {
       throw new Error("host veto");
     });
@@ -819,7 +822,7 @@ describe("interaction drops a node by what the veto's call changed and where the
   const intoC = { moveInto: [1, 0] };
 
   test("a veto that removes the dragged node leaves nothing to take back", () => {
-    // Verifies: API-edits-report-nested-changes
+    // Verifies: API-edits-report-division-moves
     const holder: { store?: GraphStore } = {};
     const { store, drag, calls, changes } = dropping(() => {
       holder.store!.getState().removeNodes([1], [], "host");
@@ -832,7 +835,7 @@ describe("interaction drops a node by what the veto's call changed and where the
   });
 
   test("a veto that changes the selection and the viewport leaves the move to its answer", () => {
-    // Verifies: API-edits-report-nested-changes
+    // Verifies: API-edits-report-division-moves
     const holder: { store?: GraphStore } = {};
     const { store, drag, calls, changes } = dropping(() => {
       holder.store!.getState().select(null);
@@ -847,7 +850,7 @@ describe("interaction drops a node by what the veto's call changed and where the
 
   for (const release of ["pointerupoutside", "pointercancel"]) {
     test(`a drag ended by ${release} has no target: nothing is asked, and it moved within its own container`, () => {
-      // Verifies: API-edits-report-nested-changes
+      // Verifies: API-edits-report-division-moves
       const { drag, calls, changes, asked } = dropping(() => true);
       drag(release);
       expect([asked, calls, changes]).toEqual([[], [], [moved]]);
@@ -855,7 +858,7 @@ describe("interaction drops a node by what the veto's call changed and where the
   }
 
   test("a drop where no container lies, the node on the canvas already, asks nothing", () => {
-    // Verifies: API-edits-report-nested-changes
+    // Verifies: API-edits-report-division-moves
     const { drag, calls, changes, asked } = dropping(() => true, null);
     drag();
     expect([asked, calls, changes]).toEqual([[], [], [moved]]);

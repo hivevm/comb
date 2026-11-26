@@ -29,7 +29,7 @@ const DASH = [6, 4] as const;
  *  its direction of travel (in the middle and on the edge without), and whether the legend lists
  *  it and the sidebar offers it. A whole is the source of an aggregation or a composition, so
  *  their label lies near the source, where UML draws the diamond. */
-export interface RelationshipStyle {
+interface RelationshipStyle {
   name: string;
   color: number;
   dash?: readonly [number, number];
@@ -152,7 +152,7 @@ export const KINDS = (Object.keys(RELATIONSHIPS) as RelationshipKind[]).filter(
 
 /** The identifier of the one label an edge of the example carries
  *  (API-edges-dock-nodes-or-edges). */
-export const LABEL = "kind";
+const LABEL = "kind";
 
 /** The label of an edge of `kind` that reads `text`, on a pill of the kind's colour, standing where
  *  `current`, the label the edge has, stands, or else where the kind places it. */

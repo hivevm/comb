@@ -1,7 +1,7 @@
 // A load of random trees of regions through the snapshot and the columns `columns.ts` writes,
-// into the engine: names, lines, and sizes cross unchanged, and a value of another type anywhere
-// in a tree, however deep, is refused by its field (API-bridge-columns-carry-nesting,
-// ARCH-regions-are-container-slots).
+// into the engine: names, lines, and sizes cross unchanged, each size held apart from the extent
+// it is laid out to, and a value of another type anywhere in a tree, however deep, is refused by
+// its field (API-bridge-columns-keep-no-size, ARCH-regions-are-container-slots).
 import { beforeAll, expect, test } from "bun:test";
 import { createBridgeSync, type Bridge } from ".";
 import { listsOf, snapshotOf } from "../api/snapshot";
@@ -76,7 +76,7 @@ const activity = (regions: Tree[]) => ({
 });
 
 test("a load of random trees of regions crosses their names, lines, and sizes unchanged through the columns, and refuses a value of another type at any depth", () => {
-  // Verifies: API-bridge-columns-carry-nesting, ARCH-regions-are-container-slots
+  // Verifies: API-bridge-columns-keep-no-size, ARCH-regions-are-container-slots
   const random = lcg(5);
   let [crossed, refused] = [0, 0];
   for (let round = 0; round < 300; round++) {
@@ -103,6 +103,13 @@ test("a load of random trees of regions crosses their names, lines, and sizes un
     );
     // The engine's slots, in the same order, each at least its size along its division.
     expect([...bridge.regionsOf(0)]).toEqual(flat.map((_, k) => k + 1));
+    // Each region holds its size as given, beside the extent it is laid out to; the node and a
+    // slot past them hold none.
+    expect(flat.map((_, k) => bridge.regionSize(k + 1))).toEqual(flat.map(({ size }) => size));
+    expect([bridge.regionSize(0), bridge.regionSize(flat.length + 1)]).toEqual([
+      undefined,
+      undefined,
+    ]);
     const { sizes } = bridge.nodeBuffers();
     flat.forEach((region, k) => {
       const across = views[k]!.region!.axis === "across";

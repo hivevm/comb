@@ -1,6 +1,6 @@
 // How a change the store records reaches the host application: `GraphChange`, what `onChange`
 // delivers, read from the store and the engine's buffer as copies no listener can reach into
-// (API-edits-report-nested-changes), and the listeners of `onChange` and `onSelectionChange`
+// (API-edits-report-division-moves), and the listeners of `onChange` and `onSelectionChange`
 // told from one subscription; and the listeners of `onContentClick`, told of each click on an
 // element (REN-node-content-and-hits).
 import { positionAt, type Bridge } from "../bridge";
@@ -46,7 +46,7 @@ type AddedEdge = Readonly<
 
 /** The attributes `updateEdge` changes on an edge, as `edgeUpdated` reports them merged: its
  *  colour, arrowhead, lightning bolt, dash pattern or none, and labels, their places filled in,
- *  or none (API-edits-report-nested-changes, API-edges-dock-nodes-or-edges). */
+ *  or none (API-edits-report-division-moves, API-edges-dock-nodes-or-edges). */
 type EdgeChangePatch = {
   readonly [K in keyof EdgePatch]: K extends "labels"
     ? readonly Readonly<KeptLabel>[] | null
@@ -57,7 +57,7 @@ type EdgeChangePatch = {
 export type RegionSize = { readonly id: string; readonly size: number };
 
 /** One change of the graph, by its `kind` and by who made it, `"user"` or `"host"`, as
- *  `onChange` delivers it (API-edits-report-nested-changes). */
+ *  `onChange` delivers it (API-edits-report-division-moves). */
 export type GraphChange =
   /** `load` replaced the graph. */
   | { readonly kind: "loaded"; readonly by: "host" }
@@ -71,9 +71,10 @@ export type GraphChange =
       readonly patch: Readonly<NodePatch>;
     }
   /** A drag left the node `id` at `x`, `y`, relative to `container`, the identifier of the
-   *  container it lies in, or on the canvas for `null` (API-edits-report-nested-changes); or, by
-   *  the host, `updateNode` moved it into the first region of a region it divided anew
-   *  (ARCH-regions-are-container-slots). */
+   *  container it lies in, or on the canvas for `null` (API-edits-report-division-moves); or, by
+   *  the host, `updateNode` moved it into the first region of a region it divided anew, or, of
+   *  the node it divided while that node held it, into the region at its position, else the
+   *  first (ARCH-regions-are-container-slots). */
   | {
       readonly kind: "nodeMoved";
       readonly by: By;
@@ -83,7 +84,7 @@ export type GraphChange =
       readonly container: string | null;
     }
   /** A drag left the border node `id` on `side` of the node it rides, at `offset` along it
-   *  (ARCH-border-nodes-ride-sides, API-edits-report-nested-changes). */
+   *  (ARCH-border-nodes-ride-sides, API-edits-report-division-moves). */
   | {
       readonly kind: "nodeMoved";
       readonly by: "user";
@@ -94,7 +95,7 @@ export type GraphChange =
   /** A resize left the node `id` at `x`, `y`, relative to its container, `width` × `height`; of
    *  the nodes that lie directly in it, `moved` names each whose position relative to it changed,
    *  with that position, since a resize at the left or the top keeps them where they lie in the
-   *  world (API-edits-report-nested-changes). */
+   *  world (API-edits-report-division-moves). */
   | {
       readonly kind: "nodeResized";
       readonly by: "user";
@@ -202,64 +203,78 @@ function heightAt(bridge: Bridge, slot: number): number {
   return bridge.nodeBuffers().sizes[slot * 2 + 1]!;
 }
 
-/** The change `nodeUpdated` as `onChange` delivers it, with the content the engine keeps, built
- *  for this delivery, where the patch set it, the height the node has where it set one, raised
- *  where it was below its content's, and whether it is resizable where it set it. */
+/** Where the delivery of `nodeUpdated` reads what it tells of the node in `slot`. */
+interface PatchRead {
+  readonly state: GraphState;
+  readonly bridge: Bridge;
+  readonly slot: number;
+}
+
+/** For each field of `NodePatch`, where the delivery of `nodeUpdated` reads it once the patch
+ *  changed it: what the engine keeps from the engine, what the store keeps from the node's view,
+ *  each a copy no listener reaches into, none where the node has none. A new field of a patch
+ *  takes its entry here, which the type checker asks for. */
+export const NODE_PATCH_READS: {
+  readonly [K in keyof Required<NodePatch>]: (read: PatchRead) => NodePatch[K];
+} = {
+  // The content the engine keeps, built for this delivery (REN-node-content-and-hits).
+  content: ({ bridge, slot }) => bridge.content(slot),
+  // The height the node has, raised where the patch's was below its content's.
+  height: ({ bridge, slot }) => heightAt(bridge, slot),
+  resizable: ({ state, slot }) => state.nodes[slot]!.resizable,
+  // How its outline is drawn (REN-node-shapes-cover-uml).
+  outline: ({ state, slot }) => {
+    const { outline } = state.nodes[slot]!;
+    return typeof outline === "object" ? [outline[0], outline[1]] : outline;
+  },
+  divide: ({ state, slot }) => state.nodes[slot]!.divide,
+  regions: ({ state, bridge, slot }) => regionsAt(state, bridge, slot),
+  // A border node's side, and its offset as the engine holds it within that side, so that the
+  // host's copy follows what Comb took (ARCH-border-nodes-ride-sides).
+  side: ({ bridge, slot }) => bridge.borderOf(slot)?.side,
+  offset: ({ bridge, slot }) => bridge.borderOf(slot)?.offset,
+};
+
+/** The change `nodeUpdated` as `onChange` delivers it: each field the patch changed, read where
+ *  `NODE_PATCH_READS` names, and left out where the node has none. */
 function nodeUpdatedOf(
   change: Extract<StoreChange, { kind: "nodeUpdated" }>,
   state: GraphState,
   bridge: Bridge,
 ): GraphChange {
-  const slot = state.slots.get(change.id)!;
-  const patch: NodePatch = change.content ? { content: bridge.content(slot) } : {};
-  if (change.height) patch.height = heightAt(bridge, slot);
-  if (change.resizable !== undefined) patch.resizable = change.resizable;
-  if (change.outline !== undefined) patch.outline = change.outline;
-  if (change.regions) {
-    const { divide } = state.nodes[slot]!;
-    if (divide !== undefined) patch.divide = divide;
-    patch.regions = regionsAt(state, bridge, slot);
-  }
-  Object.assign(patch, placePatched(change, bridge, slot));
+  const read: PatchRead = { state, bridge, slot: state.slots.get(change.id)! };
+  const patch: NodePatch = {};
+  // In the table's order, whatever order the host's patch named its fields in.
+  for (const field of Object.keys(NODE_PATCH_READS) as (keyof NodePatch)[])
+    if (change.fields.includes(field)) readInto(patch, field, read);
   return { kind: change.kind, by: change.by, id: change.id, patch };
 }
 
-/** What the patch of `change` set of the place of the border node in `slot`: its side, and its
- *  offset as the engine held it, told also where the patch set the side alone, since the engine
- *  holds the offset within the new side, so that the host's copy follows what Comb took
- *  (ARCH-border-nodes-ride-sides). */
-function placePatched(
-  change: Extract<StoreChange, { kind: "nodeUpdated" }>,
-  bridge: Bridge,
-  slot: number,
-): Pick<NodePatch, "side" | "offset"> {
-  const place = change.side || change.offset ? bridge.borderOf(slot) : undefined;
-  if (!place) return {};
-  return {
-    ...(change.side ? { side: place.side } : {}),
-    offset: place.offset,
-  };
+/** `patch` with its field `field` read where `NODE_PATCH_READS` names, none where the node has
+ *  none. */
+function readInto<K extends keyof NodePatch>(patch: NodePatch, field: K, read: PatchRead): void {
+  const value = NODE_PATCH_READS[field](read);
+  if (value !== undefined) patch[field] = value;
 }
 
-/** The size of the region in `slot` as the engine keeps it: its extent along the direction of
- *  its division. */
-function sizeAt(state: GraphState, sizes: Float32Array, slot: number): number {
-  const across = state.nodes[slot]!.region!.axis === "across";
-  return sizes[slot * 2 + (across ? 0 : 1)]!;
+/** The size of the region in `slot` as the engine holds it, apart from its extent, which the
+ *  last region of a division stretches to the rest: what a load of the host's data gives again
+ *  (ARCH-regions-are-container-slots, *Division*). */
+function sizeAt(bridge: Bridge, slot: number): number {
+  return bridge.regionSize(slot)!;
 }
 
 /** The regions of the node in `slot` as the host application's type has them, each with its
- *  size as the engine keeps it, at every depth (ARCH-regions-are-container-slots). */
+ *  size as the engine holds it, at every depth (ARCH-regions-are-container-slots). */
 function regionsAt(state: GraphState, bridge: Bridge, slot: number): RegionData[] {
   const order = [...bridge.regionsOf(slot)];
-  const { sizes } = bridge.nodeBuffers();
   const byId = new Map<string, RegionData[]>();
   const top: RegionData[] = [];
   const own = state.nodes[slot]!.id;
   for (const at of order) {
     const view = state.nodes[at]!;
     const { name, line, divide } = view.region!;
-    const region: RegionData = { id: view.id, size: sizeAt(state, sizes, at), line };
+    const region: RegionData = { id: view.id, size: sizeAt(bridge, at), line };
     if (typeof line !== "string") region.line = [line[0], line[1]];
     if (name !== undefined) region.name = name;
     if (divide !== undefined) region.divide = divide;
@@ -272,10 +287,9 @@ function regionsAt(state: GraphState, bridge: Bridge, slot: number): RegionData[
   return top;
 }
 
-/** Each of `regions`, by identifier, with its size as the engine keeps it now. */
+/** Each of `regions`, by identifier, with its size as the engine holds it now. */
 function regionSizes(state: GraphState, bridge: Bridge, regions: readonly string[]) {
-  const { sizes } = bridge.nodeBuffers();
-  return regions.map((id) => ({ id, size: sizeAt(state, sizes, state.slots.get(id)!) }));
+  return regions.map((id) => ({ id, size: sizeAt(bridge, state.slots.get(id)!) }));
 }
 
 /** The change `nodeResized` as `onChange` delivers it: the node's box, its position relative to
@@ -311,7 +325,9 @@ function nodeAddedOf(
   bridge: Bridge,
 ): GraphChange {
   const slot = state.slots.get(change.id)!;
-  const { id, width, shape, outline, isContainer, height, resizable, divide } = state.nodes[slot]!;
+  const { id, shape, outline, isContainer, heightGiven, resizable, divide } = state.nodes[slot]!;
+  // As wide as the engine keeps it, of a divided node as its regions made it.
+  const width = bridge.nodeBuffers().sizes[slot * 2]!;
   const place = bridge.borderOf(slot);
   if (place) {
     // A border node, at the offset the engine held within its side (ARCH-border-nodes-ride-sides).
@@ -320,7 +336,7 @@ function nodeAddedOf(
     const { side, offset } = place;
     const border: NodeData = { id, width, shape, content, attachedTo: attachedTo!, side, offset };
     if (outline !== undefined) border.outline = outline;
-    if (height !== undefined) border.height = heightAt(bridge, slot);
+    if (heightGiven) border.height = heightAt(bridge, slot);
     return { kind: change.kind, by: change.by, node: border };
   }
   const { x, y, container } = placeOf(state, bridge, slot);
@@ -329,20 +345,18 @@ function nodeAddedOf(
   if (outline !== undefined) node.outline = outline;
   if (isContainer !== undefined) node.isContainer = isContainer;
   // The height as Comb took it: raised where it was below its content's.
-  if (height !== undefined) node.height = heightAt(bridge, slot);
+  if (heightGiven) node.height = heightAt(bridge, slot);
   if (resizable !== undefined) node.resizable = resizable;
   if (divide !== undefined) {
     node.divide = divide;
     node.regions = regionsAt(state, bridge, slot);
-    // As wide as its regions made it.
-    node.width = bridge.nodeBuffers().sizes[slot * 2]!;
   }
   return { kind: change.kind, by: change.by, node };
 }
 
 /** Where the node in `slot` lies: its position relative to its container, the difference of the
  *  world positions the engine keeps, or its world position on the canvas, and the identifier of
- *  its container, or `null` on the canvas (API-edits-report-nested-changes). */
+ *  its container, or `null` on the canvas (API-edits-report-division-moves). */
 function placeOf(state: GraphState, bridge: Bridge, slot: number) {
   const positions = bridge.positions();
   const { container } = state.nodes[slot]!;
