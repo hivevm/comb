@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # The Dev Container's image and its reach (DEV-container-adds-bun-and-rust,
-# SEC-no-container-engine), and its way to a Chrome on the host
-# (PERF-benchmark-drives-host-chrome).
+# DEV-container-adds-bun-rust-shellcheck, SEC-no-container-engine), and its way to a Chrome on the
+# host (PERF-benchmark-drives-host-chrome).
 #
 # scripts/check-devcontainer.sh holds the template's part, the socket, the Features' tags, and the
 # lock (NUC-container-hides-host-daemon). This check holds what Comb decided on top of it, from the
@@ -21,12 +21,27 @@
 #   5. Host: no '--add-host=host.docker.internal:host-gateway' among its run arguments, or no 4173
 #      among its forwarded ports, by which the benchmark reaches a Chrome on the host and that
 #      Chrome its preview server (PERF-benchmark-drives-host-chrome).
+#   6. ShellCheck: .devcontainer/install-shellcheck.sh, the one place that names the release, has
+#      no line 'SHELLCHECK_VERSION="<major>.<minor>.<patch>"', no line naming x86_64 or aarch64
+#      beside a SHA-256 of 64 hex digits, or no 'sha256sum --check' (or '-c'); or the Dockerfile
+#      runs no command of a RUN that is install-shellcheck.sh, or bash or sh with it, or installs
+#      a package named shellcheck with a package manager (DEV-container-adds-bun-rust-shellcheck
+#      §2, §3).
+#   7. Downloads: an instruction other than FROM or COPY that names a URL scheme,
+#      '<scheme>://', whatever command, form, or heredoc carries it; a command of a RUN whose
+#      program, after a leading '(' or '{', sudo, and env with its settings, is named curl or wget
+#      by its base name; an ADD whose source starts with 'git@'; or a mark of an unsigned
+#      archive or package as trusted: '[trusted=yes]', '--allow-unauthenticated',
+#      'AllowUnauthenticated', 'AllowInsecureRepositories', '--allow-insecure-repositories',
+#      '--allow-untrusted', or '--nogpgcheck' (DEV-container-adds-bun-rust-shellcheck §5).
 #
 # A Feature id is a key directly inside the 'features' object, read by tracking brace depth as
 # check-devcontainer.sh reads it, so that a key elsewhere, such as a settings glob, is none.
 # Full-line '//' comments are dropped first, as there; full-line '#' comments of the Dockerfile
-# too. The versions inside the images, the CI smoke test asserts in a container built from them
-# (.github/workflows/devcontainer.yml).
+# and the install script too. Rules 6 and 7 read the Dockerfile's instructions with their
+# continuation lines joined, a line of a heredoc as one of its own, and a RUN as its commands
+# split at '&&', '||', ';', and '|'. The versions inside the images, the CI smoke test asserts in
+# a container built from them (.github/workflows/devcontainer.yml).
 #
 # Pure bash + coreutils/grep. Usage:
 #     scripts/check-container.sh [--root <dir>]
@@ -45,6 +60,7 @@ set -- "${ARGS[@]}"
 rest_args "${BASH_SOURCE[0]}" "$usage" 0 "$@"
 CONFIG=".devcontainer/devcontainer.json"
 DOCKERFILE=".devcontainer/Dockerfile"
+INSTALLER=".devcontainer/install-shellcheck.sh"
 
 errors=()
 add_error() { errors+=("$1"); }
@@ -76,7 +92,15 @@ feature_ids() {
     }' <<< "$1"
 }
 
+# logical <text> — the Dockerfile's instructions one per line, a line that ends in '\' joined to
+# the next.
+logical() {
+  awk '{ if (sub(/\\[[:space:]]*$/, " ")) { held = held $0 } else { print held $0; held = "" } }
+       END { if (held != "") print held }' <<< "$1"
+}
+
 DIGEST='@sha256:[0-9a-f]{64}$'
+SHA256='(^|[^0-9a-f])[0-9a-f]{64}([^0-9a-f]|$)'
 
 features=()
 if [[ ! -f "$ROOT/$CONFIG" ]]; then
@@ -125,7 +149,7 @@ else
         for ((i = 0; i < ${#words[@]}; i++)); do
           [[ "${words[i]}" == --* ]] && continue
           [[ -z "$image" ]] && { image="${words[i]}"; continue; }
-          [[ "${words[i]^^}" == AS ]] && stages+=("${words[i + 1],,}")
+          [[ "${words[i]^^}" == AS && -n "${words[i + 1]+set}" ]] && stages+=("${words[i + 1],,}")
         done
         ;;
       COPY)
@@ -145,6 +169,88 @@ else
       || add_error "$DOCKERFILE: ${instruction^^} names '$image' without a digest — every image is pinned by '@sha256:' (DEV-container-adds-bun-and-rust)"
   done < <(uncommented "$ROOT/$DOCKERFILE" '#')
   ((images)) || add_error "$DOCKERFILE: names no image in a FROM — there is nothing the Dev Container builds from"
+
+  # 6. ShellCheck, and 7. Downloads, by instruction and by command.
+  runs_installer=0
+  while read -r instruction rest; do
+    case "${instruction^^}" in
+      FROM | COPY) ;;
+      *)
+        [[ "$instruction $rest" =~ [a-zA-Z][a-zA-Z0-9+.-]*://[^][:space:]\"\'(),]* ]] \
+          && add_error "$DOCKERFILE: ${instruction^^} names a URL, '${BASH_REMATCH[0]}' — the Dockerfile fetches nothing from the network by its own command; a download goes through a script that checks its SHA-256 (DEV-container-adds-bun-rust-shellcheck §5)"
+        ;;
+    esac
+    case "${instruction^^}" in
+      ADD)
+        read -r -a words <<< "$rest"
+        for word in "${words[@]}"; do
+          [[ "$word" == --* ]] && continue
+          [[ "$word" == git@* ]] \
+            && add_error "$DOCKERFILE: ADD fetches '$word' — the Dockerfile fetches nothing from the network by its own command (DEV-container-adds-bun-rust-shellcheck §5)"
+          break
+        done
+        ;;
+      RUN)
+        mapfile -t commands < <(sed -E 's/(&&|\|\||;|\|)/\n/g' <<< "$rest")
+        for command in "${commands[@]}"; do
+          read -r -a words <<< "$command"
+          ((${#words[@]})) || continue
+          # A leading '(' or '{', sudo, and env with its settings run the program after them; a
+          # command they leave without words runs nothing.
+          words[0]="${words[0]#[({]}"
+          [[ -z "${words[0]}" ]] && words=("${words[@]:1}")
+          [[ "${words[0]:-}" == sudo ]] && words=("${words[@]:1}")
+          if [[ "${words[0]:-}" == env ]]; then
+            words=("${words[@]:1}")
+            while [[ "${words[0]:-}" == *=* || "${words[0]:-}" == -* ]]; do
+              words=("${words[@]:1}")
+            done
+          fi
+          ((${#words[@]})) || continue
+          case "${words[0]##*/}" in
+            curl | wget)
+              add_error "$DOCKERFILE: RUN runs ${words[0]##*/} — the Dockerfile fetches nothing from the network by its own command; a download goes through a script that checks its SHA-256 (DEV-container-adds-bun-rust-shellcheck §5)" ;;
+          esac
+          script="${words[0]}"
+          [[ "$script" == bash || "$script" == sh ]] && script="${words[1]:-}"
+          [[ "$script" == install-shellcheck.sh || "$script" == */install-shellcheck.sh ]] \
+            && runs_installer=1
+          case "${words[0]}" in
+            apt-get | apt | aptitude | apk | dnf | yum | microdnf | zypper | pacman)
+              for word in "${words[@]:1}"; do
+                [[ "$word" == shellcheck || "$word" == shellcheck=* ]] \
+                  && add_error "$DOCKERFILE: installs ShellCheck from a package with ${words[0]} — it comes from $INSTALLER, the one release CI runs too (DEV-container-adds-bun-rust-shellcheck §3)"
+              done ;;
+          esac
+        done
+        ;;
+    esac
+  done < <(logical "$(uncommented "$ROOT/$DOCKERFILE" '#')")
+  ((runs_installer)) \
+    || add_error "$DOCKERFILE: does not run install-shellcheck.sh as a command of a RUN — the container's ShellCheck is the release $INSTALLER names (DEV-container-adds-bun-rust-shellcheck §3)"
+  while read -r mark; do
+    add_error "$DOCKERFILE: marks an archive or a package as trusted without a signature, '$mark' — the Dockerfile installs only what its archive signs (DEV-container-adds-bun-rust-shellcheck §5)"
+  done < <(uncommented "$ROOT/$DOCKERFILE" '#' \
+    | grep -oiE '\[?trusted=yes\]?|--allow-unauthenticated|AllowUnauthenticated|AllowInsecureRepositories|--allow-insecure-repositories|--allow-untrusted|--nogpgcheck' \
+    | sort -u)
+fi
+
+# 6. ShellCheck: the install script.
+shellcheck_version=""
+if [[ ! -f "$ROOT/$INSTALLER" ]]; then
+  add_error "$INSTALLER: not found — it is the one place that names the ShellCheck release, for the container and CI (DEV-container-adds-bun-rust-shellcheck §2)"
+else
+  installer="$(uncommented "$ROOT/$INSTALLER" '#')"
+  shellcheck_version="$(grep -m1 -oE '^SHELLCHECK_VERSION="[0-9]+\.[0-9]+\.[0-9]+"[[:space:]]*$' <<< "$installer")"
+  shellcheck_version="$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' <<< "$shellcheck_version")"
+  [[ -n "$shellcheck_version" ]] \
+    || add_error "$INSTALLER: names no SHELLCHECK_VERSION=\"<major>.<minor>.<patch>\" — the script names the one ShellCheck release (DEV-container-adds-bun-rust-shellcheck §2)"
+  for arch in x86_64 aarch64; do
+    grep -qE "$SHA256" <<< "$(grep -E "$arch" <<< "$installer")" \
+      || add_error "$INSTALLER: names no SHA-256 for $arch beside it — the archive of each architecture is checked against its own (DEV-container-adds-bun-rust-shellcheck §2)"
+  done
+  grep -qE 'sha256sum[[:space:]]+(.*[[:space:]])?(--check|-c)([[:space:]]|$)' <<< "$installer" \
+    || add_error "$INSTALLER: runs no 'sha256sum --check' — the archive is checked against its SHA-256 before anything is unpacked (DEV-container-adds-bun-rust-shellcheck §2)"
 fi
 
 if ((${#errors[@]})); then
@@ -153,5 +259,5 @@ if ((${#errors[@]})); then
   exit 1
 fi
 
-echo "Container check passed ($images images pinned by digest, ${#features[@]} Features, no Node.js, no container engine)."
+echo "Container check passed ($images images pinned by digest, ShellCheck $shellcheck_version pinned by SHA-256, ${#features[@]} Features, no Node.js, no container engine)."
 exit 0

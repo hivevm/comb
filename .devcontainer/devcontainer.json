@@ -56,7 +56,8 @@
 
   // Runs inside the container once it is created. The dependencies come from bun.lock;
   // Playwright's installer adds Chromium and its system libraries for the browser tests
-  // (DEV-bun-vite-wasm-pack). ShellCheck comes with the image (Dockerfile).
+  // (DEV-bun-vite-wasm-pack). ShellCheck comes with the image, the release
+  // install-shellcheck.sh names (Dockerfile).
   "postCreateCommand": {
     "deps": "bun install --frozen-lockfile && bunx --bun playwright install --with-deps chromium"
   },

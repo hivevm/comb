@@ -1,13 +1,13 @@
 name: Checks
 
-# Enforces the repository's rules as CI. Pure bash + coreutils — nothing is installed
-# (ShellCheck, used by the shell job, ships preinstalled on the GitHub-hosted runner
-# image). scripts/check-all.sh is the local equivalent; the rule docs/check-lists of
-# scripts/check-docs.sh holds its list, the jobs of this workflow, and the required checks
-# named in CONTRIBUTING.md together. Each job runs a check after its own self-test, and each
-# script's header says what it checks and which ADR it holds. The documentation job also runs
-# scripts/check-plan-modes.sh, which refuses an unattended ticket that names a protected part of
-# DEV-implementer-and-fresh-reviewer.
+# Enforces the repository's rules as CI. Pure bash + coreutils, but for ShellCheck, which the
+# shell job installs with .devcontainer/install-shellcheck.sh, the one release the Dev Container
+# runs too (DEV-container-adds-bun-rust-shellcheck). scripts/check-all.sh is the local
+# equivalent; the rule docs/check-lists of scripts/check-docs.sh holds its list, the jobs of this
+# workflow, and the required checks named in CONTRIBUTING.md together. Each job runs a check after
+# its own self-test, and each script's header says what it checks and which ADR it holds. The
+# documentation job also runs scripts/check-plan-modes.sh, which refuses an unattended ticket that
+# names a protected part of DEV-implementer-and-fresh-reviewer.
 #
 # The sensors report for the reviewer and fail on nothing they count, except the plain rules and
 # the action references, which this workflow runs with --require (SEC-actions-pinned-by-sha for the
@@ -21,8 +21,9 @@ name: Checks
 # WebAssembly
 # target, and Chromium are set up, and after the self-test of scripts/check-mutants.sh, which the
 # Mutation testing workflow (mutation.yml) runs. It is the one job of this workflow that installs
-# something. Every action of every workflow is referenced by its full commit SHA, with its version
-# in a trailing comment (SEC-actions-pinned-by-sha).
+# a toolchain; the shell job installs ShellCheck alone. Every action of every workflow is
+# referenced by its full commit SHA, with its version in a trailing comment
+# (SEC-actions-pinned-by-sha).
 #
 # Every job is bounded by a timeout — a hung step would otherwise occupy a runner until the
 # platform's own six-hour limit — and every checkout runs with 'persist-credentials: false': the
@@ -188,6 +189,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The ShellCheck release the Dev Container runs, ahead of the runner's own on PATH, for the
+      # self-tests and the lint alike; the lint's first line names the version it ran
+      # (DEV-container-adds-bun-rust-shellcheck §3).
+      - name: Install the pinned ShellCheck
+        run: |
+          bash .devcontainer/install-shellcheck.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Self-test the check runner
         run: bash scripts/test-check-all.sh
       - name: Self-test the git hooks
