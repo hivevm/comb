@@ -30,7 +30,7 @@ describe("graph store", () => {
       ["a", 0],
       ["b", 1],
     ]);
-    expect(state.nodes[0]).toEqual({ id: "a", width: 100 });
+    expect(state.nodes[0]).toEqual({ id: "a" });
   });
 
   test("moving positions bumps the counter and leaves the graph untouched", () => {
@@ -55,7 +55,7 @@ describe("graph store", () => {
     // A node of new content is a new object, which a view tells by identity; the engine keeps
     // the content.
     expect(after[1]).not.toBe(before[1]);
-    expect(after[1]).toEqual({ id: "b", width: 100 });
+    expect(after[1]).toEqual({ id: "b" });
     expect(store.getState().change).toEqual({
       kind: "nodeUpdated",
       by: "host",
@@ -75,7 +75,7 @@ describe("graph store", () => {
     store.getState().addNode({ id: "cc", x: 5, y: 6, width: 10, content: titled("C") }, 2);
     const state = store.getState();
     expect(state.nodes).not.toBe(nodes);
-    expect(state.nodes[2]).toEqual({ id: "cc", width: 10 });
+    expect(state.nodes[2]).toEqual({ id: "cc" });
     expect(state.slots.get("cc")).toBe(2);
     expect(state.idUnits).toBe(idUnits + 2);
     // Its slot is the signal; no counter moves, so that a kept query survives it
@@ -88,6 +88,35 @@ describe("graph store", () => {
   });
 });
 
+describe("graph store sizes", () => {
+  test("a node's view holds no size, only whether the host gave a height, and a resize records none", () => {
+    // Verifies: ARCH-graph-in-zustand-store, API-bridge-columns-keep-no-size
+    const store = createGraphStore();
+    const given = { id: "g", width: 100, height: 200, heightGiven: true as const };
+    store.getState().load({ nodes: [given], edges: [] } as unknown as KeptGraph, 1);
+    store.getState().addNode({ id: "h", x: 0, y: 0, width: 80, height: 40, content: [] }, 1);
+    store.getState().addNode({ id: "i", x: 0, y: 0, width: 80, content: [] }, 2);
+    store.getState().updateNode("i", false, { height: 30 });
+    expect(store.getState().nodes).toEqual([
+      { id: "g", heightGiven: true },
+      { id: "h", heightGiven: true },
+      { id: "i", heightGiven: true },
+    ]);
+    const { nodes } = store.getState();
+    // The engine keeps the size a resize left; the store records the change alone.
+    store.getState().nodeResized("g", ["h"]);
+    const state = store.getState();
+    expect(state.nodes).toBe(nodes);
+    expect(state.change).toEqual({
+      kind: "nodeResized",
+      by: "user",
+      id: "g",
+      moved: ["h"],
+      regions: [],
+    });
+  });
+});
+
 describe("graph store removals", () => {
   test("a removal leaves holes at the free slots, forgets the identifiers, and clears the selection", () => {
     // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-nested-changes
@@ -97,7 +126,7 @@ describe("graph store removals", () => {
     const { idUnits } = store.getState();
     store.getState().removeNodes([0], [0], "host");
     const state = store.getState();
-    expect(state.nodes).toEqual([undefined, { id: "b", width: 100 }]);
+    expect(state.nodes).toEqual([undefined, { id: "b" }]);
     expect(state.edges).toEqual([undefined]);
     expect([...state.slots]).toEqual([["b", 1]]);
     expect([...state.edgeSlots]).toEqual([]);

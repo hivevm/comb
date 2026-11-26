@@ -34,7 +34,6 @@ import type {
   NodeSizing,
   Divided,
   KeptEdge,
-  KeptGraph,
 } from "../store";
 import { labelUnits } from "../store";
 import {
@@ -182,19 +181,8 @@ function load({ store, bridge, limits }: Editing, graph: GraphData): void {
       }
       return bridge.loadGraph(snapshot);
     },
-    record: (state, { kept, idUnits }) => state.load(widened(kept, bridge), idUnits),
+    record: (state, { kept, idUnits }) => state.load(kept, idUnits),
   });
-}
-
-/** `kept` with each node divided into regions as wide as the engine made it to hold them
- *  (ARCH-regions-are-container-slots). */
-function widened(kept: KeptGraph, bridge: Bridge): KeptGraph {
-  if (!kept.nodes.some((node) => node.divide !== undefined)) return kept;
-  const { sizes } = bridge.nodeBuffers();
-  const nodes = kept.nodes.map((node, slot) =>
-    node.divide === undefined ? node : { ...node, width: sizes[slot * 2]! },
-  );
-  return { ...kept, nodes };
 }
 
 /** `heightOf`: the content, width, and node shape read once as the node `addNode` reads, named
@@ -275,7 +263,6 @@ function dividedAnew(
   old: readonly number[],
 ): Divided {
   return {
-    width: bridge.nodeBuffers().sizes[slot * 2]!,
     divide: plain.divide ?? state.nodes[slot]!.divide,
     regions: (plain.regions || []) as RegionRead[],
     slots: [...bridge.regionsOf(slot)],
@@ -383,10 +370,7 @@ function addNode({ store, bridge, limits }: Editing, node: unknown): void {
       const regions = [...bridge.regionsOf(slot)];
       // The bridge took the regions, each of its fields of its type, in one list.
       const read = ((snapshot as { regions?: unknown }).regions ?? []) as RegionRead[];
-      const { sizes } = bridge.nodeBuffers();
-      // As wide as the engine made it to hold its regions.
-      const taken = { ...(snapshot as unknown as NodeData), width: sizes[slot * 2]! };
-      state.addNode(taken, slot, { read, slots: regions });
+      state.addNode(snapshot as unknown as NodeData, slot, { read, slots: regions });
       // Regions laid out in the engine, which a query the scene keeps does not survive.
       if (regions.length > 0) store.getState().positionsMoved();
     },

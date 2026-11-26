@@ -14,10 +14,7 @@ function selected(canDelete?: (deletion: unknown) => unknown) {
   const store = createGraphStore();
   store.getState().load(
     {
-      nodes: [
-        { id: "a", width: 100 },
-        { id: "b", width: 100 },
-      ],
+      nodes: [{ id: "a" }, { id: "b" }],
       edges: [{ id: "a-b", source: "a", target: "b" }],
     },
     7,

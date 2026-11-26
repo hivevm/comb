@@ -139,6 +139,48 @@ test("a container dragged at its left handle grows to the left, keeps what it ho
   expect((await boxOf(page, "a"))?.x).toBe(120);
 });
 
+test("the connectors of a node hovered while it is resized lie on the box drawn in each frame of the resize", async ({
+  page,
+}) => {
+  // Verifies: ARCH-graph-in-zustand-store, API-edges-dock-nodes-or-edges
+  await open(page);
+  await loaded(page, {
+    nodes: [{ ...node("n", 100, 100), height: 200, resizable: true }],
+    edges: [],
+  });
+  await setViewport(page, { x: 0, y: 0, scale: 1 });
+  await clickWorld(page, 160, 200);
+  // Hovered inside the node, its connectors drawn; the view then panned so that its bottom right
+  // handle lies under the pointer, which hovers nothing anew, and pressed there.
+  const inside = await pagePoint(page, 160, 200);
+  await page.mouse.move(inside.x, inside.y);
+  const corner = await pagePoint(page, 100 + NODE_WIDTH, 300);
+  await setViewport(page, { x: inside.x - corner.x, y: inside.y - corner.y, scale: 1 });
+  expect(await hitAt(page, 100 + NODE_WIDTH, 300)).toBe("handle");
+  await page.mouse.down();
+  for (const step of [1, 2, 3]) {
+    await page.mouse.move(inside.x + 30 * step, inside.y + 20 * step);
+    const { box, points } = await page.evaluate(async () => {
+      await window.comb.whenRendered();
+      const scene = window.inspect();
+      const drawn = scene.nodes.find(({ id }) => id === "n")!;
+      return {
+        box: { x: drawn.x, y: drawn.y, width: drawn.width, height: drawn.height },
+        points: scene.connectorPoints.filter(({ node: id }) => id === "n"),
+      };
+    });
+    expect(box).toEqual({ x: 100, y: 100, width: NODE_WIDTH + 30 * step, height: 200 + 20 * step });
+    const { x, y, width, height } = box;
+    expect(points.map(({ side, x: px, y: py }) => ({ side, x: px, y: py }))).toEqual([
+      { side: "top", x: x + width / 2, y },
+      { side: "right", x: x + width, y: y + height / 2 },
+      { side: "bottom", x: x + width / 2, y: y + height },
+      { side: "left", x, y: y + height / 2 },
+    ]);
+  }
+  await page.mouse.up();
+});
+
 test("a container's right handle dragged inwards past the node it holds stops at that node's box", async ({
   page,
 }) => {

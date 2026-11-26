@@ -311,7 +311,9 @@ function nodeAddedOf(
   bridge: Bridge,
 ): GraphChange {
   const slot = state.slots.get(change.id)!;
-  const { id, width, shape, outline, isContainer, height, resizable, divide } = state.nodes[slot]!;
+  const { id, shape, outline, isContainer, heightGiven, resizable, divide } = state.nodes[slot]!;
+  // As wide as the engine keeps it, of a divided node as its regions made it.
+  const width = bridge.nodeBuffers().sizes[slot * 2]!;
   const place = bridge.borderOf(slot);
   if (place) {
     // A border node, at the offset the engine held within its side (ARCH-border-nodes-ride-sides).
@@ -320,7 +322,7 @@ function nodeAddedOf(
     const { side, offset } = place;
     const border: NodeData = { id, width, shape, content, attachedTo: attachedTo!, side, offset };
     if (outline !== undefined) border.outline = outline;
-    if (height !== undefined) border.height = heightAt(bridge, slot);
+    if (heightGiven) border.height = heightAt(bridge, slot);
     return { kind: change.kind, by: change.by, node: border };
   }
   const { x, y, container } = placeOf(state, bridge, slot);
@@ -329,13 +331,11 @@ function nodeAddedOf(
   if (outline !== undefined) node.outline = outline;
   if (isContainer !== undefined) node.isContainer = isContainer;
   // The height as Comb took it: raised where it was below its content's.
-  if (height !== undefined) node.height = heightAt(bridge, slot);
+  if (heightGiven) node.height = heightAt(bridge, slot);
   if (resizable !== undefined) node.resizable = resizable;
   if (divide !== undefined) {
     node.divide = divide;
     node.regions = regionsAt(state, bridge, slot);
-    // As wide as its regions made it.
-    node.width = bridge.nodeBuffers().sizes[slot * 2]!;
   }
   return { kind: change.kind, by: change.by, node };
 }

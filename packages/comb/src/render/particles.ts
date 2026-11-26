@@ -23,10 +23,10 @@ function shown(particle: Particle, tint: number): void {
 export class NodeParticles extends ParticleContainer {
   private readonly pool: Particle[] = [];
   private madeCount = 0;
-  /** The slots the particles stand for, in their order, and the heights they were drawn at;
-   *  grown as needed, never shrunk. */
+  /** The slots the particles stand for, in their order, and the sizes they were drawn at, a width
+   *  and a height each; grown as needed, never shrunk. */
   private slots = new Uint32Array(1024);
-  private heights = new Float32Array(1024);
+  private sizes = new Float32Array(2048);
   private nodes: GraphView["nodes"] = [];
   /** The nodes whose particles a drag left undrawn since the last sync
    *  (REN-moving-layer-moves-content). */
@@ -54,7 +54,7 @@ export class NodeParticles extends ParticleContainer {
     const particles = this.particleChildren;
     if (this.slots.length < slots.length) {
       this.slots = new Uint32Array(slots.length * 2);
-      this.heights = new Float32Array(slots.length * 2);
+      this.sizes = new Float32Array(slots.length * 4);
     }
     const selected = state.selection?.kind === "node" ? state.selection.id : null;
     this.highlighted = null;
@@ -71,9 +71,9 @@ export class NodeParticles extends ParticleContainer {
       shown(particle, isSelected ? FAR_SELECTED_COLOR : FAR_NODE_COLOR);
       particle.x = positions[slot * 2]!;
       particle.y = positions[slot * 2 + 1]!;
-      const height = sizes[slot * 2 + 1]!;
-      this.heights[i] = height;
-      particle.scaleX = node.width / Texture.WHITE.width;
+      const [width, height] = [sizes[slot * 2]!, sizes[slot * 2 + 1]!];
+      this.sizes.set([width, height], i * 2);
+      particle.scaleX = width / Texture.WHITE.width;
       particle.scaleY = height / Texture.WHITE.height;
       particles.push(particle);
     }
@@ -123,9 +123,8 @@ export class NodeParticles extends ParticleContainer {
     return this.particleChildren.flatMap((particle, i) => {
       const node = this.nodes[this.slots[i]!];
       if (!node || this.hidden.has(this.slots[i]!)) return [];
-      return [
-        { id: node.id, x: particle.x, y: particle.y, width: node.width, height: this.heights[i]! },
-      ];
+      const [width, height] = [this.sizes[i * 2]!, this.sizes[i * 2 + 1]!];
+      return [{ id: node.id, x: particle.x, y: particle.y, width, height }];
     });
   }
 }

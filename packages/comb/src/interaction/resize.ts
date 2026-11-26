@@ -70,7 +70,7 @@ export function resize(
       const shifted = box[0] !== from[0] || box[1] !== from[1];
       const changed = regionChanges(state, bridge, regions);
       const moved = [...(shifted ? heldBy(state, id) : []), ...changed.moved];
-      state.nodeResized(id, box[2]!, box[3]!, moved, changed.regions);
+      state.nodeResized(id, moved, changed.regions);
     },
     taken,
     drop() {},

@@ -229,7 +229,7 @@ export class RendererUnavailableError extends Error {
   }
 }
 
-/** The world rectangle the nodes cover, each as high as `sizes` holds, or null for a graph
+/** The world rectangle the nodes cover, each of the size `sizes` holds, or null for a graph
  *  without nodes; a free slot covers nothing. */
 function boundsOf(
   nodes: readonly (NodeView | undefined)[],
@@ -243,7 +243,7 @@ function boundsOf(
     const { x, y } = positionAt(positions, slot);
     bounds.minX = Math.min(bounds.minX, x);
     bounds.minY = Math.min(bounds.minY, y);
-    bounds.maxX = Math.max(bounds.maxX, x + node.width);
+    bounds.maxX = Math.max(bounds.maxX, x + sizes[slot * 2]!);
     bounds.maxY = Math.max(bounds.maxY, y + sizes[slot * 2 + 1]!);
   });
   return any ? bounds : null;
