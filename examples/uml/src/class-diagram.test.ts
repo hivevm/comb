@@ -4,10 +4,10 @@
 // Verifies: G-12
 import { expect, test } from "bun:test";
 import { CLASSIFIERS } from "./class-diagram";
-import type { ClassifierKind } from "./shared";
+import type { Classifier } from "./shared";
 
 /** The kind each stereotype of the data names; a «type» and no stereotype name a class. */
-const KIND_OF: Record<string, ClassifierKind> = {
+const KIND_OF: Record<string, Classifier["kind"]> = {
   "«interface»": "interface",
   "«abstract»": "abstract-class",
   "«package»": "package",

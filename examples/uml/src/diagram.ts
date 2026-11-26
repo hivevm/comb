@@ -64,7 +64,7 @@ export interface Refusal {
 }
 
 /** A box in the world: its top left corner and its size. */
-export interface Box {
+interface Box {
   x: number;
   y: number;
   width: number;
@@ -576,7 +576,7 @@ function patched(edge: EdgeData, patch: EdgePatch): void {
 }
 
 /** `regions` and the regions within them, at every depth, each before those it holds. */
-export function depthFirst(regions: readonly RegionData[]): RegionData[] {
+function depthFirst(regions: readonly RegionData[]): RegionData[] {
   return regions.flatMap((region) => [region, ...depthFirst(region.regions ?? [])]);
 }
 

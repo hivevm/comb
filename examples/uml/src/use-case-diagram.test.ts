@@ -6,7 +6,11 @@
 import { expect, test } from "bun:test";
 import type { NodeShape } from "comb";
 import { multiplicitiesIn, multiplicityLabelsOf, styleOf } from "./relationships";
-import { canMoveInto, connectedOf, contentOf, USE_CASE_SHAPES } from "./use-case-diagram";
+import { contentOf, USE_CASE_DIAGRAM, USE_CASE_SHAPES } from "./use-case-diagram";
+
+/** The veto of a move and the kind a connection adds, as the diagram's descriptor hands them on. */
+const canMoveInto = USE_CASE_DIAGRAM.canMoveInto!;
+const connectedOf = USE_CASE_DIAGRAM.connectedOf!;
 
 /** Each kind's node shape, whether it holds nodes, and whether it stands outside the subject: an
  *  actor an `actor` on the canvas, a use case an `ellipse`, the subject a rectangular container,

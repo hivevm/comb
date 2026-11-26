@@ -15,7 +15,7 @@ import { laidOut, type Classifier, type DiagramData, type DiagramDescriptor } fr
 
 /** A relationship of the diagram, from `source` to `target`; the whole is the source of an
  *  aggregation or a composition, the specific the source of a generalization or a realization. */
-export interface Relationship {
+interface Relationship {
   source: string;
   target: string;
   kind: RelationshipKind;
@@ -288,7 +288,7 @@ function edgeOf({ source, target, kind, sides }: Relationship): EdgeData {
 
 /** The class diagram as graph data, each node placed by the height `heightOf` gives its content,
  *  with the classifier of each node and the kind of each edge by their identifiers. */
-export function classDiagram(heightOf: Comb["heightOf"]): DiagramData {
+function classDiagram(heightOf: Comb["heightOf"]): DiagramData {
   const classifiers = new Map(CLASSIFIERS.map((each) => [each.id, structuredClone(each)]));
   const byId = laidOut(ROWS, classifiers, heightOf);
   const edges = RELATIONSHIPS.map(edgeOf);

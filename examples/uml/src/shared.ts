@@ -24,7 +24,7 @@ import type { RelationshipKind } from "./relationships";
 
 /** The kinds of classifier: those of the class diagram, and the package of the package diagram. */
 export const CLASSIFIER_KINDS = ["class", "interface", "abstract-class", "package"] as const;
-export type ClassifierKind = (typeof CLASSIFIER_KINDS)[number];
+type ClassifierKind = (typeof CLASSIFIER_KINDS)[number];
 
 /** The kinds of node of the state diagram (G-20): its states, a state list, which stands for
  *  states, its final state and its pseudostates, the connection point references of a submachine
@@ -101,7 +101,7 @@ export interface State {
 
 /** The modes of an expansion region, each the keyword its node shows. */
 export const EXPANSION_MODES = ["iterative", "parallel", "stream"] as const;
-export type ExpansionMode = (typeof EXPANSION_MODES)[number];
+type ExpansionMode = (typeof EXPANSION_MODES)[number];
 
 /** A node of the activity diagram, as its node shows it: its kind; the name of an action, an
  *  object node, a pin, a parameter, a connector, or the activity; a value pin's value; whether a

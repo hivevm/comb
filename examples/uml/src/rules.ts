@@ -16,7 +16,7 @@ import {
 
 /** A relationship of `kind` from a node of kind `source` to one of kind `target`, a loop where
  *  `loop` says that the two are one node. */
-export interface Proposed {
+interface Proposed {
   source: NodeKind;
   target: NodeKind;
   kind: RelationshipKind;

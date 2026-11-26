@@ -28,15 +28,16 @@ import {
   type Multiplicities,
   type RelationshipKind,
 } from "./relationships";
-import type {
-  ActivityNode,
-  Classifier,
-  EdgeForm,
-  Flow,
-  NodeForm,
-  State,
-  Transition,
-  UseCaseNode,
+import {
+  EXPANSION_MODES,
+  type ActivityNode,
+  type Classifier,
+  type EdgeForm,
+  type Flow,
+  type NodeForm,
+  type State,
+  type Transition,
+  type UseCaseNode,
 } from "./shared";
 
 /** A field of the sidebar's forms whose edit Comb may refuse. */
@@ -210,6 +211,7 @@ export class Sidebar {
 
   constructor(private readonly diagram: Diagram) {
     this.kind.append(...KINDS.map((kind) => new Option(RELATIONSHIPS[kind].name, kind)));
+    element<HTMLSelectElement>("mode").append(...EXPANSION_MODES.map((mode) => new Option(mode)));
     for (const field of this.partFields)
       field.addEventListener("input", () => this.answer(field, this.nodeFields, this.editNode()));
     for (const [field, noun] of this.regionNames)
