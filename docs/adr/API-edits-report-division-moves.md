@@ -146,8 +146,10 @@ Comb told no change of the graph during the veto's call.
   A change is delivered synchronously, after the store and the engine hold it and before the call or
   the input event that made it returns, in the order made. `nodeMoved`, `nodeResized`,
   `regionsMoved`, and `labelMoved` come once, when the pointer is released, not per frame of the
-  drag, and not at all for a drag that moved nothing or that a veto took back. The store's action
-  records the kind of the change and the identifiers it touched, never a coordinate
+  drag, and not at all for a drag that moved nothing or that a veto took back. Comb still tells a
+  region's changed size after a drag whose line or box ends where it began. Each region the drag
+  changed then holds the extent it ended at. The store's action records the kind of the change
+  and the identifiers it touched, never a coordinate
   ([ARCH-graph-in-zustand-store](ARCH-graph-in-zustand-store.md), *The graph's coordinates*); `api`
   derives the delivery from that store change, as
   [ARCH-graph-in-zustand-store](ARCH-graph-in-zustand-store.md) asks, and reads the positions a
