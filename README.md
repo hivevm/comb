@@ -231,7 +231,9 @@ regions side by side or one above the other, each `{ id, name?, size, line, divi
 its identifier, shared with no node, its size along the division, `line` `"solid"` or a dash and a
 gap for the line after it, and optionally regions of its own. Each region is a container that nodes
 lie in by its identifier, which no edge, `removeNodes`, or `updateNode` names as a node; the node
-grows to what its regions add up to, and the last region takes any rest. A region's name stands in a
+grows to what its regions add up to, and the last region takes any rest. Comb tells a region's
+`size` as it holds it, never that rest: as given, or as a drag of a line or a resize left its
+extent, so that a load of the host's copy draws the same. A region's name stands in a
 band 24 high at its top, or 24 wide at its left, turned, for regions one above the other, cut to the
 band's length. A drag of the line between two regions changes their sizes, never past the nodes they
 hold, and is told once as `regionsMoved` with the divided `node`, the `regions` whose `size`

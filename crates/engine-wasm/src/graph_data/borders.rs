@@ -96,11 +96,7 @@ mod tests {
     /// The load of the action `a`, at (100, 50), 100 wide, and of `nodes` after it.
     fn load(nodes: &[NodeInput]) -> Result<Graph, GraphDataProblem> {
         let a = batch(&[("a", 100.0, 50.0)], &[]).nodes.remove(0);
-        let mut columns = OwnedColumns::of(std::iter::once(Some(&a)).chain(nodes.iter().map(Some)));
-        // Its marks as containers, which the columns of nesting carry.
-        for (i, node) in nodes.iter().enumerate() {
-            columns.is_container[i + 1] = u8::from(node.is_container.0 == Some(Some(true)));
-        }
+        let columns = OwnedColumns::of(std::iter::once(Some(&a)).chain(nodes.iter().map(Some)));
         load_columns(&columns)
     }
 
@@ -259,5 +255,22 @@ mod tests {
             })
         );
         assert_eq!(graph.nodes_in_use(), 2);
+    }
+
+    #[test]
+    fn a_border_node_s_position_not_finite_is_refused_by_its_attachment_as_a_load_refuses_it() {
+        // Verifies: ARCH-border-nodes-ride-sides, Q-7
+        // A border node has no position of its own: one given is refused by the rule of its
+        // attachment, whatever number it is, in a load and by `addNode` alike.
+        for x in [f64::NAN, f64::INFINITY, 1e39] {
+            let mut p = pin("p", "a", Side::Top, 0.0);
+            p.x = x.into();
+            assert_eq!(load(&[p]).map(drop), invalid("x"));
+            let mut p = pin("p", "a", Side::Top, 0.0);
+            p.x = x.into();
+            let mut graph = load(&[]).unwrap();
+            let added = add_node_to(&mut graph, &p, (None, Some(0)), &Fonts::default(), 0);
+            assert_eq!(added.map(drop), invalid("x"));
+        }
     }
 }

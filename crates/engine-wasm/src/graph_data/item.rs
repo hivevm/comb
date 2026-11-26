@@ -199,22 +199,28 @@ impl<'a> Item<'a> {
     }
 }
 
-/// The node at `index` with every field read, and its content, or the refusal that names its
-/// first missing or mistyped field or the first shape of its content that cannot be read.
+/// A node's division and its regions, read (ARCH-regions-are-container-slots).
+pub(super) type Division = (Option<comb_engine::graph::Axis>, Vec<super::Region>);
+
+/// The node at `index` with every field read, its content, and its division and regions, or the
+/// refusal that names its first missing or mistyped field or the first shape of its content that
+/// cannot be read.
 pub(super) fn node_of(
     index: usize,
     node: &NodeInput,
-) -> Result<(Node<'_>, &ContentData), GraphDataProblem> {
+) -> Result<(Node<'_>, &ContentData, Division), GraphDataProblem> {
     let mut item = Item::new(GraphList::Nodes, index);
     let id = item.id("id", &node.id)?;
     item.id = Some(id);
-    // A border node has no position of its own; any other node has one.
+    // A border node has no position of its own, at 0 as a load's columns give it, one given
+    // refused by the rule of its attachment; any other node has one.
     let bordered = matches!(node.attached_to.0, Some(Some(_)));
     let position = |field: &str, value: Field<Option<f64>>| {
         let value = item.read(field, value, A_NUMBER)?;
         match value {
-            None if !bordered => item.read(field, Field::<f64>(None), A_NUMBER),
-            _ => Ok(value.unwrap_or(0.0)),
+            _ if bordered => Ok(0.0),
+            None => item.read(field, Field::<f64>(None), A_NUMBER),
+            Some(value) => Ok(value),
         }
     };
     let mut read = Node {
@@ -242,6 +248,8 @@ pub(super) fn node_of(
             .unwrap_or(false),
         border: None,
     };
+    // Its division and its regions of their types, in the place a load's first pass reads them.
+    let division = super::regions_of(id, index, &node.divide, &node.regions)?;
     if item
         .read("attachedTo", node.attached_to.clone(), A_NODE_ID_OR_NONE)?
         .is_some()
@@ -256,7 +264,7 @@ pub(super) fn node_of(
         });
     }
     let content = content_of(&item, node.content.0.as_ref())?;
-    Ok((read, content))
+    Ok((read, content, division))
 }
 
 /// What `node` gives of `x`, `y`, `container`, `side`, and `offset`, each given where it holds a
@@ -467,7 +475,7 @@ pub(super) fn batch_of(batch: &GraphBatch) -> Result<Batch<'_>, GraphDataProblem
         .nodes
         .iter()
         .enumerate()
-        .map(|(i, n)| node_of(i, n).map(|(node, _)| node));
+        .map(|(i, n)| node_of(i, n).map(|(node, ..)| node));
     Ok(Batch {
         nodes: nodes.collect::<Result<_, _>>()?,
         edges: edges_read(&batch.edges)?,

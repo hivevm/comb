@@ -11,7 +11,7 @@ import type { Hit } from "../bridge";
 import type { GraphState } from "../store";
 import type { Context, Gesture } from "./gesture";
 import { draggedOf } from "./node-drag";
-import { regionBoxes, regionChanges } from "./region-line";
+import { regionChanges, regionPlaces } from "./region-line";
 
 /** The box of the node in `slot`, `x, y, width, height`, as the engine keeps it now. */
 function boxOf({ bridge }: Pick<Context, "bridge">, slot: number): Float64Array {
@@ -39,8 +39,8 @@ export function resize(
   const { slot, handle } = hit;
   const { id } = node;
   const from = boxOf(context, slot);
-  // The boxes of its regions, which a resize of a divided node changes at the side it pulls.
-  const regions = regionBoxes(bridge, slot);
+  // The places of its regions, which a resize of a divided node changes at the side it pulls.
+  const regions = regionPlaces(bridge, slot);
   let started = false;
   // A load, or a removal of the node, which a node that took its slot does not make good.
   const taken = (state: GraphState) =>
@@ -63,12 +63,14 @@ export function resize(
       store.getState().dragEnded();
       const state = store.getState();
       if (state.nodes[slot]?.id !== id) return;
+      const changed = regionChanges(state, bridge, regions);
       const box = boxOf(context, slot);
-      if (box.every((value, i) => value === from[i])) return;
+      // A resize back to the box it began at may still have changed a region's size: the region at
+      // the side it pulled holds the extent it took on the way (ARCH-regions-are-container-slots).
+      if (box.every((value, i) => value === from[i]) && changed.regions.length === 0) return;
       // A side moved at the left or the top moves every node it holds relative to it, and in a
       // divided node every node in a region whose top left corner moved.
       const shifted = box[0] !== from[0] || box[1] !== from[1];
-      const changed = regionChanges(state, bridge, regions);
       const moved = [...(shifted ? heldBy(state, id) : []), ...changed.moved];
       state.nodeResized(id, moved, changed.regions);
     },

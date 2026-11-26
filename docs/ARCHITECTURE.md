@@ -190,20 +190,22 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   regions a node is divided into, each a container in a node slot of its own marked as a region,
   in the node or region it divides: `divide` is the one operation a load, `addNode`, and
   `updateNode` divide a node by, or leave it undivided, its regions in slots it adds or a load
-  built, what a kept region held moved into its part, and a region refuses it; `arrange` lays
-  them out from their sizes below the divided node's content, a named region's band of 24 at its
-  start, the node grown to what they need and the last region taking the rest, what each holds
-  moved along. `division_needs` computes what a division needs from its parts alone; `arrange`
-  calls it, and so does the bridge, which checks a division against the world's limit before it
-  divides. `move_line` moves the line after a region toward the pointer as far as `reach` lets the
-  regions beside it shrink, never below 8, their bands, or the boxes of the nodes they hold, and
-  never back past where it stands where a node overhangs its region, and `refit` fits the regions
-  inside them, the one at the moved side of each division or all across it, keeping what they hold
-  where it lies in the world, as a resize of the divided node does; `line_at` finds the line within
-  4 screen pixels at the near and middle level, the innermost, which `hit_at` names before a
-  connector, a region hit is named as the node it divides, and `container_at` passes over a divided
-  node or region to its regions; each walk over regions is a loop over `regions_of`, the deepest
-  first where a region needs its own
+  built, what a kept region held moved into its part, and a region refuses it; each region holds its
+  size apart from its extent, as a division gave it or as a drag of a line or a resize last changed
+  its extent (`region_size`), so that a layout anew reads no rest back as a size; `arrange` lays
+  them out from those sizes below the divided node's content, a named region's band of 24 at its
+  start, the node grown to what they need and the last region taking the rest, what each holds moved
+  along. `division_needs` computes what a division needs from its parts alone; `arrange` calls it,
+  and so does the bridge, which checks a division against the world's limit before it divides.
+  `move_line` moves the line after a region toward the pointer as far as `reach` lets the regions
+  beside it shrink, never below 8, their bands, or the boxes of the nodes they hold, and never back
+  past where it stands where a node overhangs its region, and `refit` fits the regions inside them,
+  the one at the moved side of each division or all across it, keeping what they hold where it lies
+  in the world, as a resize of the divided node does; `line_at` finds the line within 4 screen
+  pixels at the near and middle level, the innermost, which `hit_at` names before a connector, a
+  region hit is named as the node it divides, and `container_at` passes over a divided node or
+  region to its regions; each walk over regions is a loop over `regions_of`, the deepest first where
+  a region needs its own
   ([ARCH-regions-are-container-slots](adr/ARCH-regions-are-container-slots.md)); `borders`, the
   border nodes, each a node slot of its own attached to another node by a side of its box and an
   offset along it, which `attach`, `set_place`, and `slide`, the drag, hold within the side's
@@ -469,8 +471,9 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   engine's `resizeNode` the box the node had at the press and the drag from it on every move, and
   signals the node and what it holds as dragged, as a drag of a container does; its release
   records `nodeResized` once, with the nodes that lie directly in it where its left or top side
-  moved, unless no box changed, and of a divided node with the regions whose size changed and the
-  nodes in a region whose top left corner moved. `region-line.ts`: a press on the line between two
+  moved, unless no box and no region's size changed, and of a divided node with the regions whose
+  size, as the engine holds it (`regionSize`), changed and the nodes in a region whose top left
+  corner moved. `region-line.ts`: a press on the line between two
   regions hands the engine's `moveLine` the line's place at the press moved by the drag on every
   move, signals the divided node and what it holds as dragged, and records `regionsMoved` once at
   the release where a region's size changed, with the nodes in a region whose top left corner

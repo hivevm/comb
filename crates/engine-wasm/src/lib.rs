@@ -1180,6 +1180,16 @@ impl Engine {
         }
     }
 
+    /// The size of the region in `slot` along the direction of its division, as the engine holds
+    /// it apart from its extent, which the last region of a division stretches to the rest: what
+    /// `api` tells the host application of a region's size (ARCH-regions-are-container-slots); none
+    /// for a slot that holds no region.
+    #[wasm_bindgen(js_name = regionSize)]
+    pub fn region_size(&self, slot: u32) -> Option<f64> {
+        trap::spring();
+        self.graph.region_size(slot).map(f64::from)
+    }
+
     /// The slot of the container or region the node in `slot` lies in, none for one on the canvas
     /// or a slot that holds no node (ARCH-engine-edits-nested-graph): where the engine chose a
     /// node's container, as a division moves what a node or a kept region held into its regions
@@ -1585,7 +1595,9 @@ impl Engine {
                 continue;
             }
             let (content, node) = self.content.of(slot);
-            let width = self.graph.sizes()[slot as usize * 2];
+            // At the width its data gives, as a load lays it out, not the one its regions grew it
+            // to (ARCH-regions-are-container-slots).
+            let width = self.graph.own_width(slot);
             let laid = content.laid(node, &self.fonts);
             let given = self.graph.given_height(slot);
             let shape = self.graph.shape(slot);
@@ -3326,6 +3338,39 @@ pub(crate) mod tests {
             .graph
             .hit_at(Point::new(350.0, 75.0), 1.0, Level::Near, false);
         assert_eq!(hit, Some(Target::Node(1)));
+    }
+
+    #[test]
+    fn a_font_handed_over_lays_a_node_its_regions_grew_out_at_its_own_width_as_a_load_does() {
+        // Verifies: REN-node-content-and-hits, ARCH-regions-are-container-slots
+        use graph_data::tests::{added, content, load_into};
+        use graph_data::{Divide, Line};
+        let region = |id: &str| RegionInput {
+            id: id.to_owned().into(),
+            name: None.into(),
+            size: 30.0.into(),
+            line: Line::Solid.into(),
+            divide: None.into(),
+            of: None.into(),
+        };
+        // A rectangle 60 wide, of no content, whose height follows its width, divided across into
+        // three regions of 30, which grow it to 90 wide.
+        let node = added(0.0, 0.0, |n| {
+            n.width = 60.0.into();
+            n.content = content(&[]).into();
+            n.divide = Some(Divide::Across).into();
+            n.regions = Some(vec![region("a"), region("b"), region("c")]).into();
+        });
+        let mut engine = Engine::new();
+        let none = graph_data::OwnedEdgeColumns::of([]);
+        let nodes = graph_data::OwnedColumns::of([Some(&node)]);
+        load_into(&mut engine, &nodes, &none).unwrap();
+        let loaded = engine.graph.sizes().to_vec();
+        assert_eq!(loaded[..2], [90.0, 60.0]);
+        // A font laid out from the width its data gives, 60, not the 90 its regions grew it to.
+        let title = RoleCode::Title as u8;
+        assert_eq!(engine.set_font(title, &[], &[], 7.0, 18.0), Ok(()));
+        assert_eq!(engine.graph.sizes(), loaded);
     }
 
     #[test]

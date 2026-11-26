@@ -129,7 +129,9 @@ pub(crate) fn update_node_in(
         },
         |&(_, laid)| laid,
     );
-    let width = graph.sizes()[slot as usize * 2];
+    // Laid out at the width its data gives, as a load lays it out, not the one its regions grew
+    // it to (ARCH-regions-are-container-slots).
+    let width = graph.own_width(slot);
     let at = [0, 1].map(|axis| graph.positions()[slot as usize * 2 + axis]);
     let height = checked_height(id, shape, [at[1], width], laid, given)?;
     let top = content_top(shape, width, laid);
@@ -201,7 +203,7 @@ fn divide_anew(
 #[cfg(test)]
 mod tests {
     use crate::tests::{fonted, near};
-    use crate::{ContentElement, Field, KindCode, NodePatch, RoleCode, TextRole};
+    use crate::{ContentElement, Field, KindCode, NodeInput, NodePatch, RoleCode, TextRole};
     use comb_engine::graph::Handle;
 
     use super::super::patch_of;
@@ -262,6 +264,99 @@ mod tests {
             engine.graph.resize_node(7, 64.0),
             Err(comb_engine::graph::SlotError::NoNode { slot: 7 })
         );
+    }
+
+    #[test]
+    fn a_patch_of_a_node_its_regions_grew_lays_it_out_at_its_own_width_as_a_load_does() {
+        // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes
+        use crate::graph_data::tests::{added, content, load_into};
+        use crate::graph_data::{Divide, Line, OwnedColumns, OwnedEdgeColumns, PatchValue};
+        use crate::{Engine, RegionInput};
+        let region = |id: &str| RegionInput {
+            id: id.to_owned().into(),
+            name: None.into(),
+            size: 30.0.into(),
+            line: Line::Solid.into(),
+            divide: None.into(),
+            of: None.into(),
+        };
+        // A rectangle 60 wide, of no content, whose height follows its width, divided across.
+        let node = |regions: Vec<RegionInput>| {
+            added(0.0, 0.0, |n| {
+                n.width = 60.0.into();
+                n.content = content(&[]).into();
+                n.divide = Some(Divide::Across).into();
+                n.regions = Some(regions).into();
+            })
+        };
+        let loaded = |node: &NodeInput| {
+            let mut engine = Engine::new();
+            let none = OwnedEdgeColumns::of([]);
+            load_into(&mut engine, &OwnedColumns::of([Some(node)]), &none).unwrap();
+            engine
+        };
+        // Three regions of 30 grow it to 90 wide.
+        let mut engine = loaded(&node(vec![region("a"), region("b"), region("c")]));
+        assert_eq!(engine.graph.sizes()[..2], [90.0, 60.0]);
+        // One region of 30 in their place: laid out at its own width, 60, as a load of it is.
+        let patch = NodePatch(vec![(
+            "regions".to_owned(),
+            PatchValue::Regions(Field(Some(Some(vec![region("d")])))),
+        )]);
+        engine.update(0, "n", &patch).unwrap();
+        let expected = loaded(&node(vec![region("d")]));
+        assert_eq!(engine.graph.sizes()[..2], expected.graph.sizes()[..2]);
+        assert_eq!(engine.graph.sizes()[..2], [60.0, 60.0]);
+    }
+
+    #[test]
+    fn a_patch_of_content_alone_lays_a_divided_node_out_from_its_regions_sizes_as_a_load_does() {
+        // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves
+        use crate::graph_data::tests::{TITLE, added, content, load_into};
+        use crate::graph_data::{Divide, Line, OwnedColumns, OwnedEdgeColumns, PatchValue};
+        use crate::{Engine, RegionInput};
+        let region = |id: &str, divide: Option<Divide>, of: Option<u32>| RegionInput {
+            id: id.to_owned().into(),
+            name: None.into(),
+            size: 30.0.into(),
+            line: Line::Solid.into(),
+            divide: divide.into(),
+            of: of.into(),
+        };
+        // A rectangle 60 wide, divided across into a region of 30, divided down into one of 30:
+        // each takes the rest of what it divides.
+        let node = |rows: &[&[_]]| {
+            added(0.0, 0.0, |n| {
+                n.width = 60.0.into();
+                n.content = content(rows).into();
+                n.divide = Some(Divide::Across).into();
+                n.regions = Some(vec![
+                    region("r0", Some(Divide::Down), None),
+                    region("r1", None, Some(0)),
+                ])
+                .into();
+            })
+        };
+        let loaded = |node: &NodeInput| {
+            let mut engine = fonted();
+            let none = OwnedEdgeColumns::of([]);
+            load_into(&mut engine, &OwnedColumns::of([Some(node)]), &none).unwrap();
+            engine
+        };
+        let mut engine = loaded(&node(&[]));
+        assert_eq!(engine.graph.sizes()[..2], [60.0, 60.0]);
+        let patch = NodePatch(vec![(
+            "content".to_owned(),
+            PatchValue::from(content(&[&[TITLE]])),
+        )]);
+        engine.update(0, "n", &patch).unwrap();
+        let expected: Engine = loaded(&node(&[&[TITLE]]));
+        assert_eq!(engine.graph.sizes(), expected.graph.sizes());
+        assert_eq!(engine.graph.positions(), expected.graph.positions());
+        // The inner region holds its size of 30, beside the rest it was laid out to.
+        assert_eq!(engine.region_size(2), Some(30.0));
+        assert_eq!(engine.region_size(0), None);
+        assert_eq!(engine.region_size(9), None);
     }
 
     #[test]

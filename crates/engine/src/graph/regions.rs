@@ -42,10 +42,13 @@ impl Axis {
 /// What a node slot is of regions: whether it is a region, whether a region has a name and so a
 /// band, the direction it is divided in, or none, and for a divided node the height of its
 /// content, below which its regions lie, the width its data gives, from which `arrange` grows it
-/// to what its regions need, and whether only its division made it a container.
+/// to what its regions need, and whether only its division made it a container; for a region its
+/// size along the direction of the division it lies in, held apart from its extent, which the last
+/// region of a division stretches to the rest.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(super) struct Division {
     pub(super) region: bool,
+    pub(super) size: f32,
     pub(super) band: bool,
     pub(super) divide: Option<Axis>,
     pub(super) top: f32,
@@ -386,7 +389,7 @@ impl Graph {
             RegionSlots::Built { slots, .. } => slots.to_vec(),
         };
         for ((&region, part), &holds) in regions.iter().zip(parts).zip(&holds) {
-            self.mark_region(region, part.named, part.divide.filter(|_| holds));
+            self.mark_region(region, part, part.divide.filter(|_| holds));
         }
         let direct = self.held_directly(slot, parts);
         self.arrange(slot);
@@ -596,6 +599,17 @@ impl Graph {
         }
     }
 
+    /// The width the node in `slot` lays its content out at: of a divided node the width its data
+    /// gives, or a resize left, from which `arrange` grows it; of any other its width; 0 for a
+    /// slot past the list.
+    pub fn own_width(&self, slot: u32) -> f32 {
+        let division = self.division(slot);
+        if division.divide.is_some() {
+            return division.width;
+        }
+        self.sizes.get(slot as usize * 2).copied().unwrap_or(0.0)
+    }
+
     /// Gives the divided node in `slot` the height of its content, `top`, below which its regions
     /// lie, and lays them out anew with `arrange`; a node that is not divided keeps nothing of it.
     /// A region, which holds no content, refuses it.
@@ -611,20 +625,30 @@ impl Graph {
         Ok(())
     }
 
+    /// The size of the region in `slot` along the direction of the division it lies in, as the
+    /// engine holds it apart from its extent: as a division gave it, or as a drag of a line or a
+    /// resize last changed the region's extent along that direction; none for a slot that holds no
+    /// region (ARCH-regions-are-container-slots, *Division*).
+    pub fn region_size(&self, slot: u32) -> Option<f32> {
+        let division = self.division(slot);
+        (division.region && self.holds_node(slot)).then_some(division.size)
+    }
+
     /// The height of the content of the divided node in `slot`, below which its regions lie.
     pub fn top(&self, slot: u32) -> f32 {
         self.division(slot).top
     }
 
-    /// Marks the node in `slot`, a container in what it divides, a region of it, with a band where
-    /// `band`, divided in the direction `divide` or not at all
+    /// Marks the node in `slot`, a container in what it divides, a region of it, of the size of
+    /// `part`, with a band where `part` is named, divided in the direction `divide` or not at all
     /// (ARCH-regions-are-container-slots, *Regions in a slot*).
-    fn mark_region(&mut self, slot: u32, band: bool, divide: Option<Axis>) {
+    fn mark_region(&mut self, slot: u32, part: &Part, divide: Option<Axis>) {
         self.set_division(
             slot,
             Division {
                 region: true,
-                band,
+                size: part.size,
+                band: part.named,
                 divide,
                 ..Division::default()
             },
@@ -670,9 +694,8 @@ impl Graph {
             .iter()
             .map(|&region| {
                 let container = self.container(region);
-                let along = self.divided(container).unwrap_or(Axis::Across);
                 Part {
-                    size: self.sizes[region as usize * 2 + along.index()],
+                    size: self.division(region).size,
                     named: self.division(region).band,
                     divide: self.divided(region),
                     of: index.get(&container).copied(),
@@ -690,8 +713,8 @@ impl Graph {
             .collect()
     }
 
-    /// Lays out the regions of the divided node in `slot` from their sizes, the extent of each
-    /// along the direction of its division (ARCH-regions-are-container-slots, *Division*): the node
+    /// Lays out the regions of the divided node in `slot` from their sizes, as the engine holds
+    /// them apart from their extents (ARCH-regions-are-container-slots, *Division*): the node
     /// grows from the width its data gives and the height it has to what its regions need, each
     /// region takes its size, or more where its own regions need it, the last of them the rest,
     /// and what each region holds moves with it, its position relative to the region kept. A slot
@@ -731,7 +754,7 @@ impl Graph {
             let mut sizes: Vec<f64> = regions
                 .iter()
                 .map(|&r| {
-                    let size = f64::from(self.sizes[r as usize * 2 + a]);
+                    let size = f64::from(self.division(r).size);
                     size.max(LEAST_REGION).max(needs[&r][a])
                 })
                 .collect();
@@ -860,9 +883,17 @@ impl Graph {
     }
 
     /// Gives the node in `slot` the box `to`, what it holds kept where it lies in the world, its
-    /// position relative to its container and theirs relative to it kept anew.
+    /// position relative to its container and theirs relative to it kept anew. A region whose
+    /// extent along the direction of its division changes holds that extent as its size from now
+    /// on, as a drag of a line and a resize change the size of the regions they move
+    /// (ARCH-regions-are-container-slots, *Lines* and *Resizing what is divided*).
     fn set_box(&mut self, slot: u32, to: &Rect) {
         let i = slot as usize * 2;
+        let along = self
+            .divided(self.container(slot))
+            .filter(|_| self.is_region(slot))
+            .map(Axis::index);
+        let before = along.map(|a| self.sizes[i + a]);
         self.positions[i] = kept(to.min_x);
         self.positions[i + 1] = kept(to.min_y);
         self.sizes[i] = kept(to.max_x - f64::from(self.positions[i]));
@@ -872,6 +903,13 @@ impl Graph {
         }
         for held in self.held(slot).to_vec() {
             self.keep_relative(held);
+        }
+        if let Some(a) = along
+            && before != Some(self.sizes[i + a])
+        {
+            let size = self.sizes[i + a];
+            let division = self.division(slot);
+            self.set_division(slot, Division { size, ..division });
         }
         self.reboxed(slot);
     }
@@ -1023,6 +1061,56 @@ mod tests {
             Err(DivideError::Part { index: 1 })
         );
         assert!(graph.regions_of(0).is_empty());
+    }
+
+    #[test]
+    fn a_node_its_regions_grew_keeps_the_width_its_data_gives_as_its_own() {
+        // Verifies: ARCH-regions-are-container-slots
+        let mut graph = Graph::new(vec![0.0, 0.0], vec![60.0, 50.0], Vec::new()).unwrap();
+        assert_eq!(graph.own_width(0), 60.0);
+        let parts = [part(40.0, None), part(40.0, None)];
+        graph
+            .divide(0, Some(Axis::Across), 0.0, &parts, RegionSlots::Added)
+            .unwrap();
+        assert_eq!(graph.sizes()[0], 80.0);
+        assert_eq!(graph.own_width(0), 60.0);
+        // Undivided, it is as wide as its data gives again; a slot past the list has no width.
+        graph.divide(0, None, 0.0, &[], RegionSlots::Added).unwrap();
+        assert_eq!(graph.own_width(0), 60.0);
+        assert_eq!(graph.own_width(9), 0.0);
+    }
+
+    #[test]
+    fn a_divided_node_laid_out_again_lays_its_regions_out_from_their_sizes_not_the_rest_they_took()
+    {
+        // Verifies: ARCH-regions-are-container-slots
+        // 60 × 60, divided across into a region of 30, divided down into one of 30: each takes
+        // the rest of what it divides, 60.
+        let mut graph = Graph::new(vec![0.0, 0.0], vec![60.0, 60.0], Vec::new()).unwrap();
+        let parts = [
+            Part {
+                divide: Some(Axis::Down),
+                ..part(30.0, None)
+            },
+            part(30.0, Some(0)),
+        ];
+        let divided = graph
+            .divide(0, Some(Axis::Across), 0.0, &parts, RegionSlots::Added)
+            .unwrap();
+        let [outer, inner] = divided.regions[..] else {
+            panic!("two regions");
+        };
+        assert_eq!(rect(&graph, inner), [0.0, 0.0, 60.0, 60.0]);
+        assert_eq!(graph.region_size(outer), Some(30.0));
+        assert_eq!(graph.region_size(inner), Some(30.0));
+        // Content 64 high above them: the node needs 64 + 30, not 64 + the 60 the region took.
+        graph.set_top(0, 64.0).unwrap();
+        assert_eq!(rect(&graph, 0), [0.0, 0.0, 60.0, 94.0]);
+        assert_eq!(rect(&graph, inner), [0.0, 64.0, 60.0, 94.0]);
+        assert_eq!(graph.region_size(inner), Some(30.0));
+        // The node and a slot past the list hold no region's size.
+        assert_eq!(graph.region_size(0), None);
+        assert_eq!(graph.region_size(9), None);
     }
 
     #[test]
@@ -1192,6 +1280,62 @@ mod tests {
             Err(LineError::NoLine { slot: r[4] })
         );
         assert_eq!(graph.move_line(0, 0.0), Err(LineError::NoLine { slot: 0 }));
+    }
+
+    #[test]
+    fn a_line_and_a_resize_give_the_regions_they_change_their_new_extents_as_their_sizes() {
+        // Verifies: ARCH-regions-are-container-slots
+        let (mut graph, r, _) = activity();
+        let sizes = |graph: &Graph| r.iter().map(|&s| graph.region_size(s).unwrap()).collect();
+        let held: Vec<f32> = sizes(&graph);
+        assert_eq!(held, [100.0, 150.0, 80.0, 60.0, 100.0]);
+        // The line after the first partition: the two partitions beside it, and nothing inside
+        // the middle one, whose regions follow one another across the line's direction.
+        graph.move_line(r[0], 250.0).unwrap();
+        let held: Vec<f32> = sizes(&graph);
+        assert_eq!(held, [150.0, 100.0, 80.0, 60.0, 100.0]);
+        // A resize at the bottom right: the last partition, and the lower region of the middle
+        // one, which takes the height; each laid out again from those sizes keeps its box.
+        graph.set_sizing(0, None, true).unwrap();
+        let from = graph.node_bounds(0);
+        graph
+            .resize(0, Handle::BottomRight, &from, [50.0, 40.0], 30.0)
+            .unwrap();
+        let held: Vec<f32> = sizes(&graph);
+        assert_eq!(held, [150.0, 100.0, 80.0, 100.0, 150.0]);
+        let boxes: Vec<[f64; 4]> = r.iter().map(|&s| rect(&graph, s)).collect();
+        graph.set_top(0, 30.0).unwrap();
+        let again: Vec<[f64; 4]> = r.iter().map(|&s| rect(&graph, s)).collect();
+        assert_eq!(again, boxes);
+    }
+
+    #[test]
+    fn a_line_leaves_the_size_of_a_region_whose_extent_along_its_division_it_does_not_change() {
+        // Verifies: ARCH-regions-are-container-slots
+        // 300 × 200, divided across into a region of 100, divided down into one of 30, which
+        // takes the rest, 200 high, and a region of 50, which takes the rest, 200 wide.
+        let mut graph = Graph::new(vec![0.0, 0.0], vec![300.0, 200.0], Vec::new()).unwrap();
+        let parts = [
+            Part {
+                divide: Some(Axis::Down),
+                ..part(100.0, None)
+            },
+            part(30.0, Some(0)),
+            part(50.0, None),
+        ];
+        let r = graph
+            .divide(0, Some(Axis::Across), 0.0, &parts, RegionSlots::Added)
+            .unwrap()
+            .regions;
+        assert_eq!(rect(&graph, r[1]), [0.0, 0.0, 100.0, 200.0]);
+        // The line between the two widens the inner region too, across its division: it keeps 30.
+        assert_eq!(graph.move_line(r[0], 150.0), Ok(150.0));
+        assert_eq!(rect(&graph, r[1]), [0.0, 0.0, 150.0, 200.0]);
+        let held: Vec<Option<f32>> = r.iter().map(|&s| graph.region_size(s)).collect();
+        assert_eq!(held, [Some(150.0), Some(30.0), Some(150.0)]);
+        // Laid out again below content 64 high, the node needs 64 + 30 and stays 200 high.
+        graph.set_top(0, 64.0).unwrap();
+        assert_eq!(rect(&graph, 0), [0.0, 0.0, 300.0, 200.0]);
     }
 
     #[test]

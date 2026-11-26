@@ -257,25 +257,24 @@ function readInto<K extends keyof NodePatch>(patch: NodePatch, field: K, read: P
   if (value !== undefined) patch[field] = value;
 }
 
-/** The size of the region in `slot` as the engine keeps it: its extent along the direction of
- *  its division. */
-function sizeAt(state: GraphState, sizes: Float32Array, slot: number): number {
-  const across = state.nodes[slot]!.region!.axis === "across";
-  return sizes[slot * 2 + (across ? 0 : 1)]!;
+/** The size of the region in `slot` as the engine holds it, apart from its extent, which the
+ *  last region of a division stretches to the rest: what a load of the host's data gives again
+ *  (ARCH-regions-are-container-slots, *Division*). */
+function sizeAt(bridge: Bridge, slot: number): number {
+  return bridge.regionSize(slot)!;
 }
 
 /** The regions of the node in `slot` as the host application's type has them, each with its
- *  size as the engine keeps it, at every depth (ARCH-regions-are-container-slots). */
+ *  size as the engine holds it, at every depth (ARCH-regions-are-container-slots). */
 function regionsAt(state: GraphState, bridge: Bridge, slot: number): RegionData[] {
   const order = [...bridge.regionsOf(slot)];
-  const { sizes } = bridge.nodeBuffers();
   const byId = new Map<string, RegionData[]>();
   const top: RegionData[] = [];
   const own = state.nodes[slot]!.id;
   for (const at of order) {
     const view = state.nodes[at]!;
     const { name, line, divide } = view.region!;
-    const region: RegionData = { id: view.id, size: sizeAt(state, sizes, at), line };
+    const region: RegionData = { id: view.id, size: sizeAt(bridge, at), line };
     if (typeof line !== "string") region.line = [line[0], line[1]];
     if (name !== undefined) region.name = name;
     if (divide !== undefined) region.divide = divide;
@@ -288,10 +287,9 @@ function regionsAt(state: GraphState, bridge: Bridge, slot: number): RegionData[
   return top;
 }
 
-/** Each of `regions`, by identifier, with its size as the engine keeps it now. */
+/** Each of `regions`, by identifier, with its size as the engine holds it now. */
 function regionSizes(state: GraphState, bridge: Bridge, regions: readonly string[]) {
-  const { sizes } = bridge.nodeBuffers();
-  return regions.map((id) => ({ id, size: sizeAt(state, sizes, state.slots.get(id)!) }));
+  return regions.map((id) => ({ id, size: sizeAt(bridge, state.slots.get(id)!) }));
 }
 
 /** The change `nodeResized` as `onChange` delivers it: the node's box, its position relative to

@@ -178,7 +178,7 @@ pub(super) fn invalid_text(node: &str, row: u32, column: u32) -> GraphDataProble
 }
 
 /// The node of `batch` at `(x, y)` with `change` made to it.
-pub(super) fn added(x: f64, y: f64, change: impl FnOnce(&mut NodeInput)) -> NodeInput {
+pub(crate) fn added(x: f64, y: f64, change: impl FnOnce(&mut NodeInput)) -> NodeInput {
     let mut node = batch(&[("n", x, y)], &[]).nodes.remove(0);
     change(&mut node);
     node

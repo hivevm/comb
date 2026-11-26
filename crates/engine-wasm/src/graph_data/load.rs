@@ -23,7 +23,7 @@ use super::{
 };
 use super::{
     Region, RegionColumns, check_regions, divide_of, division_problem, malformed, numbered,
-    parts_of, regions_of, within_world_divided,
+    parts_of, within_world_divided,
 };
 
 /// A node `addNode` added: the slot the engine chose, the content the bridge keeps of it, and the
@@ -435,7 +435,7 @@ struct Single {
 /// height; the one sequence both crossings refuse by, so that their problems and their order stay
 /// one (REN-node-content-and-hits).
 fn single_of(input: &NodeInput, fonts: &Fonts, held: u64) -> Result<Single, GraphDataProblem> {
-    let (node, content) = node_of(0, input)?;
+    let (node, content, (divide, regions)) = node_of(0, input)?;
     id_length("nodes", 0, "id", node.id)?;
     let ([x, y], width) = checked_node(&node)?;
     let given = given_height(node.id, node.height)?;
@@ -443,7 +443,6 @@ fn single_of(input: &NodeInput, fonts: &Fonts, held: u64) -> Result<Single, Grap
     let shape = node.shape;
     let (content, laid) = checked_content(node.id, shape, content, fonts, held)?;
     let height = checked_height(node.id, shape, [y, width], laid, given)?;
-    let (divide, regions) = regions_of(node.id, 0, &input.divide, &input.regions)?;
     let mut taken = HashSet::from([node.id.to_owned()]);
     check_regions(node.id, 0, divide, &regions, &mut taken)?;
     // Its regions' names count against the budget of content beside its content.
@@ -803,6 +802,30 @@ mod tests {
         );
         assert_eq!(graph.nodes_in_use(), MAX_ITEMS);
         assert_eq!(graph.positions().len(), count * 2);
+    }
+
+    #[test]
+    fn an_added_node_names_its_regions_of_another_type_before_its_content_as_a_load_does() {
+        // Verifies: API-bridge-columns-carry-nesting, ARCH-regions-are-container-slots, Q-7
+        // A load's first pass names the regions by their type before any rule of content; so does
+        // `addNode`, the one sequence a node is refused by.
+        use super::super::problem::A_REGION_LIST;
+        let node = added(0.0, 0.0, |n| {
+            n.content = content(&[&[(KindCode::Text, 1.0, RoleCode::Title, None)]]).into();
+            n.regions = Field(None);
+        });
+        let problem = || GraphDataProblem::InvalidField {
+            list: GraphList::Nodes,
+            index: 0,
+            id: Some("n".into()),
+            field: "regions".into(),
+            expected: A_REGION_LIST.into(),
+        };
+        let columns = OwnedColumns::of([Some(&node)]);
+        assert_eq!(load_columns(&columns).map(drop), Err(problem()));
+        let mut graph = graph_of(&batch(&[("a", 0.0, 0.0)], &[])).unwrap();
+        assert_eq!(add(&mut graph, &node), Err(problem()));
+        assert_eq!(graph.nodes_in_use(), 1);
     }
 
     #[test]

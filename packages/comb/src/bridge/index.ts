@@ -326,6 +326,10 @@ export interface Bridge {
    *  slot that holds no node: where the engine chose it, as a division moves what a node held
    *  into its regions (ARCH-regions-are-container-slots). */
   containerOf(slot: number): number | undefined;
+  /** The size of the region in `slot` along the direction of its division, as the engine holds it
+   *  apart from its extent, which the last region of a division stretches to the rest; none for a
+   *  slot that holds no region (ARCH-regions-are-container-slots). */
+  regionSize(slot: number): number | undefined;
   /** Moves the line after the region in `slot` to the world coordinate `to` along its division,
    *  as far as the regions beside it allow, and returns where it now stands
    *  (ARCH-regions-are-container-slots, *Lines*): only toward `to`, never back past where it
@@ -868,6 +872,7 @@ function regionCalls(engine: Engine) {
       removedOf(engine.updateNode(slot, id, patch, regions)),
     regionsOf: (slot: number) => engine.regionsOf(slot),
     containerOf: (slot: number) => engine.containerOf(slot),
+    regionSize: (slot: number) => engine.regionSize(slot),
     moveLine: (slot: number, to: number) => engine.moveLine(slot, to),
     bandName: (name: string, length: number) => engine.bandName(name, length),
     bandThickness,
