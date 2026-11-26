@@ -27,7 +27,7 @@
     "prettier": "3.10.1",
     "typescript": "6.0.3",
     "typescript-eslint": "8.72.2",
-    "wasm-pack": "0.15.0"
+    "wasm-pack": "0.15.1"
   },
   "trustedDependencies": [
     "wasm-pack"
