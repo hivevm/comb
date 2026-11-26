@@ -92,7 +92,17 @@ in a slot*). Until the review of revision ticket 11 found it, the engine left th
 the regions, in the node itself, and Comb told nothing. The maintainer decided on 2026-11-25 that
 the division moves each such node, at its world position, into the region a drop at its position
 lands in, else into the first region, and that Comb tells each move as it tells a kept region's
-content. This ADR restates its predecessor with that one change to the *Changes*.
+content.
+
+Its *Delivery* tells nothing of a drag that moved nothing. Each region holds its size apart from
+its extent, and the last region of a division stretches to the rest
+([ARCH-regions-are-container-slots](ARCH-regions-are-container-slots.md), *Division*). A drag of
+a line or a resize changes each region at its side to the extent it took on the way. A drag whose
+line or box ends where it began can so still change a region's size, as the engine holds it, while
+nothing on the canvas moved. The maintainer decided on 2026-11-25 that the host's copy of a
+region's size and the engine's must stay equal after such a drag, so that a load of the host's
+copy lays the regions out as the engine does. This ADR restates its predecessor with these two
+changes, to the *Changes* and to the *Delivery*.
 
 ## Decision
 
@@ -277,6 +287,10 @@ gives later than the gesture.
   first and be drawn outside it.
 - **The moves left untold, as before this ADR** — no new change, but the host's copy of the graph
   would keep the node in a container that holds regions alone.
+- **Nothing told of a drag whose line or box ends where it began, as before this ADR** — no
+  change for a gesture the user sees as undone, but the host's copy would keep a region's size the
+  engine no longer holds, and a load of that copy would lay the regions out otherwise than the
+  engine did.
 
 - **Controlled, the host applies every change** — the host keeps the one copy of the graph and
   Comb shows what it is handed, but each edit and each frame of a drag waits on host code and a
@@ -434,6 +448,10 @@ Each test below cites this ADR with `Verifies: API-edits-report-division-moves`.
     change.
   - They resize a container at its left edge and assert `nodeResized` with the moved content.
   - They drag the line between two regions and assert `regionsMoved`.
+  - They resize a divided node, whose last region took the rest, out and back to the box it began
+    at. They assert one `nodeResized` whose `regions` name that region with the extent it holds.
+    They drag a line of it out and back to where it began and assert `regionsMoved`. These tests
+    stand in `examples/metric-tree/e2e/regions.spec.ts`.
   - They drag a border node and assert `nodeMoved` with its side and offset.
   - They divide a container that holds nodes through `updateNode`. They assert one `nodeMoved`
     by the host per node after the `nodeUpdated`. Each node lies where it lay, in the region at
