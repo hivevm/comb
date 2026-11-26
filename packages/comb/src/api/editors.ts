@@ -323,7 +323,7 @@ function keptOf(regions: unknown, old: readonly number[], state: GraphState): Ui
  *  the map holds no such identifier, or none on the canvas. The bridge crate refuses a container
  *  by the one rule a load refuses it by, `NO_SLOT` as no node of the graph
  *  (API-edits-report-nested-changes), and a container that is no string by its field. */
-function containerOf(snapshot: unknown, state: GraphState): number | undefined {
+function containerSlotOf(snapshot: unknown, state: GraphState): number | undefined {
   const { container } = snapshot as { container?: unknown };
   if (typeof container !== "string") return undefined;
   return state.slots.get(container) ?? NO_SLOT;
@@ -356,7 +356,7 @@ function addNode({ store, bridge, limits }: Editing, node: unknown): void {
         if (typeof named === "string" && state.slots.has(named))
           throw new GraphDataError({ kind: "duplicateNode", node: named });
       const attached = attachedOf(plain.snapshot, state);
-      return { ...plain, container: containerOf(plain.snapshot, state), attached };
+      return { ...plain, container: containerSlotOf(plain.snapshot, state), attached };
     },
     idUnits: (plain, state) => state.idUnits + plain.idUnits,
     engine: ({ snapshot, container, attached }) => bridge.addNode(snapshot, container, attached),

@@ -571,6 +571,65 @@ test("what Comb tells of the regions after a patch of content, a drag of a line,
   expect(resized!.p2).toMatchObject({ x: 150, width: 200 });
 });
 
+/** Presses at the world point `from`, drags to `out`, back to `from`, and releases there. */
+async function dragOutAndBack(page: Page, from: [number, number], out: [number, number]) {
+  const [a, b] = [await pagePoint(page, ...from), await pagePoint(page, ...out)];
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await page.mouse.move(b.x, b.y, { steps: 8 });
+  await page.mouse.move(a.x, a.y, { steps: 8 });
+  await page.mouse.up();
+}
+
+test("a resize of a divided node out and back to the box it began at tells the last region's size, the extent it took the rest at", async ({
+  page,
+}) => {
+  // Verifies: API-edits-report-division-moves, ARCH-regions-are-container-slots, G-15
+  await open(page);
+  await loaded(page, RESTING);
+  const top = await topOf(page);
+  const before = await drawnBoxes(page);
+  await clickWorld(page, 200, top + 60);
+  await dragOutAndBack(page, [300, 100], [350, 100]);
+  // The box ends where it began, but the partition of 50 now holds the extent of 200 it shows.
+  expect(await drawnBoxes(page)).toEqual(before);
+  expect(await toldOf(page, "nodeResized")).toEqual([
+    {
+      kind: "nodeResized",
+      by: "user",
+      id: "act",
+      x: 0,
+      y: 0,
+      width: 300,
+      height: 200,
+      moved: [],
+      regions: [{ id: "p2", size: 200 }],
+    },
+  ]);
+});
+
+test("a drag of a line out and back to where it began tells the last region's size, the extent it took the rest at", async ({
+  page,
+}) => {
+  // Verifies: API-edits-report-division-moves, ARCH-regions-are-container-slots, G-16
+  await open(page);
+  await loaded(page, RESTING);
+  const top = await topOf(page);
+  const before = await drawnBoxes(page);
+  await dragOutAndBack(page, [100, top + 60], [150, top + 60]);
+  // The line ends where it began, but the partition of 50 now holds the extent of 200 it shows.
+  expect(await drawnBoxes(page)).toEqual(before);
+  expect(await toldOf(page, "regionsMoved")).toEqual([
+    {
+      kind: "regionsMoved",
+      by: "user",
+      node: "act",
+      regions: [{ id: "p2", size: 200 }],
+      moved: [],
+    },
+  ]);
+});
+
 test("a deletion of the activity asks canDelete about no region and tells none removed", async ({
   page,
 }) => {

@@ -190,13 +190,17 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   regions a node is divided into, each a container in a node slot of its own marked as a region,
   in the node or region it divides: `divide` is the one operation a load, `addNode`, and
   `updateNode` divide a node by, or leave it undivided, its regions in slots it adds or a load
-  built, what a kept region held moved into its part, and a region refuses it; each region holds its
-  size apart from its extent, as a division gave it or as a drag of a line or a resize last changed
-  its extent (`region_size`), so that a layout anew reads no rest back as a size; `arrange` lays
-  them out from those sizes below the divided node's content, a named region's band of 24 at its
-  start, the node grown to what they need and the last region taking the rest, what each holds moved
-  along. `division_needs` computes what a division needs from its parts alone; `arrange` calls it,
-  and so does the bridge, which checks a division against the world's limit before it divides.
+  built, what a kept region held moved into its part, what the node held directly moved, at its
+  world position, into the innermost region not divided again whose box holds that position, as a
+  drop there lands, else into the first region, or that region's first region, to any depth, and a
+  region refuses it; `move_into` refuses a target divided into regions, which holds its regions
+  alone; each region holds its size apart from its extent, as a division gave it or as a drag of a
+  line or a resize last changed its extent (`region_size`), so that a layout anew reads no rest
+  back as a size; `arrange` lays them out from those sizes below the divided node's content, a
+  named region's band of 24 at its start, the node grown to what they need and the last region
+  taking the rest, what each holds moved along. `division_needs` computes what a division needs
+  from its parts alone; `arrange` calls it, and so does the bridge, which checks a division
+  against the world's limit before it divides.
   `move_line` moves the line after a region toward the pointer as far as `reach` lets the regions
   beside it shrink, never below 8, their bands, or the boxes of the nodes they hold, and never back
   past where it stands where a node overhangs its region, and `refit` fits the regions inside them,
@@ -356,7 +360,8 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   nothing, as one generated value, refusing a pixel as `query` does and a point that is not finite,
   `resizeNode` resizes a node by a handle from the box it had at the press, its content's height the
   least, `regionsOf` names the regions of a divided node depth first, `containerOf` names the
-  container a node lies in, where a division chose it, `moveLine` moves the line
+  container a node lies in, where a division chose it, `regionSize` the size a region holds apart
+  from its extent, `moveLine` moves the line
   after a region, `bandName` cuts a region's name to its band in the font of `title`,
   `bandThickness` hands the shell the band's thickness the engine lays regions out by, a load takes
   the regions as columns of their own in the slots after the nodes, and `addNode` and `updateNode`
@@ -1026,9 +1031,17 @@ fails where the Dev Container does not build from its Dockerfile, where the Dock
 image without a digest, or where a Feature installs Node.js (DEV-container-adds-bun-and-rust), on a
 Feature that brings a container engine or a Compose file (SEC-no-container-engine), and where the
 container does not reach the host by `--add-host=host.docker.internal:host-gateway` or does not
-forward port 4173, which the benchmark on the host needs (PERF-benchmark-drives-host-chrome); the
-workflow `.github/workflows/devcontainer.yml` builds the container and asserts the pinned Bun, Cargo
-with the WebAssembly target, and no Node.js inside it (DEV-container-adds-bun-and-rust). The type
+forward port 4173, which the benchmark on the host needs (PERF-benchmark-drives-host-chrome). It
+also fails where `.devcontainer/install-shellcheck.sh`, the one place that names the ShellCheck
+release, names no version, no SHA-256 beside each architecture, or no `sha256sum --check`, where
+the Dockerfile does not run that script or installs ShellCheck from a package, where the Dockerfile
+downloads anything by its own command, a URL outside `FROM` and `COPY`, `curl`, `wget`, or an `ADD`
+of a repository, and where it marks an unsigned archive or package as trusted
+(DEV-container-adds-bun-rust-shellcheck). The workflow `.github/workflows/devcontainer.yml` builds
+the container and asserts the pinned Bun, Cargo with the WebAssembly target, the ShellCheck version
+the install script names, and no Node.js inside it, and the `shell` job of
+`.github/workflows/checks.yml` installs the same release with the same script
+(DEV-container-adds-bun-rust-shellcheck). The type
 checker does the rest for the render layer: `GraphView` has no action to call. ESLint forbids the
 DOM markup sinks (Q-5) and `eval`, implied eval, and `new Function` (Q-6) in Comb's library sources,
 outside its tests.

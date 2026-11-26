@@ -12,21 +12,27 @@ Tsify, that its TypeScript definition is the generated one and never written by 
 - `BORDER_SIDES` in `index.ts` decodes the side as an index of a hand-written table, and `DIVIDES`
   in `packages/comb/src/bridge/columns.ts` pairs with `divide_of` of
   `crates/engine-wasm/src/graph_data/regions.rs` without a generated enum;
-- the `beside` byte of the columns mixes two meanings in its values 0 to 5;
+- the column `given`, a byte of bits a load's columns carry per node, x 1, y 2, container 4,
+  side 8, and offset 16, pairs `GIVEN` in `columns.ts` with `Given::of_bits` of
+  `crates/engine-wasm/src/graph_data/checks.rs` by hand, without a generated type;
 - the export `updateNode` takes a fourth parameter, `kept`, with `u32::MAX` as a sentinel, which the
   ADR does not name; it names `updateNode(slot, id, patch)`.
 
 Evidence: the hand-off of ticket 02 of uml-diagrams names in *Doubts* that the removal crosses as
 one array led by a count, which no ADR names. Ticket 07, finding 10: the human put `innerOf` into
 the ADR as structured data, and the code kept `Vec<f64>`. Ticket 06, the second review, lesser:
-`beside` 4 and 5 are refused as `invalidAttachment`, not as malformed.
+`beside` 4 and 5 were refused as `invalidAttachment`, not as malformed; the bitmask `given` has
+since replaced the byte `beside` of values 0 to 5, whose two meanings that finding named.
 
 API-bridge-columns-carry-nesting is accepted since PR #106 and changes only by supersession
-(NUC-decisions-are-proposed-then-accepted §6). The human chose on 2026-11-21 to settle each
+(NUC-decisions-are-proposed-then-accepted §6). Its proposed successor,
+API-bridge-columns-keep-no-size, restates these decisions, so the superseding ADR this ticket asks
+for supersedes that successor. The human chose on 2026-11-21 to settle each
 departure one of two ways:
 
-- The code moves where it can: generated enums for the side, the division, and `beside`, and small
-  generated structs for the removal, the place, the inner rectangle, and the place of a label.
+- The code moves where it can: generated enums for the side and the division, a generated type
+  for `given`, and small generated structs for the removal, the place, the inner rectangle, and
+  the place of a label.
 - A departure stays only where moving it costs too much, such as a serde call per drag frame in
   `slide` and `moveLabel`, or the sentinel of `kept`. A superseding ADR, proposed and accepted
   before the code relies on it, names those tuples and parameters and why.
@@ -37,16 +43,18 @@ departure one of two ways:
       codes other than generated enums.
 - [ ] Given `SideCode` reordered in the bridge crate, when the shell builds, then the build or a
       test fails, not the drawing.
-- [ ] Given API-bridge-columns-carry-nesting, or the ADR that supersedes it, when it is read
+- [ ] Given API-bridge-columns-keep-no-size, or the ADR that supersedes it, when it is read
       against `lib.rs`, then it names each export's parameters, `kept` among them, and each
       answer's shape.
 
 ## Read first
 
 - Touches: `crates/engine-wasm/src/lib.rs`, `crates/engine-wasm/src/graph_data/regions.rs`,
-  `crates/engine-wasm/src/graph_data/node_columns.rs`, `packages/comb/src/bridge/index.ts`,
+  `crates/engine-wasm/src/graph_data/node_columns.rs`,
+  `crates/engine-wasm/src/graph_data/checks.rs`, `packages/comb/src/bridge/index.ts`,
   `packages/comb/src/bridge/columns.ts`, and a superseding ADR under `docs/adr/` if one is due
-- API-bridge-columns-carry-nesting, API-bridge-takes-serde-and-columns, SEC-pixijs-without-eval.
+- API-bridge-columns-keep-no-size and the ADR it supersedes, API-bridge-columns-carry-nesting,
+  API-bridge-takes-serde-and-columns, SEC-pixijs-without-eval.
 - The seam: `packages/comb/src/bridge/bridge.test.ts` and the bridge crate's tests.
 
 ## Blocked by
