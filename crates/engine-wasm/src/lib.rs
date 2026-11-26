@@ -25,7 +25,7 @@ use comb_engine::geometry::Point;
 use comb_engine::geometry::Rect;
 use comb_engine::graph::{
     AttachError, Axis, CANVAS, Graph, Handle, Level, LineError, MeshAt, MoveError, MoveIntoError,
-    PositionError, RegionSlots, SlotError as GraphSlotError, Target, Visible,
+    PositionError, SlotError as GraphSlotError, Target, Visible,
 };
 use comb_engine::shape::Outline;
 use comb_engine::stroke::{Detail, Mesh};
@@ -45,8 +45,9 @@ use kept::{ContentStore, Drawn};
 
 use graph_data::{
     COLUMN_LIMIT, ContentData, EdgeColumns, EdgeRefusal, ID_LIMIT, LABEL_LIMIT, NodeColumns,
-    ROW_LIMIT, RegionColumns, SEGMENT_LIMIT, TEXT_LIMIT, add_edge_to, add_node_to, edge_refused_of,
-    height_of, load_of, malformed, numbered, patch_of, refused_of, slot, unshaped, update_edge_in,
+    NodeRefusal, ROW_LIMIT, RegionColumns, SEGMENT_LIMIT, TEXT_LIMIT, add_edge_to, add_node_to,
+    edge_refused_of, height_of, load_of, malformed, numbered, refused_of, slot, unshaped,
+    update_edge_in, update_node_in,
 };
 
 /// A number the shell computed that an export cannot take: the shell's own mistake, never one of
@@ -89,6 +90,15 @@ impl From<GraphDataProblem> for CallRefusal {
 impl From<GraphSlotError> for CallRefusal {
     fn from(error: GraphSlotError) -> Self {
         Self::Slot(error.into())
+    }
+}
+
+impl From<NodeRefusal> for CallRefusal {
+    fn from(refusal: NodeRefusal) -> Self {
+        match refusal {
+            NodeRefusal::Data(problem) => Self::Data(problem),
+            NodeRefusal::Slot(error) => Self::Slot(error.into()),
+        }
     }
 }
 
@@ -957,15 +967,12 @@ impl Engine {
         Ok(f64::from(height_of(&node, &self.fonts)?))
     }
 
-    /// Checks the patch `updateNode` hands over for the node `id` in `slot`, reading it once, as a
-    /// load checks a node's content, its strings counted against the budget on from those the
-    /// graph holds besides the node's, and gives the node its new content and the height it lays
-    /// out to, its edges re-placed (REN-node-content-and-hits); the store merges the patch. A patch
-    /// that sets regions divides the node anew (`divide_anew`), `kept` naming per region of the
-    /// patch, depth first, the slot of the node's region of its identifier, which `api` resolved,
-    /// or `u32::MAX`; it returns what went with the regions left out as `removed` lays it out, and
-    /// nothing for a patch that sets no regions. A refused patch changes nothing; a slot that
-    /// holds no node throws a `SlotError`.
+    /// Checks the patch `updateNode` hands over for the node `id` in `slot` and gives the node its
+    /// new content and the height it lays out to, its edges re-placed (REN-node-content-and-hits);
+    /// the store merges the patch. `kept` names per region of the patch, depth first, the slot of
+    /// the node's region of its identifier, which `api` resolved, or `u32::MAX`. It returns what
+    /// went with the regions left out as `removed` lays it out, and nothing for a patch that sets
+    /// no regions. A refused patch changes nothing; a slot that holds no node throws a `SlotError`.
     #[wasm_bindgen(js_name = updateNode)]
     pub fn update_node(
         &mut self,
@@ -1499,7 +1506,8 @@ impl Engine {
     }
 
     /// `updateNode` of the node `id` in `slot` by `patch`, read, the regions it keeps named by
-    /// `kept`: its strings of content counted on from those the graph holds besides the node's.
+    /// `kept`: checked and given to the graph by `graph_data`, to the store here, and answered as
+    /// the export answers.
     fn update_with(
         &mut self,
         slot: u32,
@@ -1507,136 +1515,10 @@ impl Engine {
         patch: &NodePatch,
         kept: &[u32],
     ) -> Result<Vec<u32>, CallRefusal> {
-        let mut held = self.content.held_besides(slot);
-        // A patch of regions replaces the node's, whose names then count no more.
-        let divides = patch
-            .0
-            .iter()
-            .any(|(key, _)| key == "regions" || key == "divide");
-        if divides && self.graph.holds_node(slot) {
-            let names: u64 = self
-                .graph
-                .regions_of(slot)
-                .iter()
-                .map(|&r| self.content.units_of(r))
-                .sum();
-            held -= names;
-        }
-        // A slot that holds no node is refused below as a slot, whatever node shape it held.
-        let shape = if self.graph.holds_node(slot) {
-            self.graph.shape(slot)
-        } else {
-            comb_engine::shape::NodeShape::Rectangle
-        };
-        let current = self.graph.divided(slot);
-        let place = self.graph.place_of(slot);
-        let patched = patch_of(
-            id,
-            (shape, place.is_some()),
-            current,
-            patch,
-            &self.fonts,
-            held,
-        )?;
-        if patched.is_empty() {
-            return Ok(Vec::new());
-        }
-        if !self.graph.holds_node(slot) {
-            return Err(CallRefusal::Slot(SlotError::NoNode { slot }));
-        }
-        if let Some((_, regions)) = &patched.regions {
-            // Each new region takes a node slot, the old ones free theirs.
-            let old = self.graph.regions_of(slot).len();
-            let nodes = f64::from(self.graph.nodes_in_use()) + regions.len() as f64 - old as f64;
-            graph_data::check_graph_size(nodes, 0.0)?;
-            // Their names count against the budget of content beside the node's content.
-            let names: u64 = regions.iter().map(graph_data::Region::name_units).sum();
-            let content = patched
-                .content
-                .as_ref()
-                .map_or_else(|| self.content.units_of(slot), |(checked, _)| checked.units);
-            if names > 0 {
-                graph_data::within_budget(id, held + content + names)?;
-            }
-        }
-        // The height the node then has, never less than its content, old or new, needs.
-        let given = patched.height.or_else(|| self.graph.given_height(slot));
-        let laid = patched.content.as_ref().map_or_else(
-            || {
-                let (content, node) = self.content.of(slot);
-                content.laid(node, &self.fonts)
-            },
-            |&(_, laid)| laid,
-        );
-        let width = self.graph.sizes()[slot as usize * 2];
-        let height = graph_data::node_height(shape, width, laid, given);
-        graph_data::within_by_height(id, self.graph.positions()[slot as usize * 2 + 1], height)?;
-        self.graph.resize_node(slot, height)?;
-        let resizable = patched
-            .resizable
-            .unwrap_or_else(|| self.graph.is_resizable(slot));
-        self.graph.set_sizing(slot, given, resizable)?;
-        if let Some((content, _)) = patched.content {
-            self.content.set(slot, content);
-        }
-        self.graph
-            .set_outline(slot, patched.outline.unwrap_or(self.graph.outline(slot)))?;
-        let top = graph_data::content_top(shape, width, laid);
-        let removed = self.divide_anew(slot, patched.regions, kept, top)?;
-        if let Some(place) = place {
-            self.place_anew(slot, place, patched.side, patched.offset)?;
-        }
-        Ok(removed)
-    }
-
-    /// Gives the border node in `slot`, at `place`, the side and the offset a patch set, each kept
-    /// where it set none (ARCH-border-nodes-ride-sides).
-    fn place_anew(
-        &mut self,
-        slot: u32,
-        place: comb_engine::graph::Place,
-        side: Option<comb_engine::geometry::Side>,
-        offset: Option<f64>,
-    ) -> Result<(), CallRefusal> {
-        if side.is_none() && offset.is_none() {
-            return Ok(());
-        }
-        let side = side.unwrap_or(place.side);
-        let offset = offset.unwrap_or(place.offset);
-        self.graph
-            .set_place(slot, side, offset)
-            .map_err(|_| malformed("a border node the patch checked refused its place"))?;
-        Ok(())
-    }
-
-    /// Divides the node in `slot` anew into `regions` in their direction, below its content, `top`
-    /// high, in place of the regions it has, by the engine's one division, and returns what went
-    /// with those as `removed` lays it out: the regions, and what a region `kept` does not name
-    /// held, with every edge at it. `kept` names, per region of `regions` at every depth, depth
-    /// first, the slot of the region of the node that has its identifier, or `u32::MAX`
-    /// (ARCH-regions-are-container-slots, *Removing a region*). Without regions, the node's regions
-    /// are laid out anew below its content, and nothing goes.
-    fn divide_anew(
-        &mut self,
-        slot: u32,
-        regions: Option<(Option<Axis>, Vec<graph_data::Region>)>,
-        kept: &[u32],
-        top: f32,
-    ) -> Result<Vec<u32>, CallRefusal> {
-        let Some((divide, regions)) = regions else {
-            self.graph.set_top(slot, top);
-            return Ok(Vec::new());
-        };
-        let parts = graph_data::parts_of(&regions, kept);
-        let divided = self
-            .graph
-            .divide(slot, divide, top, &parts, RegionSlots::Added)
-            .map_err(graph_data::division_problem)?;
-        self.content.remove(&divided.nodes);
-        let names = regions.iter().map(graph_data::Region::name_units);
-        self.content
-            .set_regions(divided.regions.iter().copied().zip(names));
-        Ok(removed(&divided.nodes, &divided.edges))
+        let held = self.content.held_by(&self.graph, slot);
+        let updated = update_node_in(&mut self.graph, &self.fonts, slot, id, patch, kept, held)?;
+        let divided = self.content.take(slot, updated);
+        Ok(divided.map_or_else(Vec::new, |went| removed(&went.nodes, &went.edges)))
     }
 
     /// The element of the content of the node in `slot` whose rectangle holds `point`, of those
@@ -1700,11 +1582,15 @@ impl Engine {
             let shape = self.graph.shape(slot);
             let height = graph_data::node_height(shape, width, laid, given);
             if self.graph.sizes()[slot as usize * 2 + 1] != height {
-                // A slot that holds a node, as the check above found, which no resize refuses.
-                let _ = self.graph.resize_node(slot, height);
+                self.graph.resize_node(slot, height).unwrap_or_else(|_| {
+                    unreachable!("a slot that holds a node, as checked above, refuses no resize")
+                });
             }
             self.graph
-                .set_top(slot, graph_data::content_top(shape, width, laid));
+                .set_top(slot, graph_data::content_top(shape, width, laid))
+                .unwrap_or_else(|_| {
+                    unreachable!("a node, as checked above no region, takes a top")
+                });
         }
     }
 
@@ -2186,7 +2072,7 @@ impl Engine {
 
 // The tests of the exports: a query of a loaded graph, and the budget a load's limit must fit.
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use comb_engine::stroke::MESH_BUDGET;
     use graph_data::tests::batch;
@@ -2277,7 +2163,13 @@ mod tests {
             ..comb_engine::graph::Part::default()
         };
         let parts = [part, part];
-        let divided = graph.divide(4, Some(Axis::Across), 0.0, &parts, RegionSlots::Added);
+        let divided = graph.divide(
+            4,
+            Some(Axis::Across),
+            0.0,
+            &parts,
+            comb_engine::graph::RegionSlots::Added,
+        );
         assert_eq!(divided.unwrap().regions, [5, 6]);
         assert_eq!(
             engine.remove_nodes(&[2, 4]),
@@ -2442,7 +2334,7 @@ mod tests {
 
     /// An engine whose titles advance by 7 a glyph and whose ellipsis by 10, the body by 6, in
     /// lines 18 and 16 high.
-    fn fonted() -> Engine {
+    pub(crate) fn fonted() -> Engine {
         let mut engine = Engine::new();
         let ellipsis = [u32::from(comb_engine::content::ELLIPSIS)];
         let title = RoleCode::Title as u8;
@@ -2456,7 +2348,7 @@ mod tests {
     }
 
     /// The query of the near level over `rect` on `engine`, where a pixel is a world unit.
-    fn near(engine: &mut Engine, rect: [f64; 4]) {
+    pub(crate) fn near(engine: &mut Engine, rect: [f64; 4]) {
         let [min_x, min_y, max_x, max_y] = rect;
         let rect = RectInput {
             min_x,
@@ -3339,113 +3231,6 @@ mod tests {
             element(&engine, 0, 75.0, 15.0, DetailLevel::Near),
             hit(0, 2, ElementKind::Action, Some("go"))
         );
-    }
-
-    #[test]
-    fn a_patch_of_content_lays_the_node_out_anew_and_a_refused_one_changes_nothing() {
-        // Verifies: REN-node-content-and-hits, API-edits-report-nested-changes
-        use graph_data::tests::{TITLE, b_of, content, load_into, text};
-        let mut engine = fonted();
-        let nodes = b_of(&[&[TITLE]]);
-        let none = graph_data::OwnedEdgeColumns::of([]);
-        assert_eq!(load_into(&mut engine, &nodes, &none), Ok(2));
-        let body = text(RoleCode::Body, "b");
-        let long = text(RoleCode::Title, "abcdefghijklmnopqrst");
-        let rows = content(&[&[long], &[body], &[body], &[body], &[body]]);
-        let patch = NodePatch(vec![("content".to_owned(), rows.into())]);
-        let slot = 1;
-        engine.update(slot, "b", &patch).unwrap();
-        assert_eq!(engine.graph.sizes()[2..], [100.0, 102.0]);
-        near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
-        // The long title is cut to 9 glyphs and an ellipsis within its column of 76.
-        let long = &engine.drawn.texts[engine.drawn.bounds[1] as usize..];
-        assert!(long.starts_with("abcdefghi\u{2026}b"), "{long}");
-        assert_eq!(engine.drawn.bounds[2] - engine.drawn.bounds[1], 10);
-        // Its content, built when asked, is the patch's, each weight as the engine keeps it.
-        let text = |role, text: &str| ContentElement::Text {
-            role,
-            text: text.to_owned(),
-            weight: Some(1.0),
-        };
-        let rows = engine.content.content_of(slot).0;
-        assert_eq!(rows.len(), 5);
-        assert_eq!(rows[0], [text(TextRole::Title, "abcdefghijklmnopqrst")]);
-        assert_eq!(rows[4], [text(TextRole::Body, "b")]);
-        assert_eq!(
-            engine.content.content_of(0).0,
-            [[text(TextRole::Title, "x")]]
-        );
-        // A refused patch leaves the node as it was.
-        let refused = NodePatch(vec![(
-            "content".to_owned(),
-            content(&[&[(KindCode::Unnamed, 1.0, RoleCode::Title, None)]]).into(),
-        )]);
-        assert!(
-            patch_of(
-                "b",
-                (graph_data::RECTANGLE.0, false),
-                None,
-                &refused,
-                &engine.fonts,
-                0
-            )
-            .is_err()
-        );
-        assert_eq!(engine.graph.sizes()[2..], [100.0, 102.0]);
-        // A slot that holds no node is the shell's mistake.
-        assert_eq!(
-            engine.graph.resize_node(7, 64.0),
-            Err(comb_engine::graph::SlotError::NoNode { slot: 7 })
-        );
-    }
-
-    #[test]
-    fn a_patch_of_height_and_resizable_raises_the_height_and_a_resize_stops_at_the_content() {
-        // Verifies: API-edits-report-nested-changes, REN-node-shapes-cover-uml
-        use graph_data::PatchValue;
-        use graph_data::tests::{TITLE, b_of, content, load_into, text};
-        let mut engine = fonted();
-        let nodes = b_of(&[&[TITLE]]);
-        let none = graph_data::OwnedEdgeColumns::of([]);
-        assert_eq!(load_into(&mut engine, &nodes, &none), Ok(2));
-        let content_height = engine.graph.sizes()[3];
-        // A height below the content's raised to it, and the node resizable.
-        let patch = NodePatch(vec![
-            ("height".to_owned(), PatchValue::Height(Field(Some(10.0)))),
-            (
-                "resizable".to_owned(),
-                PatchValue::Resizable(Field(Some(true))),
-            ),
-        ]);
-        engine.update(1, "b", &patch).unwrap();
-        assert_eq!(engine.graph.sizes()[3], content_height);
-        assert!(engine.graph.is_resizable(1));
-        // A greater one kept, through a patch of more content too.
-        let patch = NodePatch(vec![(
-            "height".to_owned(),
-            PatchValue::Height(Field(Some(300.0))),
-        )]);
-        engine.update(1, "b", &patch).unwrap();
-        assert_eq!(engine.graph.sizes()[3], 300.0);
-        let body = text(RoleCode::Body, "b");
-        let patch = NodePatch(vec![("content".to_owned(), content(&[&[body]]).into())]);
-        engine.update(1, "b", &patch).unwrap();
-        assert_eq!(engine.graph.sizes()[3], 300.0);
-        // A height not above 0 is refused, the node as it was.
-        let patch = NodePatch(vec![(
-            "height".to_owned(),
-            PatchValue::Height(Field(Some(0.0))),
-        )]);
-        assert!(engine.update(1, "b", &patch).is_err());
-        assert_eq!(engine.graph.sizes()[3], 300.0);
-        // A resize of the bottom far up stops at the height its content needs, and keeps it.
-        let [x, y] = [0, 1].map(|axis| f64::from(engine.graph.positions()[2 + axis]));
-        let from = [x, y, 100.0, 300.0];
-        engine
-            .resize(1, Handle::Bottom, &from, [0.0, -1000.0])
-            .unwrap();
-        assert_eq!(engine.graph.sizes()[3], content_height);
-        assert_eq!(engine.graph.given_height(1), Some(content_height));
     }
 
     #[test]

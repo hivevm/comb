@@ -4,7 +4,9 @@
 
 use std::collections::HashMap;
 
-use crate::graph_data::{Checked, ContentData, NodeContent};
+use comb_engine::graph::{Divided, Graph};
+
+use crate::graph_data::{Checked, ContentData, Held, NodeContent, Updated};
 
 /// The content of the nodes the graph holds, by slot: that of the last load, the content each
 /// addition or patch since gave a slot, and the code units of the strings of all of it, the texts
@@ -90,9 +92,36 @@ impl ContentStore {
         }
     }
 
-    /// The code units of the strings of content of the node in `slot`, or of the name of a region.
-    pub(crate) fn units_of(&self, slot: u32) -> u64 {
-        self.units_at(slot)
+    /// What the store holds of the node in `graph` in `slot`, as `updateNode` checks a patch of
+    /// it against: its content, and the names of its regions.
+    pub(crate) fn held_by(&self, graph: &Graph, slot: u32) -> Held<'_> {
+        let names = if graph.holds_node(slot) {
+            graph
+                .regions_of(slot)
+                .iter()
+                .map(|&r| self.units_at(r))
+                .sum()
+        } else {
+            0
+        };
+        Held {
+            besides: self.held_besides(slot),
+            names,
+            units: self.units_at(slot),
+            content: self.of(slot),
+        }
+    }
+
+    /// Takes what an accepted patch of the node in `slot` gives the store, `updated`, and returns
+    /// what its division changed, if it divided the node anew.
+    pub(crate) fn take(&mut self, slot: u32, updated: Updated) -> Option<Divided> {
+        if let Some(content) = updated.content {
+            self.set(slot, content);
+        }
+        let (divided, names) = updated.divided?;
+        self.remove(&divided.nodes);
+        self.set_regions(divided.regions.iter().copied().zip(names));
+        Some(divided)
     }
 
     /// The code units of the strings of content of the node in `slot`.

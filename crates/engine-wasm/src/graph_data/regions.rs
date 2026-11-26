@@ -6,7 +6,8 @@
 use std::collections::HashSet;
 use std::fmt;
 
-use comb_engine::graph::{Axis, DivideError, Part};
+use comb_engine::geometry::WORLD_LIMIT;
+use comb_engine::graph::{Axis, DivideError, Part, division_needs};
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use tsify::Tsify;
@@ -272,6 +273,49 @@ pub(crate) fn parts_of(regions: &[Region], kept: &[u32]) -> Vec<Part> {
         .collect()
 }
 
+/// Refuses as `beyondWorld` the division of the node `id` by `divide` into `regions` that would
+/// grow the node, at the world position `at` and `size` wide and high, past the world's limit,
+/// naming `width` or `height`, the first axis whose far side would pass it
+/// (ARCH-one-workspace-per-example, *World*). The node grows to what its regions need, which the
+/// engine's `division_needs` computes (ARCH-regions-are-container-slots, *Division*), as the
+/// engine keeps it, in `f32`. Without the check, sizes `f32` holds one by one sum past it.
+pub(crate) fn within_world_divided(
+    id: &str,
+    divide: Option<Axis>,
+    at: [f32; 2],
+    size: [f32; 2],
+    top: f32,
+    regions: &[Region],
+) -> Result<(), GraphDataProblem> {
+    let Some(divide) = divide else {
+        return Ok(());
+    };
+    let (_, need) =
+        division_needs(divide, top, &parts_of(regions, &[])).map_err(division_problem)?;
+    // The need as the engine keeps it, the nearest `f32`, which may lie past the `f64` it rounds;
+    // one past `f32` is infinite, and refused.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "rounded to f32 as the engine keeps it, so that what rounds past the limit is refused"
+    )]
+    let kept = need.map(|need| f64::from(need as f32));
+    // Compared as `within_by_height` compares: `size > limit - at`.
+    let beyond = [(0, "width"), (1, "height")]
+        .into_iter()
+        .find(|&(axis, _)| {
+            f64::from(size[axis]).max(kept[axis]) > WORLD_LIMIT - f64::from(at[axis])
+        });
+    if let Some((_, field)) = beyond {
+        return Err(GraphDataProblem::BeyondWorld {
+            list: GraphList::Nodes,
+            id: id.to_owned(),
+            field: field.to_owned(),
+            limit: WORLD_LIMIT,
+        });
+    }
+    Ok(())
+}
+
 /// The problem of a division `addNode` or `updateNode` hands the engine: past the limit of node
 /// slots, which each checks first, `tooManyNodes`; a slot that holds no node or a part out of
 /// place, which their checks leave no room for, a malformed call refused, never a panic that would
@@ -279,7 +323,7 @@ pub(crate) fn parts_of(regions: &[Region], kept: &[u32]) -> Vec<Part> {
 pub(crate) fn division_problem(error: DivideError) -> GraphDataProblem {
     match error {
         DivideError::TooManySlots(error) => GraphDataProblem::from(error),
-        DivideError::Slot(_) | DivideError::Part { .. } => {
+        DivideError::Slot(_) | DivideError::Region { .. } | DivideError::Part { .. } => {
             super::malformed("regions the engine could not divide the node into")
         }
     }
@@ -798,6 +842,160 @@ mod tests {
             ))
         ));
         TEST_BUDGET.set(None);
+    }
+
+    #[test]
+    fn regions_whose_sizes_reach_past_the_world_are_refused_by_a_load_add_node_and_update_node() {
+        // Verifies: ARCH-one-workspace-per-example, ARCH-regions-are-container-slots
+        use super::super::PatchValue;
+        use comb_engine::geometry::WORLD_LIMIT;
+        // Five regions across of 1e38 each, which `f32` holds, whose sum it does not; `x` in the
+        // fifth. They grow the node across, past the limit of its width.
+        let far = || -> Vec<RegionInput> {
+            (1..=5)
+                .map(|k| region(&format!("p{k}"), 1e38, None, None, None))
+                .collect()
+        };
+        let act = added(0.0, 0.0, |n| {
+            n.id = "act".to_owned().into();
+            n.divide = Some(Divide::Across).into();
+            n.regions = Some(far()).into();
+        });
+        let beyond = || GraphDataProblem::BeyondWorld {
+            list: GraphList::Nodes,
+            id: "act".into(),
+            field: "width".into(),
+            limit: WORLD_LIMIT,
+        };
+        let x = added(10.0, 40.0, |n| n.id = "x".to_owned().into());
+        let columns =
+            OwnedColumns::of([Some(&act), Some(&x)]).nested(&[None, Some(6)], &[false, false]);
+        assert_eq!(load_columns(&columns).err(), Some(beyond()));
+        let mut engine = crate::Engine::new();
+        assert_eq!(engine.add(&act, (None, None)), Err(beyond()));
+        assert_eq!(engine.graph.nodes_in_use(), 0);
+        // Patched onto an undivided node, the graph as it was.
+        let plain = added(0.0, 0.0, |n| n.id = "act".to_owned().into());
+        let slot = engine.add(&plain, (None, None)).unwrap();
+        let before = engine.graph.sizes().to_vec();
+        let fields = vec![
+            ("divide", PatchValue::Divide(Some(Divide::Across).into())),
+            ("regions", PatchValue::Regions(Some(far()).into())),
+        ];
+        assert_eq!(
+            engine.update_with(slot, "act", &patch(fields), &[]),
+            Err(crate::CallRefusal::Data(beyond()))
+        );
+        assert_eq!(engine.graph.sizes(), before);
+        assert!(engine.graph.regions_of(slot).is_empty());
+        // Regions that fit the world, at its edge, are taken.
+        let near = vec![region("p1", WORLD_LIMIT / 4.0, None, None, None)];
+        let fields = vec![
+            ("divide", PatchValue::Divide(Some(Divide::Across).into())),
+            ("regions", PatchValue::Regions(Some(near).into())),
+        ];
+        assert!(engine.update_with(slot, "act", &patch(fields), &[]).is_ok());
+        assert!(engine.graph.sizes().iter().all(|size| size.is_finite()));
+    }
+
+    #[test]
+    fn a_division_is_refused_past_the_world_on_the_axis_it_grows_along_and_taken_within_it() {
+        // Verifies: ARCH-one-workspace-per-example, ARCH-regions-are-container-slots
+        use comb_engine::geometry::WORLD_LIMIT;
+        let mut engine = crate::Engine::new();
+        let far: Vec<RegionInput> = (1..=5)
+            .map(|k| region(&format!("p{k}"), 1e38, None, None, None))
+            .collect();
+        // Five such regions down grow the node past the limit of its height.
+        let down = added(0.0, 0.0, |n| {
+            n.id = "act".to_owned().into();
+            n.divide = Some(Divide::Down).into();
+            n.regions = Some(far).into();
+        });
+        let height = GraphDataProblem::BeyondWorld {
+            list: GraphList::Nodes,
+            id: "act".into(),
+            field: "height".into(),
+            limit: WORLD_LIMIT,
+        };
+        assert_eq!(engine.add(&down, (None, None)), Err(height));
+        // Each region counts along the division and across it at most once: two of a quarter of
+        // the limit down, at 0.6 of it across; across into two, each down into four of a fifth.
+        let quarter = WORLD_LIMIT / 4.0;
+        let fifth = WORLD_LIMIT / 5.0;
+        let mut nested = vec![
+            region("a", 100.0, Some("A"), Some(Divide::Down), None),
+            region("b", 100.0, Some("B"), Some(Divide::Down), None),
+        ];
+        for of in [0, 1] {
+            for k in 0..4 {
+                nested.push(region(&format!("{of}{k}"), fifth, None, None, Some(of)));
+            }
+        }
+        for (x, divide, regions) in [
+            (
+                WORLD_LIMIT * 0.6,
+                Divide::Down,
+                vec![
+                    region("p", quarter, None, None, None),
+                    region("q", quarter, None, None, None),
+                ],
+            ),
+            (0.0, Divide::Across, nested),
+        ] {
+            let fits = added(x, 0.0, |n| {
+                n.id = "fits".to_owned().into();
+                n.divide = Some(divide).into();
+                n.regions = Some(regions).into();
+            });
+            let mut engine = crate::Engine::new();
+            assert!(engine.add(&fits, (None, None)).is_ok(), "{x}");
+            assert!(engine.graph.sizes().iter().all(|size| size.is_finite()));
+        }
+    }
+
+    #[test]
+    fn a_division_whose_need_rounds_past_the_world_as_the_engine_keeps_it_is_refused() {
+        // Verifies: ARCH-one-workspace-per-example, ARCH-regions-are-container-slots
+        use comb_engine::geometry::WORLD_LIMIT;
+        // At y = 2^70, down into 2^120 - 2^96 and 2^95 + 2^90: their sum lies below the limit
+        // less 2^70 in f64, but the nearest f32, which the engine keeps, lies past it.
+        let [two_70, two_90, two_95, two_96, two_120] =
+            [70, 90, 95, 96, 120].map(|e| 2_f64.powi(e));
+        let act = added(0.0, two_70, |n| {
+            n.id = "act".to_owned().into();
+            n.divide = Some(Divide::Down).into();
+            n.regions = Some(vec![
+                region("p", two_120 - two_96, None, None, None),
+                region("q", two_95 + two_90, None, None, None),
+            ])
+            .into();
+        });
+        let mut engine = crate::Engine::new();
+        assert_eq!(
+            engine.add(&act, (None, None)),
+            Err(GraphDataProblem::BeyondWorld {
+                list: GraphList::Nodes,
+                id: "act".into(),
+                field: "height".into(),
+                limit: WORLD_LIMIT,
+            })
+        );
+    }
+
+    #[test]
+    fn an_update_of_a_region_slot_is_refused_and_changes_nothing() {
+        // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes
+        use super::super::PatchValue;
+        let (mut engine, slot) = engine_with_activity();
+        let region = engine.graph.regions_of(slot)[0];
+        let sizes = engine.graph.sizes().to_vec();
+        let fields = vec![("height", PatchValue::Height(Field(Some(90.0))))];
+        assert!(matches!(
+            engine.update_with(region, "p1", &patch(fields), &[]),
+            Err(crate::CallRefusal::Data(GraphDataProblem::Malformed { .. }))
+        ));
+        assert_eq!(engine.graph.sizes(), sizes);
     }
 
     #[test]

@@ -8,8 +8,9 @@
 //! lenient reading of a field, `input` the types the host application hands over, `strings` the
 //! decoding of the string columns, `node_columns` and `edge_columns` the columns of a load's nodes
 //! and edges, `problem` the refusals, `item` the reading of a node or an edge, `checks` the rules
-//! of each, `load` a load and `addNode`, `edit` `addEdge` and the patches, `regions` the regions
-//! a node is divided into, and `content` the node content; `snapshot` builds, for the tests, the
+//! of each, `load` a load and `addNode`, `edit` `addEdge` and the patches, `update` a patch of
+//! `updateNode` given to the graph, answered with what the store takes, `regions` the regions a
+//! node is divided into, and `content` the node content; `snapshot` builds, for the tests, the
 //! columns the shell builds. This root keeps what the columns of both lists share: the first value
 //! a load's first pass refuses.
 
@@ -29,6 +30,7 @@ mod regions;
 #[cfg(test)]
 mod snapshot;
 mod strings;
+mod update;
 
 use checks::rgb;
 pub(crate) use checks::{content_top, node_height, within_by_height};
@@ -65,12 +67,13 @@ pub use problem::{GraphDataProblem, GraphList};
 pub(crate) use problem::{malformed, slot, unshaped};
 pub use regions::{Divide, Line, RegionColumns, RegionInput};
 pub(crate) use regions::{
-    Region, check_regions, divide_of, division_problem, parts_of, regions_of,
+    Region, check_regions, divide_of, division_problem, parts_of, regions_of, within_world_divided,
 };
 #[cfg(test)]
 pub(crate) use snapshot::{EdgeCells, GraphBatch, OwnedColumns, OwnedEdgeColumns};
 use strings::{bounds_fit, lengths, runs_fit, string_at, value_at, values};
 pub(crate) use strings::{numbered, text_spans, utf16_length};
+pub(crate) use update::{Held, NodeRefusal, Updated, update_node_in};
 
 /// The node shape and width of a rectangle 100 wide, as the tests patch a node of.
 #[cfg(test)]

@@ -190,18 +190,20 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   regions a node is divided into, each a container in a node slot of its own marked as a region,
   in the node or region it divides: `divide` is the one operation a load, `addNode`, and
   `updateNode` divide a node by, or leave it undivided, its regions in slots it adds or a load
-  built, what a kept region held moved into its part; `arrange` lays them out from their sizes
-  below the divided node's content, a named region's band of 24 at its start, the node grown to
-  what they need and the last region taking the rest, what each holds moved along; `move_line`
-  moves the line after a region toward the pointer as far as `reach` lets the regions beside it
-  shrink, never below 8, their bands, or the boxes of the nodes they hold, and never back past where
-  it stands where a node overhangs its region, and `refit` fits the regions inside them, the one at
-  the moved side of each division or all across it, keeping what they hold where it lies in the
-  world, as a resize of the divided node does; `line_at` finds the line within 4 screen pixels at
-  the near and middle level, the innermost, which `hit_at` names before a connector, a region hit is
-  named as the node it divides, and `container_at` passes over a divided node or region to its
-  regions; each walk over regions is a loop over `regions_of`, the deepest first where a region
-  needs its own
+  built, what a kept region held moved into its part, and a region refuses it; `arrange` lays
+  them out from their sizes below the divided node's content, a named region's band of 24 at its
+  start, the node grown to what they need and the last region taking the rest, what each holds
+  moved along. `division_needs` computes what a division needs from its parts alone; `arrange`
+  calls it, and so does the bridge, which checks a division against the world's limit before it
+  divides. `move_line` moves the line after a region toward the pointer as far as `reach` lets the
+  regions beside it shrink, never below 8, their bands, or the boxes of the nodes they hold, and
+  never back past where it stands where a node overhangs its region, and `refit` fits the regions
+  inside them, the one at the moved side of each division or all across it, keeping what they hold
+  where it lies in the world, as a resize of the divided node does; `line_at` finds the line within
+  4 screen pixels at the near and middle level, the innermost, which `hit_at` names before a
+  connector, a region hit is named as the node it divides, and `container_at` passes over a divided
+  node or region to its regions; each walk over regions is a loop over `regions_of`, the deepest
+  first where a region needs its own
   ([ARCH-regions-are-container-slots](adr/ARCH-regions-are-container-slots.md)); `borders`, the
   border nodes, each a node slot of its own attached to another node by a side of its box and an
   offset along it, which `attach`, `set_place`, and `slide`, the drag, hold within the side's
@@ -392,17 +394,19 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   host application hands over, `strings` the decoding of every string column, `node_columns` and
   `edge_columns` the columns of a load's nodes and edges, `problem` the refusals, `item` the reading
   of a node or an edge, `checks` the rules of each, `load` a load and `addNode`, `edit` `addEdge`
-  and the patches, `regions` the regions of a divided node as `addNode`, `updateNode`, and a load's
-  columns hand them over, checked and built into node slots of their own, `borders` the checks of a
-  border node's `attachedTo`, `side`, and `offset` and its attachment once the graph holds the node
-  it rides, and `content` node content, itself split into `codes`, its codes and limits,
-  `check`, the one check of a load's content columns and of a single node's content, `data`, the
-  content the engine keeps, `layout`, the content as the engine's layout and hit test read it,
-  `node_content`, the content as the host application's type describes it, and `input`, the content
-  of a single node read through serde-wasm-bindgen; `snapshot`, built for the tests alone, writes
-  the columns the shell writes, and `tests` holds the builders the tests share. Its module `kept`
-  holds what the bridge keeps of node content between calls: the content of the nodes by slot
-  (`ContentStore`) and the buffers of what a query places of it (`Drawn`).
+  and the patches, `update` the work of `updateNode`, a patch given to the graph and answered with
+  what the content `kept` holds takes of it, `regions` the regions of a divided node as `addNode`,
+  `updateNode`, and a load's columns hand them over, checked and built into node slots of their
+  own, `borders` the checks of a border node's `attachedTo`, `side`, and `offset` and its
+  attachment once the graph holds the node it rides, and `content` node content, itself split into
+  `codes`, its codes and limits, `check`, the one check of a load's content columns and of a single
+  node's content, `data`, the content the engine keeps, `layout`, the content as the engine's
+  layout and hit test read it, `node_content`, the content as the host application's type
+  describes it, and `input`, the content of a single node read through serde-wasm-bindgen;
+  `snapshot`, built for the tests alone, writes the columns the shell writes, and `tests` holds the
+  builders the tests share. Its module `kept` holds what the bridge keeps of node content between
+  calls: the content of the nodes by slot (`ContentStore`) and the buffers of what a query places
+  of it (`Drawn`). `kept` reads the types of `graph_data`, and `graph_data` names no `kept`.
   `packages/comb/src/bridge` is the one module that imports the WebAssembly package and reads those
   buffers through fresh typed-array views per read
   ([API-bridge-columns-carry-nesting](adr/API-bridge-columns-carry-nesting.md)): its

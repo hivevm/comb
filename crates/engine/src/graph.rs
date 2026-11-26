@@ -45,7 +45,9 @@ pub use nodes::PositionError;
 #[cfg(test)]
 pub(crate) use query::origin_of;
 pub use query::{Level, MeshAt, Visible};
-pub use regions::{Axis, BAND, DivideError, Divided, LEAST_REGION, LineError, Part, RegionSlots};
+pub use regions::{
+    Axis, BAND, DivideError, Divided, LEAST_REGION, LineError, Part, RegionSlots, division_needs,
+};
 pub use resize::{Handle, LEAST_SIDE, resized};
 use slots::Slots;
 

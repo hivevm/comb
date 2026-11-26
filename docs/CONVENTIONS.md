@@ -94,6 +94,12 @@ skimmed. The design revision drops what prevented nothing
   holds, by a checked conversion or an `expect` whose reason names what bounds the value, since a
   narrowing written without a look at its range can lose what Q-4 or Q-7 needs. The lint makes the
   author look; it does not check the value after the narrowing, which this entry still asks.
+- **A graph mutation's failure is handled.** Where a mutation of the graph returns a `Result`, the
+  caller refuses the call with it, or calls `unreachable!` with the reason the mutation cannot
+  fail there, such as a slot just built. Clippy's `let_underscore_must_use`, denied in the
+  workspace, refuses a result dropped by `let _ =`, since a dropped one hides the failure from
+  every test that does not look at its effect. The lint does not see `.ok()` or `drop`, which
+  this entry still forbids.
 - **Cite the clause a test decides.** A `Verifies:` names the ADR or criterion whose text says what
   the test asserts, read in that text, not the one nearest the code; a test or check that decides
   none says so. A citation of a neighbour passes the traceability check and tells the next reader

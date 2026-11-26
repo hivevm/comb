@@ -24,7 +24,7 @@ use super::{
 };
 use super::{
     Region, RegionColumns, check_regions, divide_of, division_problem, malformed, numbered,
-    parts_of, regions_of, within_budget,
+    parts_of, regions_of, within_budget, within_world_divided,
 };
 
 /// A load the bridge accepted: the engine's graph, where each text of its content lies in its
@@ -88,6 +88,11 @@ pub(crate) fn load_of(
     let borders = border_targets(&batch, columns, &trees)?;
     divided_nesting(&batch, &columns.regions, &trees, &mut nesting, &mut nodes)?;
     nodes.positions = world_of(&batch, &nesting, &nodes.positions, &nodes.sizes)?;
+    for (i, (node, (divide, list))) in batch.nodes.iter().zip(&trees).enumerate() {
+        let at = [nodes.positions[i * 2], nodes.positions[i * 2 + 1]];
+        let size = [nodes.sizes[i * 2], nodes.sizes[i * 2 + 1]];
+        within_world_divided(node.id, *divide, at, size, nodes.tops[i], list)?;
+    }
     let spans = text_spans(content.texts, content.text_bounds)?;
     let name_spans = text_spans(content.names, content.name_bounds)?;
     let edges = edges_of(&batch, &nodes.slots)?;
@@ -95,20 +100,23 @@ pub(crate) fn load_of(
     divide_loaded(&mut graph, columns, &trees, &nodes.tops);
     for (slot, (&given, &resizable)) in (0..).zip(nodes.given.iter().zip(&nodes.resizable)) {
         if given.is_some() || resizable {
-            // A slot of a node just built, which no sizing refuses.
-            let _ = graph.set_sizing(slot, given, resizable);
+            graph
+                .set_sizing(slot, given, resizable)
+                .unwrap_or_else(|_| unreachable!("a slot of a node just built refuses no sizing"));
         }
     }
     for (slot, &shape) in (0..).zip(&nodes.shapes) {
         if shape != NodeShape::Rectangle {
-            // A slot of a node just built, which no node shape refuses.
-            let _ = graph.set_shape(slot, shape);
+            graph
+                .set_shape(slot, shape)
+                .unwrap_or_else(|_| unreachable!("a slot of a node just built refuses no shape"));
         }
     }
     for (slot, &outline) in (0..).zip(&nodes.outlines) {
         if outline != Outline::Solid {
-            // A slot of a node just built, which no outline refuses.
-            let _ = graph.set_outline(slot, outline);
+            graph
+                .set_outline(slot, outline)
+                .unwrap_or_else(|_| unreachable!("a slot of a node just built refuses no outline"));
         }
     }
     // Last, once the boxes of the nodes they ride are what the load gives them.
@@ -273,15 +281,17 @@ fn divide_loaded(
             slots,
             marked: columns.is_container[i] == 1,
         };
-        // Slots of nodes and regions just built, each region in what it divides, which no
-        // division refuses.
-        let _ = graph.divide(
-            numbered(i),
-            *divide,
-            tops[i],
-            &parts_of(regions, &[]),
-            built,
-        );
+        // Slots of nodes and regions just built, each region in what it divides, within the
+        // world as `load_of` checked, which no division refuses.
+        graph
+            .divide(
+                numbered(i),
+                *divide,
+                tops[i],
+                &parts_of(regions, &[]),
+                built,
+            )
+            .unwrap_or_else(|_| unreachable!("a load's checked regions in slots just built"));
     }
 }
 
@@ -519,6 +529,7 @@ pub(crate) fn add_node_to(
             (slot, within_world(id, world, [width, height])?)
         }
     };
+    within_world_divided(id, divide, [x, y], [width, height], top, &regions)?;
     let slot = graph
         .add_node_in(container, is_container, [x, y, width, height])
         .map_err(|error| match error {
@@ -528,9 +539,12 @@ pub(crate) fn add_node_to(
             AddNodeError::NoContainer { .. } => unreachable!("a container checked above"),
         })?;
     // A slot just added, which no node shape, no outline, and no sizing refuses.
-    let _ = graph.set_shape(slot, shape);
-    let _ = graph.set_outline(slot, outline);
-    let _ = graph.set_sizing(slot, given, resizable);
+    let added = |_| unreachable!("a slot just added refuses no shape, outline, or sizing");
+    graph.set_shape(slot, shape).unwrap_or_else(added);
+    graph.set_outline(slot, outline).unwrap_or_else(added);
+    graph
+        .set_sizing(slot, given, resizable)
+        .unwrap_or_else(added);
     if let (Some(on), Some(border)) = (ride, &border) {
         attached(graph, slot, on, border)?;
     }
