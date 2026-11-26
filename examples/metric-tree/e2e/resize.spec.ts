@@ -3,7 +3,7 @@
 // is `true` shows eight resize handles in the overlay, and a drag of one resizes it, never smaller
 // than its content or the boxes of the nodes it holds, the content kept where it lies in the world
 // and told once in `nodeResized` (REN-node-shapes-cover-uml, REN-node-content-and-hits,
-// API-edits-report-nested-changes, REN-moving-layer-moves-content).
+// API-edits-report-division-moves, REN-moving-layer-moves-content).
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphData, NodeData } from "comb";
 import {
@@ -97,7 +97,7 @@ test("a node is as high as its content with a height below it, as high as given 
 test("a container dragged at its left handle grows to the left, keeps what it holds in the world, and tells one nodeResized", async ({
   page,
 }) => {
-  // Verifies: API-edits-report-nested-changes, REN-node-content-and-hits, G-15
+  // Verifies: API-edits-report-division-moves, REN-node-content-and-hits, G-15
   await open(page);
   await loaded(page, HELD);
   // Selected by a press beside the node it holds; its handles drawn.
@@ -184,7 +184,7 @@ test("the connectors of a node hovered while it is resized lie on the box drawn 
 test("a container's right handle dragged inwards past the node it holds stops at that node's box", async ({
   page,
 }) => {
-  // Verifies: API-edits-report-nested-changes, G-15
+  // Verifies: API-edits-report-division-moves, G-15
   await open(page);
   await loaded(page, HELD);
   await clickWorld(page, 600, 300);
@@ -214,7 +214,7 @@ test("a container's right handle dragged inwards past the node it holds stops at
 test("a resize released where pressed, or held at its least size, tells no nodeResized", async ({
   page,
 }) => {
-  // Verifies: API-edits-report-nested-changes
+  // Verifies: API-edits-report-division-moves
   await open(page);
   await loaded(page, HELD);
   await clickWorld(page, 600, 300);
@@ -236,7 +236,7 @@ test("a resize released where pressed, or held at its least size, tells no nodeR
 test("a selected node that is not resizable draws no handle, and a press there hits what lies below", async ({
   page,
 }) => {
-  // Verifies: REN-node-content-and-hits, API-edits-report-nested-changes
+  // Verifies: REN-node-content-and-hits, API-edits-report-division-moves
   await open(page);
   const graph: GraphData = { nodes: [node("b", 100, 100)], edges: [] };
   await loaded(page, graph);
@@ -258,7 +258,7 @@ test("a selected node that is not resizable draws no handle, and a press there h
 test("updateNode with a height below the content's and resizable leaves the node as high as its content and shows its handles", async ({
   page,
 }) => {
-  // Verifies: API-edits-report-nested-changes, REN-node-shapes-cover-uml, G-15
+  // Verifies: API-edits-report-division-moves, REN-node-shapes-cover-uml, G-15
   await open(page);
   await loaded(page, { nodes: [node("b", 100, 100)], edges: [] });
   await page.evaluate(() => window.comb.updateNode("b", { height: 10, resizable: true }));
@@ -361,7 +361,7 @@ test("a resize at the middle level of 50,010 nodes queries in no frame before it
 test("a handle is a square of 8 screen pixels at every scale, none at the far level, and its cursor shows its direction", async ({
   page,
 }) => {
-  // Verifies: API-edits-report-nested-changes, REN-node-content-and-hits
+  // Verifies: API-edits-report-division-moves, REN-node-content-and-hits
   await open(page);
   await loaded(page, HELD);
   await clickWorld(page, 600, 300);

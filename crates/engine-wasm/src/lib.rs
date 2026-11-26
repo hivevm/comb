@@ -1,4 +1,4 @@
-//! The bridge between the shell and the engine (API-bridge-columns-carry-nesting).
+//! The bridge between the shell and the engine (API-bridge-columns-keep-no-size).
 //!
 //! Structured data crosses through serde-wasm-bindgen as `Ts<T>`, with TypeScript types tsify
 //! generates; the graph data of a load crosses as columns, each a string in pieces or one typed
@@ -369,7 +369,7 @@ pub fn content_budget() -> u32 {
 
 /// Checks how many UTF-16 code units the strings of content of one load hold together, `units`,
 /// as the shell counted them while it read them, and names the node `node` whose string passed
-/// the budget (API-bridge-columns-carry-nesting).
+/// the budget (API-bridge-columns-keep-no-size).
 #[wasm_bindgen(js_name = checkContentBudget)]
 pub fn check_content_budget(units: f64, node: &str) -> Result<(), GraphDataProblem> {
     graph_data::check_content_budget(node, units)
@@ -429,7 +429,7 @@ pub fn segment_limit() -> u32 {
 /// What a press hits (REN-node-content-and-hits): a connector by the slot of its node and its side,
 /// a label by the slot of its edge, a node by its slot and the element of its content drawn there,
 /// where one is (REN-node-content-and-hits), an edge by its slot, or nothing; one generated value
-/// (API-bridge-columns-carry-nesting).
+/// (API-bridge-columns-keep-no-size).
 #[derive(Tsify, Serialize, Debug, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Hit {
@@ -466,7 +466,7 @@ pub enum Hit {
 }
 
 /// A resize handle of a selected node, at a corner or the middle of a side
-/// (API-edits-report-nested-changes, *Resizing*), as a hit names it and `resizeNode` takes it.
+/// (API-edits-report-division-moves, *Resizing*), as a hit names it and `resizeNode` takes it.
 #[derive(Tsify, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum ResizeHandle {
@@ -653,7 +653,7 @@ impl Engine {
 
     /// Replaces the graph with a load, node slot `i` for its node `i` and edge slot `i` for its
     /// edge `i`, and returns the number of node slots. The nodes and the edges cross as columns
-    /// (API-bridge-columns-carry-nesting), each in slot order, and serde-wasm-bindgen converts
+    /// (API-bridge-columns-keep-no-size), each in slot order, and serde-wasm-bindgen converts
     /// nothing of a load. Of the nodes: the identifiers as pieces of at most 2^28 UTF-16 code
     /// units, each ending where a value ends, with the boundaries across all pieces in UTF-16 code
     /// units, the numbers as `Float64Array`, a height its data gives with a byte that says whether
@@ -679,7 +679,7 @@ impl Engine {
     #[expect(
         clippy::too_many_arguments,
         reason = "one parameter per column, each a type wasm-bindgen hands over in one copy, \
-                  or one per piece (API-bridge-columns-carry-nesting)"
+                  or one per piece (API-bridge-columns-keep-no-size)"
     )]
     #[expect(
         clippy::needless_pass_by_value,
@@ -1132,7 +1132,7 @@ impl Engine {
     }
 
     /// Puts the node in `slot` at the world position `(x, y)`, everything it holds with it: a drag
-    /// taken back puts the node exactly where it lay at the press (API-edits-report-nested-changes,
+    /// taken back puts the node exactly where it lay at the press (API-edits-report-division-moves,
     /// *Vetoes*). A slot that holds no node throws a `SlotError`, and a point that is not finite a
     /// `NumberError` `nonFinitePoint`; either way nothing moves.
     pub fn place(&mut self, slot: u32, x: f64, y: f64) -> Result<(), CallRefusal> {
@@ -1144,7 +1144,7 @@ impl Engine {
     }
 
     /// Resizes the node in `slot`, whose box was `from`, `x, y, width, height`, at the press, by a
-    /// drag of `handle` by `(dx, dy)` world units (API-edits-report-nested-changes, *Resizing*):
+    /// drag of `handle` by `(dx, dy)` world units (API-edits-report-division-moves, *Resizing*):
     /// the sides the handle pulls move by the drag, never so far that the node is less than 8
     /// world units a side, lower than its content needs, an actor and an hourglass their drawing
     /// and their content at the new width, or leaves out a box of the nodes that lie directly in
@@ -1269,7 +1269,7 @@ impl Engine {
 
     /// The slot of the container a drop of the node in `dragged` at the world point `(x, y)` lands
     /// in: of the containers whose outline holds the point, neither the node nor one it holds at
-    /// any depth, the topmost; none for the canvas (API-edits-report-nested-changes, *Vetoes*). A
+    /// any depth, the topmost; none for the canvas (API-edits-report-division-moves, *Vetoes*). A
     /// slot that holds no node throws a `SlotError`, and a point that is not finite a
     /// `NumberError` `nonFinitePoint`.
     #[wasm_bindgen(js_name = containerAt)]
@@ -2023,14 +2023,14 @@ impl Engine {
     }
 
     /// The `x` of the origin the last `query` wrote its vertex positions and label points
-    /// relative to (API-bridge-columns-carry-nesting).
+    /// relative to (API-bridge-columns-keep-no-size).
     #[wasm_bindgen(js_name = originX)]
     pub fn origin_x(&self) -> f64 {
         self.visible.origin.x
     }
 
     /// The `y` of the origin the last `query` wrote its vertex positions and label points
-    /// relative to (API-bridge-columns-carry-nesting).
+    /// relative to (API-bridge-columns-keep-no-size).
     #[wasm_bindgen(js_name = originY)]
     pub fn origin_y(&self) -> f64 {
         self.visible.origin.y
@@ -2063,7 +2063,7 @@ impl Engine {
 
     /// Where the buffer `buffer` of the edge mesh `of` starts: the last query's, which `query`
     /// writes, or the moving layer's, which `meshAt` writes (REN-moving-layer-moves-content).
-    /// Fresh per read, since growing memory moves it (API-bridge-columns-carry-nesting).
+    /// Fresh per read, since growing memory moves it (API-bridge-columns-keep-no-size).
     #[wasm_bindgen(js_name = meshPtr)]
     pub fn mesh_ptr(&self, of: MeshOf, buffer: MeshBuffer) -> *const u8 {
         let mesh = self.mesh_of(of);
@@ -2567,7 +2567,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_separator_row_lays_out_as_a_line_across_the_inner_rectangle_between_its_rows() {
-        // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting
+        // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size
         use graph_data::tests::{a_and, load_into};
         // Node `b` at (300, 0), 100 wide: a title "Idle", a separator, and a body "entry".
         let mut rows = graph_data::ContentInput::new();
@@ -2622,7 +2622,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_dashed_outline_is_laid_as_dash_segments_on_its_node_which_update_node_sets() {
-        // Verifies: REN-node-shapes-cover-uml, API-bridge-columns-carry-nesting
+        // Verifies: REN-node-shapes-cover-uml, API-bridge-columns-keep-no-size
         use graph_data::tests::{a_and, load_into};
         let mut engine = fonted();
         let nodes = a_and(|n| {
@@ -2894,7 +2894,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_badge_is_drawn_on_its_colour_kept_as_given_and_hit_on_its_pill_alone() {
-        // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting
+        // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size
         // `b`, 100 wide at (300, 0), holds a title row and a badge "Done" on 0x22C55E below it:
         // its pill from (12, 28), the four glyphs of the body's 6 and 8 either side, 40 × 22.
         use graph_data::tests::{badged, load_into};
@@ -2934,7 +2934,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_progress_bar_is_drawn_as_its_segments_and_track_kept_as_given_and_hit_across_its_line() {
-        // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting
+        // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size
         // `b`, 100 wide at (300, 0), holds a title row and a progress bar of 0.3 green and 0.2
         // grey below it: its cell from (12, 28), 76 × 16, its bar 8 high from 32, the segments
         // 22.8 and 15.2 long from 12, and the track the remaining 38.
@@ -2996,7 +2996,7 @@ pub(crate) mod tests {
 
     #[test]
     fn an_icon_hands_the_shell_its_name_and_its_square_kept_as_given_and_hit_on_its_square() {
-        // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting
+        // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size
         // `b`, 100 wide at (300, 0), holds a title row and an icon named "bet" below it: its
         // square from (12, 28), the body's line of 16 on a side, in a column 76 wide.
         use graph_data::tests::{icon, load_into, named_content};
@@ -3069,7 +3069,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_metric_is_drawn_as_its_three_texts_and_its_arrow() {
-        // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting
+        // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size
         // `metric_engine`'s metric: its cell from (12, 28), 76 × 30, the node 68 high; the caption
         // on its line of 14; the value from (12, 42), two body glyphs of 6; the arrow 8 after it,
         // a square of 10 from (32, 45); the trend's text 4 after the arrow, from 46 to 88.
@@ -3103,7 +3103,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_metric_is_kept_as_given_and_hit_across_its_cell() {
-        // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting
+        // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size
         let engine = metric_engine();
         // Its content, built when asked, holds the metric as the host application gave it.
         let metric = ContentElement::Metric {
@@ -3246,7 +3246,7 @@ pub(crate) mod tests {
 
     #[test]
     fn the_texts_after_a_progress_bar_are_read_as_their_own() {
-        // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting
+        // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size
         // A progress bar fills no text, so that the texts of the elements after it, in its node
         // and in the nodes after it, are their own: a load of a node of a bar between two texts,
         // then a node of a title.
@@ -3287,7 +3287,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_load_whose_texts_are_all_empty_and_a_node_of_no_rows_lay_out() {
-        // Verifies: API-bridge-columns-carry-nesting
+        // Verifies: API-bridge-columns-keep-no-size
         // Every text empty: the column of texts crosses in no piece at all.
         use graph_data::tests::{content, load_into, text};
         let empty = || content(&[&[text(RoleCode::Title, "")]]);
@@ -3416,7 +3416,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_small_graph_queries_complete_and_a_million_curved_edges_whole_far_coarsened() {
-        // Verifies: API-bridge-columns-carry-nesting
+        // Verifies: API-bridge-columns-keep-no-size
         let small = batch(&[("a", 0.0, 0.0), ("b", 300.0, 100.0)], &[("e", "a", "b")]);
         let rect = [-100.0, -100.0, 500.0, 300.0];
         let engine = detail_of(&small, rect, DetailLevel::Near, 1.0);

@@ -1,4 +1,4 @@
-// The user's deletion of the selection (API-edits-report-nested-changes): allowed without a
+// The user's deletion of the selection (API-edits-report-division-moves): allowed without a
 // veto, refused where the veto changes the graph itself, and the edges the store forgets those the
 // engine removed.
 import { describe, expect, test } from "bun:test";
@@ -46,7 +46,7 @@ function selected(canDelete?: (deletion: unknown) => unknown) {
 
 describe("deleting the selection", () => {
   test("without a veto, a deletion is allowed", () => {
-    // Verifies: API-edits-report-nested-changes
+    // Verifies: API-edits-report-division-moves
     const { store, bridge, remove, calls } = selected();
     deleteSelection(store, bridge, remove);
     expect(calls).toEqual(["removeNodes"]);
@@ -59,7 +59,7 @@ describe("deleting the selection", () => {
   });
 
   test("a veto that changes the graph itself refuses the deletion", () => {
-    // Verifies: API-edits-report-nested-changes
+    // Verifies: API-edits-report-division-moves
     const { store, bridge, remove, calls } = selected(() => {
       store.getState().updateNode({ id: "b", patch: { content: [] } });
       return true;
@@ -70,7 +70,7 @@ describe("deleting the selection", () => {
   });
 
   test("a veto that changes the selection and the viewport leaves the deletion to its answer", () => {
-    // Verifies: API-edits-report-nested-changes
+    // Verifies: API-edits-report-division-moves
     const { store, bridge, remove, calls } = selected(() => {
       store.getState().select({ kind: "node", id: "b" });
       store.getState().setViewport({ x: 10, y: 10, scale: 2 });

@@ -1,6 +1,6 @@
 # API-bridge-columns-keep-no-size: Structured data crosses the bridge through serde-wasm-bindgen with generated types, a load's graph data and node content as columns whose strings cross in pieces, coordinate streams through typed-array views on engine-owned buffers, and the store keeps no node's size, which every reader takes from those buffers
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-25
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/engine-wasm/`, `packages/comb/src/bridge/`, the snapshot of a load in `packages/comb/src/api/snapshot.ts`, every value that crosses between them, the node views of `packages/comb/src/store/`, and the readers of a node's size in `packages/comb/src/render/connectors.ts`, `packages/comb/src/render/particles.ts`, `packages/comb/src/render/nodes.ts`, `packages/comb/src/api/index.ts`, and `packages/comb/src/api/changes.ts`

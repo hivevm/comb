@@ -109,7 +109,7 @@ mod tests {
 
     #[test]
     fn a_loaded_border_node_rides_its_node_at_its_offset_held_within_its_side() {
-        // Verifies: ARCH-border-nodes-ride-sides, API-bridge-columns-carry-nesting
+        // Verifies: ARCH-border-nodes-ride-sides, API-bridge-columns-keep-no-size
         let graph = load(&[pin("p", "a", Side::Right, 1e9)]).unwrap();
         let place = graph.place_of(1).unwrap();
         let height = f64::from(graph.sizes()[1]);
@@ -176,7 +176,7 @@ mod tests {
 
     #[test]
     fn a_border_node_that_cannot_be_one_is_refused_naming_it_and_its_field() {
-        // Verifies: ARCH-border-nodes-ride-sides, API-edits-report-nested-changes, Q-7
+        // Verifies: ARCH-border-nodes-ride-sides, API-edits-report-division-moves, Q-7
         type Change = fn(&mut NodeInput);
         let cases: [(Change, Result<(), GraphDataProblem>); 9] = [
             (

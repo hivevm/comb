@@ -200,7 +200,7 @@ const FIELDS: { name: string; graph: GraphData; problem: unknown }[] = [
 
 for (const { name, graph, problem } of FIELDS) {
   test(`load refuses ${name}, naming the node or edge and the field`, async ({ page }) => {
-    // Verifies: Q-7, API-bridge-columns-carry-nesting
+    // Verifies: Q-7, API-bridge-columns-keep-no-size
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
@@ -294,7 +294,7 @@ for (const { kind, problem } of NODE_REFUSALS) {
   test(`load refuses a node (${kind}) as before, its nodes crossing as columns, and the previous graph stays drawn`, async ({
     page,
   }) => {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
@@ -452,7 +452,7 @@ for (const { kind, problem } of EDGE_REFUSALS) {
   test(`load refuses an edge (${kind}) as before, its edges crossing as columns, and the previous graph stays drawn`, async ({
     page,
   }) => {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
@@ -466,7 +466,7 @@ for (const { kind, problem } of EDGE_REFUSALS) {
 }
 
 test("load takes an edge with every field, its edges crossing as columns", async ({ page }) => {
-  // Verifies: API-bridge-columns-carry-nesting
+  // Verifies: API-bridge-columns-keep-no-size
   await open(page);
   const refused = await page.evaluate(edgeRefusal, "none");
   expect(refused).toBeNull();
@@ -1418,7 +1418,7 @@ async function atTheTextLimit(edges: boolean) {
 test("load takes 600,000 titles and 600,000 label texts of 1,000 code units, their columns in pieces", async ({
   page,
 }) => {
-  // Verifies: API-bridge-columns-carry-nesting
+  // Verifies: API-bridge-columns-keep-no-size
   test.setTimeout(120_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -1525,7 +1525,7 @@ function everyKind() {
 test("load and the methods that edit the graph throw every kind of GraphDataProblem", async ({
   page,
 }) => {
-  // Verifies: Q-3, Q-7, API-bridge-columns-carry-nesting
+  // Verifies: Q-3, Q-7, API-bridge-columns-keep-no-size
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);

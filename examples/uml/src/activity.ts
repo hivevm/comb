@@ -22,7 +22,7 @@
 // edge on a node or at the middle of an edge (API-edges-dock-nodes-or-edges). The frame of the
 // activity is divided side by side into its partitions, and a partition may be divided again. The
 // user moves a node between partitions and regions, never out of the frame onto the canvas
-// (API-edits-report-nested-changes).
+// (API-edits-report-division-moves).
 import type {
   BorderNodeData,
   Comb,

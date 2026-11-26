@@ -2,7 +2,7 @@
 // node, where it is resizable, begins it, and each move of the pointer hands the engine the drag
 // from the press and the node's box then, from which the engine works out the box anew, never
 // smaller than 8 a side, than the node's content, or than the boxes of the nodes that lie directly
-// in it, what it holds kept where it lies in the world (API-edits-report-nested-changes), and of a
+// in it, what it holds kept where it lies in the world (API-edits-report-division-moves), and of a
 // divided node the regions at the side it pulls changed (ARCH-regions-are-container-slots). The
 // node and what it holds are dragged as a drag's are, so that the moving layer redraws them and the
 // query is kept until the release (REN-moving-layer-moves-content). The release records once

@@ -1,4 +1,4 @@
-//! The nodes of a load as columns (API-bridge-columns-carry-nesting): the codes of their node
+//! The nodes of a load as columns (API-bridge-columns-keep-no-size): the codes of their node
 //! shapes, whether they fit together, the first value refused by its type, and the nodes read off
 //! them.
 
@@ -19,7 +19,7 @@ use super::{
 use super::{Outline, Pair, Side};
 
 /// A field of a node that a load's first pass refuses by its type
-/// (API-bridge-columns-carry-nesting), in the order a node's fields are read, as the shell names
+/// (API-bridge-columns-keep-no-size), in the order a node's fields are read, as the shell names
 /// the first such value it reads: `Item` for a node that is no object, refused as malformed;
 /// `Content` for content that is no list; and of the shapes of content the snapshot cannot flatten,
 /// `Row` for a row that is no list, `Element` for an element that is no object, `Segments` for a
@@ -52,7 +52,7 @@ pub enum NodeField {
     Segment,
 }
 
-/// The code of a node's node shape in its column (API-bridge-columns-carry-nesting): the place of
+/// The code of a node's node shape in its column (API-bridge-columns-keep-no-size): the place of
 /// the node shape in `NodeShape::ALL`, and `Unnamed` for a value that names none, which the first
 /// pass refuses at its place.
 #[wasm_bindgen]
@@ -76,7 +76,7 @@ pub enum NodeShapeCode {
     Unnamed,
 }
 
-/// The code of how a node's outline is drawn in its column (API-bridge-columns-carry-nesting):
+/// The code of how a node's outline is drawn in its column (API-bridge-columns-keep-no-size):
 /// solid, which a node that leaves it out is, none, dashed by the dash and the gap of its columns,
 /// and `Unnamed` for a string that names none, which the first pass refuses at its place.
 #[wasm_bindgen]
@@ -98,15 +98,15 @@ pub struct Refused {
     pub column: Option<u32>,
 }
 
-/// The nodes of one load as columns (API-bridge-columns-carry-nesting), each in slot order. The
+/// The nodes of one load as columns (API-bridge-columns-keep-no-size), each in slot order. The
 /// identifiers are the values concatenated and cut into pieces, each ending where a value ends,
 /// with their boundaries in UTF-16 code units across all pieces, one more than there are nodes, a
 /// refused value empty. The numbers are as the host application handed them; the node shapes as
 /// their codes; a node's container as whether it names one, 1 or 0, and the slot of the node it
 /// names, which the snapshot found by its identifier, or one past the slots where it names none,
-/// and its mark as a container as 1 or 0 (API-bridge-columns-carry-nesting); its height as whether
+/// and its mark as a container as 1 or 0 (API-bridge-columns-keep-no-size); its height as whether
 /// its data gives one, 1 or 0, and the number given, and whether it is resizable as 1 or 0
-/// (API-edits-report-nested-changes); the content crosses
+/// (API-edits-report-division-moves); the content crosses
 /// as the columns of `ContentColumns`. `refused` is the first value the shell read that the first
 /// pass refuses, or none; a node shape that names none is no such value, and the first pass finds
 /// its code.
@@ -450,8 +450,8 @@ impl NodeColumns<'_> {
     }
 }
 
-// The malformed-data tests of graph data verify API-bridge-columns-carry-nesting (see
-// `graph_data::tests`). Verifies: API-bridge-columns-carry-nesting
+// The malformed-data tests of graph data verify API-bridge-columns-keep-no-size (see
+// `graph_data::tests`). Verifies: API-bridge-columns-keep-no-size
 #[cfg(test)]
 mod tests {
     use super::super::tests::{TITLE, a_and, add, added, b_of, batch, beyond, load_columns};
@@ -465,7 +465,7 @@ mod tests {
     #[test]
     fn a_progress_bar_s_segments_that_are_no_list_or_a_segment_that_is_no_object_are_refused_where_they_lie()
      {
-        // Verifies: API-bridge-columns-carry-nesting
+        // Verifies: API-bridge-columns-keep-no-size
         let shape = |column, expected: &str| GraphDataProblem::InvalidContentShape {
             index: 1,
             id: Some("b".into()),
@@ -540,7 +540,7 @@ mod tests {
 
     #[test]
     fn every_refusal_of_a_node_crosses_as_columns_with_its_kind_and_names() {
-        // Verifies: API-bridge-columns-carry-nesting
+        // Verifies: API-bridge-columns-keep-no-size
         let b = || "b".to_owned();
         let field =
             |field: &str, id: Option<String>, expected: &str| GraphDataProblem::InvalidField {
@@ -615,7 +615,7 @@ mod tests {
 
     #[test]
     fn a_shape_of_content_the_snapshot_cannot_flatten_is_refused_where_it_lies() {
-        // Verifies: API-bridge-columns-carry-nesting
+        // Verifies: API-bridge-columns-keep-no-size
         let shape = |row, column: Option<u32>| GraphDataProblem::InvalidContentShape {
             index: 1,
             id: Some("b".into()),
@@ -659,7 +659,7 @@ mod tests {
 
     #[test]
     fn columns_that_do_not_fit_together_are_refused_as_malformed() {
-        // Verifies: API-bridge-columns-carry-nesting
+        // Verifies: API-bridge-columns-keep-no-size
         let fits = || a_and(|_| {});
         let changes: [fn(&mut OwnedColumns); 17] = [
             |c| _ = c.x.pop(),

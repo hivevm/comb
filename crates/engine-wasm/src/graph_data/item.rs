@@ -30,10 +30,10 @@ pub(super) struct Node<'a> {
     /// The height its data gives, or none (REN-node-shapes-cover-uml, *Height*), not yet checked
     /// as the engine keeps it.
     pub(super) height: Option<f64>,
-    /// Whether the user may resize it by its resize handles (API-edits-report-nested-changes).
+    /// Whether the user may resize it by its resize handles (API-edits-report-division-moves).
     pub(super) resizable: bool,
     /// Whether it is a container: read from the node of `addNode`; a load keeps its marks in its
-    /// columns of nesting (API-bridge-columns-carry-nesting).
+    /// columns of nesting (API-bridge-columns-keep-no-size).
     pub(super) is_container: bool,
     /// Its place where it is a border node (ARCH-border-nodes-ride-sides).
     pub(super) border: Option<Border>,

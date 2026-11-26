@@ -1,5 +1,5 @@
 // The example keeps its own copy of the graph from what `onChange` tells, as a host application
-// that persists would (API-edits-report-nested-changes): a node dragged, retitled, and an edge
+// that persists would (API-edits-report-division-moves): a node dragged, retitled, and an edge
 // restyled are in the copy.
 import { expect, test } from "@playwright/test";
 import { open, screenCentre, titled } from "./shared";
@@ -7,7 +7,7 @@ import { open, screenCentre, titled } from "./shared";
 test("the example's copy holds a dragged node's position, its new title, and its edge's new style", async ({
   page,
 }) => {
-  // Verifies: API-edits-report-nested-changes
+  // Verifies: API-edits-report-division-moves
   await open(page);
   const northStar = "0:3.0";
   const edge = "0:2.3-3.0";

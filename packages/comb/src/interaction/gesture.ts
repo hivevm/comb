@@ -29,12 +29,12 @@ export interface Context {
   /** Tells the host application of a click on an element of a node's content. */
   readonly click: (click: ContentClick) => void;
   /** Moves a dropped node into another container, or onto the canvas, after the host
-   *  application's veto, and returns whether it moved (API-edits-report-nested-changes). */
+   *  application's veto, and returns whether it moved (API-edits-report-division-moves). */
   readonly moveInto: MoveInto;
 }
 
 /** A move of the user's of a node into a container, or onto the canvas for `null`, by
- *  identifiers, as `canMoveInto` is asked (API-edits-report-nested-changes). */
+ *  identifiers, as `canMoveInto` is asked (API-edits-report-division-moves). */
 export interface ContainerMove {
   readonly node: string;
   readonly container: string | null;
@@ -42,7 +42,7 @@ export interface ContainerMove {
 
 /** Moves, by the user, the node `move` names into its container, or onto the canvas, where the
  *  host application's veto allows it, and returns whether it moved; an error the veto throws is
- *  thrown on, nothing moved (API-edits-report-nested-changes). `api` gives it. */
+ *  thrown on, nothing moved (API-edits-report-division-moves). `api` gives it. */
 export type MoveInto = (move: ContainerMove) => boolean;
 
 /** A gesture in progress, begun by a press. */
@@ -53,7 +53,7 @@ export interface Gesture {
   move(x: number, y: number): void;
   /** Ends it, `released` where the pointer was released, not ended by a later press or a
    *  cancel, and `at` the screen point of a release on the canvas, none outside it; tells what it
-   *  changed (API-edits-report-nested-changes). */
+   *  changed (API-edits-report-division-moves). */
   end(released: boolean, at?: { x: number; y: number }): void;
   /** Whether the change `state` records took its subject from under it. */
   taken(state: GraphState): boolean;

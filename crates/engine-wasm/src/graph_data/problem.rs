@@ -62,7 +62,7 @@ pub enum GraphDataProblem {
     /// The content of the node at `index`, `id` where its identifier was read, holds a shape the
     /// bridge cannot read at row `row`: a row that is no list, or, where `column` is given, an
     /// element that is no object; `expected` says in words what it should be
-    /// (API-bridge-columns-carry-nesting).
+    /// (API-bridge-columns-keep-no-size).
     #[serde(rename_all = "camelCase")]
     InvalidContentShape {
         index: u32,
@@ -161,7 +161,7 @@ pub enum GraphDataProblem {
     DuplicateNode { node: String },
     /// The node `node` lies, by its field `field`, in no node of the graph, in a node that is no
     /// container, or in itself or a node it holds (ARCH-engine-edits-nested-graph,
-    /// API-edits-report-nested-changes); `expected` says in words what the field holds.
+    /// API-edits-report-division-moves); `expected` says in words what the field holds.
     #[serde(rename_all = "camelCase")]
     InvalidContainer {
         node: String,
@@ -350,7 +350,7 @@ pub(super) const AN_ELEMENT: &str = "an object";
 pub(super) const A_SEGMENT_LIST: &str = "a list of segments";
 
 /// What a node's container and its mark as a container expect, as `invalidField` says it
-/// (API-bridge-columns-carry-nesting).
+/// (API-bridge-columns-keep-no-size).
 pub(super) const AN_ID_OR_NONE: &str = "the identifier of a container, or none";
 pub(super) const A_FLAG: &str = "true or false, or none";
 pub(super) const A_DIVIDE: &str = "\"across\" or \"down\", or none where the node has no regions";
@@ -369,8 +369,8 @@ pub(super) const NOT_IN_ITSELF: &str = "a container that is neither the node nor
 /// What an identifier, a source, or a target expects, by `MAX_ID`.
 pub(super) const AN_ID: &str = "a well-formed string of at most 256 code units";
 
-// The malformed-data tests of graph data verify API-bridge-columns-carry-nesting (see
-// `graph_data::tests`). Verifies: API-bridge-columns-carry-nesting
+// The malformed-data tests of graph data verify API-bridge-columns-keep-no-size (see
+// `graph_data::tests`). Verifies: API-bridge-columns-keep-no-size
 #[cfg(test)]
 mod tests {
     use super::super::MAX_ID;

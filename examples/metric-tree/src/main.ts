@@ -423,7 +423,7 @@ function sized(
 }
 
 /** How the example's copy of the graph takes each kind of change, as a host application that
- *  persists keeps its own from `onChange` alone (API-edits-report-nested-changes); the type
+ *  persists keeps its own from `onChange` alone (API-edits-report-division-moves); the type
  *  checker fails it where a
  *  kind is left out. */
 const MIRROR: { [K in GraphChange["kind"]]: (change: Extract<GraphChange, { kind: K }>) => void } =

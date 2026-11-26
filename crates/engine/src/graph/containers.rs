@@ -333,7 +333,7 @@ impl Graph {
     /// slot that holds no node, a container that holds no container or is divided into regions,
     /// and a container that is the node or a node it holds refuse the move, the shell's own
     /// mistakes, and the graph stays as it was. A move into the node's own container changes
-    /// nothing, its rank kept, as a drop within it keeps its rank (API-edits-report-nested-changes,
+    /// nothing, its rank kept, as a drop within it keeps its rank (API-edits-report-division-moves,
     /// *Vetoes*).
     pub fn move_into(&mut self, slot: u32, container: u32) -> Result<(), MoveIntoError> {
         self.nodes_held(&[slot])?;
@@ -382,7 +382,7 @@ impl Graph {
     /// The container a drop of the node in `dragged` at `point` lands in: of the containers whose
     /// outline holds `point`, neither `dragged` nor a node it holds at any depth, nor a node or a
     /// region divided into regions, whose regions take a drop in its place, the last in the order
-    /// of containers; none for the canvas (API-edits-report-nested-changes, *Vetoes*). A slot that
+    /// of containers; none for the canvas (API-edits-report-division-moves, *Vetoes*). A slot that
     /// holds no node refuses the call.
     pub fn container_at(&mut self, point: Point, dragged: u32) -> Result<Option<u32>, SlotError> {
         self.nodes_held(&[dragged])?;

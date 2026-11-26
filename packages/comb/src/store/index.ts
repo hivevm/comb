@@ -32,13 +32,13 @@ export interface PlacedNodeData extends NodeFields {
   x: number;
   y: number;
   /** The identifier of the container it lies in, its `x` and `y` then relative to the container's
-   *  top left corner; on the canvas where left out (API-edits-report-nested-changes). */
+   *  top left corner; on the canvas where left out (API-edits-report-division-moves). */
   container?: string;
   /** `true` for a container, which may hold nodes even while empty, and is drawn below the edges
    *  and the other nodes. */
   isContainer?: boolean;
   /** `true` where the user may resize it by its resize handles once it is selected
-   *  (API-edits-report-nested-changes). */
+   *  (API-edits-report-division-moves). */
   resizable?: boolean;
   /** The direction its `regions` divide it in: `across` side by side, `down` one above the other
    *  (ARCH-regions-are-container-slots). */
@@ -190,7 +190,7 @@ export interface EdgePatch {
 
 /** A node as the store keeps it: its identifier, its node shape, which `api` fills in, the
  *  identifier of its container, its mark as a container, whether the host gave it a height, and
- *  whether it is resizable, each where the node has one (API-edits-report-nested-changes). Its
+ *  whether it is resizable, each where the node has one (API-edits-report-division-moves). Its
  *  position, its size, and its content are the engine's, which every reader takes from the
  *  engine's buffers (ARCH-graph-in-zustand-store, REN-node-content-and-hits); a new object for
  *  every change of its content, so that a view tells the change by identity. */
@@ -270,7 +270,7 @@ export type KeptEdge = Omit<EdgeFields, "labels"> & {
 
 /** What `updateNode` may change of a node: its content, which it replaces whole
  *  (REN-node-content-and-hits), its height, a height below its content's raised to it, and whether
- *  the user may resize it (API-edits-report-nested-changes). */
+ *  the user may resize it (API-edits-report-division-moves). */
 export interface NodePatch {
   content?: NodeContent;
   height?: number;
@@ -317,7 +317,7 @@ export interface NodeUpdate {
 export type By = "user" | "host";
 
 /** The change the last action that changed the graph made, by kind and the identifier it touched,
- *  never a coordinate (ARCH-graph-in-zustand-store, API-edits-report-nested-changes): `api`
+ *  never a coordinate (ARCH-graph-in-zustand-store, API-edits-report-division-moves): `api`
  *  delivers it to the host application, reading what it carries from the store and the engine's
  *  buffers. A new object for every change, so
  *  that one is told from the next by identity. */
@@ -399,7 +399,7 @@ export interface GraphView {
   readonly edgeSlots: ReadonlyMap<string, number>;
   /** The UTF-16 code units of every identifier the graph holds, a node's, an edge's, and each
    *  edge's source and target, which the limits of a load bound after every edit
-   *  (API-edits-report-nested-changes). */
+   *  (API-edits-report-division-moves). */
   readonly idUnits: number;
   /** The change the last action that changed the graph made, or none before the first. */
   readonly change: StoreChange | null;
@@ -439,7 +439,7 @@ export interface GraphState extends GraphView {
   updateNode(update: NodeUpdate): void;
   /** Records that a resize, now released, changed the size of the node `id`, which the engine
    *  keeps, the positions relative to it of the nodes `moved`, and the sizes of its regions
-   *  `regions` (API-edits-report-nested-changes). */
+   *  `regions` (API-edits-report-division-moves). */
   nodeResized(id: string, moved: readonly string[], regions?: readonly string[]): void;
   /** Records that the drag of a line of the divided node `node`, now released, changed the sizes
    *  of its regions `regions` and the positions relative to their region of the nodes `moved`
@@ -457,7 +457,7 @@ export interface GraphState extends GraphView {
   /** Records that the point a connection is dragged to moved, where interaction keeps it. */
   pointerMoved(): void;
   /** Records that a drag, now released, left the node `id` where the engine keeps it, in the
-   *  container `container`, or on the canvas for `null` (API-edits-report-nested-changes); by the
+   *  container `container`, or on the canvas for `null` (API-edits-report-division-moves); by the
    *  host where an `updateNode` moved it into a region (ARCH-regions-are-container-slots). */
   nodeMoved(id: string, container: string | null, by?: By): void;
   /** Forgets the nodes in `nodeSlots` and the edges in `edgeSlots`, which the engine removed,

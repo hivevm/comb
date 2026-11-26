@@ -1,6 +1,6 @@
 // The example's copy of the diagram when Comb refuses a part of a sidebar's edit of a pin: the
 // activity node the copy keeps holds what Comb holds, its name where Comb took it and `{stream}`
-// only where the node of `{stream}` stands, as Comb told it (API-edits-report-nested-changes).
+// only where the node of `{stream}` stands, as Comb told it (API-edits-report-division-moves).
 // Verifies: G-20
 import { expect, test } from "bun:test";
 import type { Comb, GraphChange, NodeData } from "comb";

@@ -254,7 +254,7 @@ pub(crate) fn update_edge_in(
 
 /// The attributes `updateNode` changes on a node, by name: its content, which it replaces whole
 /// (REN-node-content-and-hits), its height, whether it is resizable
-/// (API-edits-report-nested-changes), and how its outline is drawn (REN-node-shapes-cover-uml).
+/// (API-edits-report-division-moves), and how its outline is drawn (REN-node-shapes-cover-uml).
 /// Read from a plain object alone: `api` hands over a copy of a plain object's fields up to the
 /// first it does not know, its content as plain data; a patch that is no plain object, a `Map` or
 /// an array among them, or that has a key that is no string, `api` cannot read, and refuses as
@@ -455,8 +455,8 @@ pub(crate) fn patch_of(
     Ok(patched)
 }
 
-// The malformed-data tests of graph data verify API-bridge-columns-carry-nesting (see
-// `graph_data::tests`). Verifies: API-bridge-columns-carry-nesting
+// The malformed-data tests of graph data verify API-bridge-columns-keep-no-size (see
+// `graph_data::tests`). Verifies: API-bridge-columns-keep-no-size
 #[cfg(test)]
 mod tests {
     use super::super::tests::{content, invalid_text, titled};
@@ -542,7 +542,7 @@ mod tests {
     #[test]
     fn an_end_naming_a_node_and_an_edge_neither_a_parameter_off_0_to_1_or_a_side_against_it_is_refused()
      {
-        // Verifies: API-edges-dock-nodes-or-edges, API-bridge-columns-carry-nesting, Q-7
+        // Verifies: API-edges-dock-nodes-or-edges, API-bridge-columns-keep-no-size, Q-7
         // Each refused by its field, in a load through the columns the snapshot builds and through
         // the batch, and by `addEdge`, which leaves the graph as it was.
         use super::super::graph_of;

@@ -234,7 +234,7 @@ jobs:
         run: bash scripts/check-dependencies.sh
       - name: Self-test the container check
         run: bash scripts/test-check-container.sh
-      - name: Check the Dev Container's image and reach (DEV-container-adds-bun-and-rust, SEC-no-container-engine)
+      - name: Check the Dev Container's image and reach (DEV-container-adds-bun-rust-shellcheck, SEC-no-container-engine)
         run: bash scripts/check-container.sh
       - name: Self-test the overview check
         run: bash scripts/test-check-overview.sh

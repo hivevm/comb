@@ -1,6 +1,6 @@
 //! The regions a node is divided into (ARCH-regions-are-container-slots,
-//! API-edits-report-nested-changes): as the host application hands them over to `addNode` and
-//! `updateNode`, as a load's columns carry them (API-bridge-columns-carry-nesting), checked, and
+//! API-edits-report-division-moves): as the host application hands them over to `addNode` and
+//! `updateNode`, as a load's columns carry them (API-bridge-columns-keep-no-size), checked, and
 //! handed to the engine's division as its parts.
 
 use std::collections::HashSet;
@@ -90,7 +90,7 @@ impl<'de> Visitor<'de> for LineVisitor {
     }
 }
 
-/// A region as `api` hands it over (API-edits-report-nested-changes, *Graph data of nesting*): its
+/// A region as `api` hands it over (API-edits-report-division-moves, *Graph data of nesting*): its
 /// identifier, its name, its size along the direction of the division it lies in, the line after
 /// it, its own division, and `of`, the index in the same list of the region it lies in, none for
 /// one that divides the node itself. `api` flattens the host application's tree of regions into
@@ -329,7 +329,7 @@ pub(crate) fn division_problem(error: DivideError) -> GraphDataProblem {
     }
 }
 
-/// The regions of a load as columns (API-bridge-columns-carry-nesting), region `k` in the node
+/// The regions of a load as columns (API-bridge-columns-keep-no-size), region `k` in the node
 /// slot after the nodes and the regions before it, each listed after what it divides: its
 /// identifier, as the nodes' are, the slot of the node or region it divides, its size, its own
 /// division as a code, the dash and the gap of the line after it where it is dashed, and its name
@@ -474,7 +474,7 @@ mod tests {
 
     #[test]
     fn a_load_takes_the_regions_as_slots_after_the_nodes_that_tile_the_part_below_the_content() {
-        // Verifies: ARCH-regions-are-container-slots, API-bridge-columns-carry-nesting
+        // Verifies: ARCH-regions-are-container-slots, API-bridge-columns-keep-no-size
         let graph = load_columns(&activity_columns()).unwrap();
         let top = graph.top(0);
         assert!(top > 0.0);
@@ -526,7 +526,7 @@ mod tests {
 
     #[test]
     fn a_node_in_a_divided_node_an_edge_to_a_region_and_regions_out_of_rule_are_refused() {
-        // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes
+        // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves
         let in_divided = activity_columns().nested(&[None, Some(0)], &[false, false]);
         assert_eq!(
             load_columns(&in_divided).err(),
@@ -615,7 +615,7 @@ mod tests {
     #[test]
     fn an_update_that_leaves_a_region_out_removes_its_content_and_keeps_that_of_a_region_it_keeps()
     {
-        // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes
+        // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves
         let mut engine = crate::Engine::new();
         let (divide, regions) = partitions();
         let act = added(0.0, 0.0, |n| {
@@ -662,7 +662,7 @@ mod tests {
     #[test]
     fn an_update_that_divides_a_container_moves_each_node_it_held_into_the_region_at_its_position()
     {
-        // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes
+        // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves
         // A load and `addNode` refuse a node in a divided node (`AN_UNDIVIDED`), and a node added
         // holds nothing, so `updateNode` alone divides a node that holds nodes. The maintainer's
         // decisions of 2026-11-25: each goes, where it lay, into the region whose box holds its
@@ -790,7 +790,7 @@ mod tests {
 
     #[test]
     fn an_update_into_no_regions_leaves_the_node_undivided_no_container_and_as_wide_as_its_data() {
-        // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes
+        // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves
         use super::super::PatchValue;
         for fields in [
             vec![("regions", PatchValue::Regions(Some(Vec::new()).into()))],
@@ -810,7 +810,7 @@ mod tests {
 
     #[test]
     fn no_regions_leave_the_node_undivided_by_a_load_by_add_node_and_by_update_node() {
-        // Verifies: ARCH-regions-are-container-slots, API-bridge-columns-carry-nesting
+        // Verifies: ARCH-regions-are-container-slots, API-bridge-columns-keep-no-size
         use super::super::PatchValue;
         // A division across into no regions, 300 wide, not marked a container.
         let act = added(0.0, 0.0, |n| {
@@ -862,7 +862,7 @@ mod tests {
 
     #[test]
     fn region_names_count_against_the_budget_of_content_in_a_load_add_node_and_update_node() {
-        // Verifies: ARCH-regions-are-container-slots, API-bridge-columns-carry-nesting
+        // Verifies: ARCH-regions-are-container-slots, API-bridge-columns-keep-no-size
         use super::super::{PatchValue, TEST_BUDGET};
         // The titles of `act` and `x` hold 2 code units, the names of the regions 16.
         TEST_BUDGET.set(Some(16));
@@ -1033,7 +1033,7 @@ mod tests {
 
     #[test]
     fn an_update_of_a_region_slot_is_refused_and_changes_nothing() {
-        // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes
+        // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves
         use super::super::PatchValue;
         let (mut engine, slot) = engine_with_activity();
         let region = engine.graph.regions_of(slot)[0];
@@ -1048,7 +1048,7 @@ mod tests {
 
     #[test]
     fn regions_count_against_the_limit_of_nodes_of_a_load() {
-        // Verifies: ARCH-regions-are-container-slots, API-bridge-columns-carry-nesting
+        // Verifies: ARCH-regions-are-container-slots, API-bridge-columns-keep-no-size
         // Two nodes and as many regions as a load holds nodes, refused before they are read.
         let mut columns = activity_columns();
         columns.regions.of = vec![0; super::super::MAX_ITEMS as usize - 1];

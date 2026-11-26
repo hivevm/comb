@@ -1,6 +1,6 @@
 # DEV-container-adds-bun-and-rust: The Dev Container builds from a Dockerfile that adds Bun, and takes Rust as a locked Feature
 
-- **Status:** 🟢 accepted
+- **Status:** ⚪ superseded by [DEV-container-adds-bun-rust-shellcheck](DEV-container-adds-bun-rust-shellcheck.md)
 - **Date:** 2026-10-17
 - **Deciders:** Markus Brigl
 - **Applies to:** `.devcontainer/`, `.vscode/launch.json`, `.vscode/extensions.json`, the CI job that sets up the toolchain, `scripts/check-container.sh`, `scripts/test-check-container.sh`, and `.github/workflows/devcontainer.yml`

@@ -36,7 +36,7 @@ test("each kind of the use case diagram takes the building block settled for it"
 });
 
 test("the example refuses an actor moved into the subject, and allows every other move", () => {
-  // Verifies: API-edits-report-nested-changes
+  // Verifies: API-edits-report-division-moves
   expect(canMoveInto({ node: "user", container: "comb" }, "actor")).toBe(false);
   expect(canMoveInto({ node: "user", container: null }, "actor")).toBe(true);
   expect(canMoveInto({ node: "select", container: "comb" }, "use-case")).toBe(true);

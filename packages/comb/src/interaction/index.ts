@@ -169,7 +169,7 @@ export interface Handlers {
 /** Wires pointer and wheel input on the canvas; a click on an element of a node's content is told
  *  to `click`, a connection proposed to `connect`, where the host lets the user connect, one
  *  back to its source where `loops` allows loops (API-edges-dock-nodes-or-edges), and a node
- *  dropped into another container handed to `moveInto` (API-edits-report-nested-changes). */
+ *  dropped into another container handed to `moveInto` (API-edits-report-division-moves). */
 export function attachInteraction(
   app: Application,
   store: GraphStore,

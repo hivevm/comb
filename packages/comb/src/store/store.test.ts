@@ -65,7 +65,7 @@ describe("graph store", () => {
   });
 
   test("an added node takes its slot in the map and the lists, and the change names it", () => {
-    // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-nested-changes
+    // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-division-moves
     // Verifies: ARCH-graph-in-zustand-store
     const store = createGraphStore();
     store.getState().load(graph as KeptGraph, units);
@@ -90,7 +90,7 @@ describe("graph store", () => {
 
 describe("graph store node updates", () => {
   test("a node's update records it by its identifier and the fields of the patch it changed", () => {
-    // Verifies: API-edits-report-nested-changes, ARCH-graph-in-zustand-store
+    // Verifies: API-edits-report-division-moves, ARCH-graph-in-zustand-store
     const store = createGraphStore();
     store.getState().load(graph as KeptGraph, units);
     const { nodes } = store.getState();
@@ -147,7 +147,7 @@ describe("graph store sizes", () => {
 
 describe("graph store removals", () => {
   test("a removal leaves holes at the free slots, forgets the identifiers, and clears the selection", () => {
-    // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-nested-changes
+    // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-division-moves
     const store = createGraphStore();
     store.getState().load(graph as KeptGraph, units);
     store.getState().select({ kind: "node", id: "a" });
@@ -169,7 +169,7 @@ describe("graph store removals", () => {
   });
 
   test("a removal of edges keeps the nodes and a selection of a node", () => {
-    // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-nested-changes
+    // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-division-moves
     const store = createGraphStore();
     store.getState().load(graph as KeptGraph, units);
     store.getState().select({ kind: "node", id: "b" });
@@ -194,7 +194,7 @@ describe("graph store removals", () => {
 
 describe("graph store edge edits", () => {
   test("an added edge takes its slot and counts its identifiers; a patch merges, null clears", () => {
-    // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-nested-changes,
+    // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-division-moves,
     // API-edges-dock-nodes-or-edges
     const store = createGraphStore();
     store.getState().load(graph as KeptGraph, units);
@@ -224,7 +224,7 @@ describe("graph store edge edits", () => {
 
 describe("graph store counts", () => {
   test("a load keeps the code units its snapshot counted, and counts none itself", () => {
-    // Verifies: API-edits-report-nested-changes
+    // Verifies: API-edits-report-division-moves
     const store = createGraphStore();
     store.getState().load(graph as KeptGraph, 99);
     expect(store.getState().idUnits).toBe(99);
@@ -243,6 +243,6 @@ function withoutBy(state: GraphState): void {
 }
 
 test("a store action whose change may be the user's or the host's takes who made it", () => {
-  // Verifies: API-edits-report-nested-changes
+  // Verifies: API-edits-report-division-moves
   expect(typeof withoutBy).toBe("function");
 });

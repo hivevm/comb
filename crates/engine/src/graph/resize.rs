@@ -1,4 +1,4 @@
-//! The resize of a node by its resize handles (API-edits-report-nested-changes, *Resizing*): the
+//! The resize of a node by its resize handles (API-edits-report-division-moves, *Resizing*): the
 //! eight handles, the box a drag of one leaves, never smaller than 8 world units a side, than the
 //! node's content, an actor's and an hourglass's drawing among it, or than the boxes of the nodes
 //! that lie directly in it, a circle, a crossed circle, and a cross kept as high as wide, and the
@@ -170,7 +170,7 @@ const fn kept(value: f64) -> f32 {
 
 impl Graph {
     /// Gives the node in `slot` what its data says of its size: the height it gives, or none, and
-    /// whether the user may resize it (API-edits-report-nested-changes). Its height in the sizes
+    /// whether the user may resize it (API-edits-report-division-moves). Its height in the sizes
     /// buffer is the caller's, through `resize_node`. A slot that holds no node refuses the call.
     pub fn set_sizing(
         &mut self,
@@ -303,7 +303,7 @@ mod tests {
 
     #[test]
     fn a_container_grown_at_its_left_keeps_what_it_holds_where_it_lies() {
-        // Verifies: API-edits-report-nested-changes
+        // Verifies: API-edits-report-division-moves
         let mut graph = held();
         let from = Rect::of_node(100.0, 100.0, 400.0, 200.0);
         graph
@@ -322,7 +322,7 @@ mod tests {
 
     #[test]
     fn a_resize_stops_at_the_boxes_held_at_8_a_side_and_at_the_content_s_height() {
-        // Verifies: API-edits-report-nested-changes
+        // Verifies: API-edits-report-division-moves
         let mut graph = held();
         let from = Rect::of_node(100.0, 100.0, 400.0, 200.0);
         // The right side pulled in past the node held stops at its right side, 250.
@@ -354,7 +354,7 @@ mod tests {
 
     #[test]
     fn a_circle_stays_as_high_as_wide_by_the_greater_pull_about_its_centre_line() {
-        // Verifies: API-edits-report-nested-changes
+        // Verifies: API-edits-report-division-moves
         let circle = NodeShape::Circle;
         let from = Rect::of_node(0.0, 0.0, 40.0, 40.0);
         // A corner keeps the opposite corner, by the greater of the two pulls.
@@ -458,7 +458,7 @@ mod tests {
 
     #[test]
     fn a_resize_that_is_not_finite_or_of_a_free_slot_changes_nothing() {
-        // Verifies: API-edits-report-nested-changes
+        // Verifies: API-edits-report-division-moves
         let mut graph = held();
         let from = Rect::of_node(100.0, 100.0, 400.0, 200.0);
         let before = box_of(&graph, 0);

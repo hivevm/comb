@@ -32,7 +32,7 @@ pub(super) struct Nodes<'a> {
     /// How each node's outline is drawn, as the engine keeps it (REN-node-shapes-cover-uml).
     pub(super) outlines: Vec<Outline>,
     /// The height each node's data gives, as the engine keeps it, or none, and whether the user
-    /// may resize it (API-edits-report-nested-changes).
+    /// may resize it (API-edits-report-division-moves).
     pub(super) given: Vec<Option<f32>>,
     pub(super) resizable: Vec<bool>,
     /// The height of each node's content, below which its regions lie; 0 without content
@@ -77,7 +77,7 @@ pub(super) fn checked_node(node: &Node) -> Result<([f32; 2], f32), GraphDataProb
 
 /// The height the data of `node` gives, as the engine keeps it, or none; refused as
 /// `invalidSize` where, narrowed to `f32`, it is not finite or not above 0
-/// (API-bridge-columns-carry-nesting).
+/// (API-bridge-columns-keep-no-size).
 pub(crate) fn given_height(id: &str, height: Option<f64>) -> Result<Option<f32>, GraphDataProblem> {
     let Some(height) = height else {
         return Ok(None);
@@ -721,8 +721,8 @@ pub(super) fn label_ids_of(
     Ok(units)
 }
 
-// The malformed-data tests of graph data verify API-bridge-columns-carry-nesting (see
-// `graph_data::tests`). Verifies: API-bridge-columns-carry-nesting
+// The malformed-data tests of graph data verify API-bridge-columns-keep-no-size (see
+// `graph_data::tests`). Verifies: API-bridge-columns-keep-no-size
 #[cfg(test)]
 mod tests {
     use super::super::tests::{add, added, batch, beyond, d_and, label_in, load_edges, titled};
@@ -1064,7 +1064,7 @@ mod tests {
 
     #[test]
     fn every_rule_of_an_edge_refuses_its_columns_with_its_kind_and_names() {
-        // Verifies: API-bridge-columns-carry-nesting
+        // Verifies: API-bridge-columns-keep-no-size
         let e = || "e".to_owned();
         let text = |value: &str| Field(Some(value.to_owned()));
         // The rules, after every field's type.
@@ -1114,7 +1114,7 @@ mod tests {
 
     #[test]
     fn every_rule_of_a_label_refuses_its_columns_naming_its_edge_and_the_label() {
-        // Verifies: API-bridge-columns-carry-nesting, API-edges-dock-nodes-or-edges
+        // Verifies: API-bridge-columns-keep-no-size, API-edges-dock-nodes-or-edges
         let (e, m) = (|| "e".to_owned(), || "m".to_owned());
         let cases: Vec<(OwnedEdgeColumns, GraphDataProblem)> = vec![
             (

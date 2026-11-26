@@ -1,4 +1,4 @@
-//! The edges of a load as columns (API-bridge-columns-carry-nesting): the fields an edge reads in
+//! The edges of a load as columns (API-bridge-columns-keep-no-size): the fields an edge reads in
 //! their order, the codes of its arrowhead and sides, whether the columns fit together, the first
 //! value refused by its type, and the edges read off them, each with its list of edge labels
 //! (API-edges-dock-nodes-or-edges).
@@ -48,7 +48,7 @@ pub(crate) fn edge_refused_of(
 }
 
 /// A field of an edge that a load's first pass refuses by its type
-/// (API-bridge-columns-carry-nesting), in the order an edge's fields are read, as the shell names
+/// (API-bridge-columns-keep-no-size), in the order an edge's fields are read, as the shell names
 /// the first such value it reads: `Item` for an edge that is no object, refused as malformed;
 /// `SourceEdge` and `TargetEdge` for an end that names an edge of another type or beside a node,
 /// and `SourceT` and `TargetT` for its path parameter, which the bridge refuses itself
@@ -156,7 +156,7 @@ impl From<EdgeField> for u32 {
     }
 }
 
-/// The code of an edge's arrowhead in its column (API-bridge-columns-carry-nesting): `Unnamed`
+/// The code of an edge's arrowhead in its column (API-bridge-columns-keep-no-size): `Unnamed`
 /// for a string that names none, which the first pass refuses at its place.
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -169,7 +169,7 @@ pub enum ArrowCode {
 }
 
 /// The code of a side of an edge, or its outline, in its column
-/// (API-bridge-columns-carry-nesting, API-edges-dock-nodes-or-edges): `Unnamed` for a string
+/// (API-bridge-columns-keep-no-size, API-edges-dock-nodes-or-edges): `Unnamed` for a string
 /// that names none of the five, which the first pass refuses at its place, and `Absent` for a side
 /// left out, which an end on an edge takes and an end on a node is refused for
 /// (API-edges-dock-nodes-or-edges).
@@ -212,7 +212,7 @@ fn side_of(code: u8) -> Option<Dock> {
     .map(|(_, dock)| dock)
 }
 
-/// The edges of one load as columns (API-bridge-columns-carry-nesting), each in slot order. The
+/// The edges of one load as columns (API-bridge-columns-keep-no-size), each in slot order. The
 /// identifiers, sources, and targets are each the values concatenated and cut into pieces, each
 /// ending where a value ends, with their boundaries in UTF-16 code units across all pieces, one
 /// more than there are edges, a refused value empty. `label_bounds` holds the boundaries of each
@@ -484,8 +484,8 @@ impl EdgeColumns<'_> {
     }
 }
 
-// The malformed-data tests of graph data verify API-bridge-columns-carry-nesting (see
-// `graph_data::tests`). Verifies: API-bridge-columns-carry-nesting
+// The malformed-data tests of graph data verify API-bridge-columns-keep-no-size (see
+// `graph_data::tests`). Verifies: API-bridge-columns-keep-no-size
 #[cfg(test)]
 mod tests {
     use super::super::tests::{d_and, label_in, label_named, labelled, labels_in, load_edges};
@@ -494,7 +494,7 @@ mod tests {
 
     #[test]
     fn every_refusal_of_an_edge_crosses_as_columns_with_its_kind_and_names() {
-        // Verifies: API-bridge-columns-carry-nesting
+        // Verifies: API-bridge-columns-keep-no-size
         let e = || "e".to_owned();
         let field =
             |field: &str, id: Option<String>, expected: &str| GraphDataProblem::InvalidField {
@@ -576,7 +576,7 @@ mod tests {
 
     #[test]
     fn a_stale_label_and_each_label_refused_by_its_type_cross_named_by_its_place() {
-        // Verifies: API-edges-dock-nodes-or-edges, API-bridge-columns-carry-nesting
+        // Verifies: API-edges-dock-nodes-or-edges, API-bridge-columns-keep-no-size
         let field = |field: &str, expected: &str| GraphDataProblem::InvalidField {
             list: GraphList::Edges,
             index: 1,
@@ -656,7 +656,7 @@ mod tests {
 
     #[test]
     fn edge_columns_that_do_not_fit_together_are_refused_as_malformed() {
-        // Verifies: API-bridge-columns-carry-nesting
+        // Verifies: API-bridge-columns-keep-no-size
         let changes: [fn(&mut OwnedEdgeColumns); 27] = [
             |c| _ = c.color.pop(),
             // A presence or validity byte is 1 or 0.
@@ -731,7 +731,7 @@ mod tests {
 
     #[test]
     fn a_later_edge_refused_by_its_type_is_named_before_an_earlier_one_refused_by_a_rule() {
-        // Verifies: API-bridge-columns-carry-nesting
+        // Verifies: API-bridge-columns-keep-no-size
         // Edge `d`'s label text holds a lone surrogate, which the snapshot hands over as no text
         // and its rule refuses; edge `e`'s colour is of another type, which the first pass
         // refuses, before any rule.

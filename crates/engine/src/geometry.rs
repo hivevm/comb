@@ -14,7 +14,7 @@ use crate::shape::NodeShape;
 /// times this, and the width of a stroke within `PIXEL_LIMIT`'s, so that each stays far within
 /// `f32`, whose largest value is about 2^128; relative to the origin of a query that draws it,
 /// which lies within half its grid of the rectangle's centre, at most 2^127
-/// (API-bridge-columns-carry-nesting), too.
+/// (API-bridge-columns-keep-no-size), too.
 pub const WORLD_LIMIT: f64 = 1_329_227_995_784_915_872_903_807_060_280_344_576.0;
 
 /// The largest screen pixel a query strokes for, 2^114 world units: far beyond the shell's least

@@ -2,7 +2,7 @@
 // content attached to its outline by a side and an offset, which the engine centres on the outline,
 // moves with the action through drags, drops, and resizes, slides along the outline under the
 // user's drag, removes with the action, and reports through `onChange` as the public interface
-// says (API-edits-report-nested-changes).
+// says (API-edits-report-division-moves).
 import { expect, test, type Page } from "@playwright/test";
 import type { BorderNodeData, GraphData } from "comb";
 import { clickWorld, dragWorld, loaded, node, open, pagePoint, told } from "./shared";
@@ -78,7 +78,7 @@ test("a pin loads centred on its action's right side and is drawn directly after
 test("a pin dragged around its action's corner stays on the outline and is told once", async ({
   page,
 }) => {
-  // Verifies: ARCH-border-nodes-ride-sides, API-edits-report-nested-changes, G-17
+  // Verifies: ARCH-border-nodes-ride-sides, API-edits-report-division-moves, G-17
   await open(page);
   await loaded(page, ACTION);
   await page.evaluate(() => {
@@ -132,7 +132,7 @@ test("a pin dragged around its action's corner stays on the outline and is told 
 test("a pin dragged straight out of its side stays where it was and is not told", async ({
   page,
 }) => {
-  // Verifies: ARCH-border-nodes-ride-sides, API-edits-report-nested-changes
+  // Verifies: ARCH-border-nodes-ride-sides, API-edits-report-division-moves
   await open(page);
   await loaded(page, ACTION);
   const start = (await centreOn(page, "pin", "act")).at;
@@ -172,7 +172,7 @@ test("the pin and the edge docked on it follow the dragged action in each frame"
 test("a pin rides its action into a container, keeps its place through a resize, and is told with neither", async ({
   page,
 }) => {
-  // Verifies: ARCH-border-nodes-ride-sides, API-edits-report-nested-changes
+  // Verifies: ARCH-border-nodes-ride-sides, API-edits-report-division-moves
   await open(page);
   const graph: GraphData = {
     nodes: [
@@ -208,7 +208,7 @@ test("a pin rides its action into a container, keeps its place through a resize,
 });
 
 test("removing the action removes its pin and the edge at the pin", async ({ page }) => {
-  // Verifies: ARCH-border-nodes-ride-sides, API-edits-report-nested-changes
+  // Verifies: ARCH-border-nodes-ride-sides, API-edits-report-division-moves
   await open(page);
   const graph: GraphData = {
     nodes: [...ACTION.nodes, node("other", 600, 300)],
@@ -226,7 +226,7 @@ test("removing the action removes its pin and the edge at the pin", async ({ pag
 test("Delete on the selected action names its pin and the edge at it to canDelete", async ({
   page,
 }) => {
-  // Verifies: ARCH-border-nodes-ride-sides, API-edits-report-nested-changes
+  // Verifies: ARCH-border-nodes-ride-sides, API-edits-report-division-moves
   await open(page);
   const graph: GraphData = {
     nodes: [...ACTION.nodes, node("other", 600, 300)],
@@ -250,7 +250,7 @@ test("Delete on the selected action names its pin and the edge at it to canDelet
 });
 
 test("a pin is selected and deleted alone with the edge at it", async ({ page }) => {
-  // Verifies: ARCH-border-nodes-ride-sides, API-edits-report-nested-changes
+  // Verifies: ARCH-border-nodes-ride-sides, API-edits-report-division-moves
   await open(page);
   const graph: GraphData = {
     nodes: [...ACTION.nodes, node("other", 600, 300)],
@@ -269,7 +269,7 @@ test("a pin is selected and deleted alone with the edge at it", async ({ page })
 test("updateNode that sets a pin's side alone tells the offset Comb held within that side", async ({
   page,
 }) => {
-  // Verifies: ARCH-border-nodes-ride-sides, API-edits-report-nested-changes
+  // Verifies: ARCH-border-nodes-ride-sides, API-edits-report-division-moves
   await open(page);
   await loaded(page, { nodes: [node("act", 100, 100), pin("pin", "act", "top", 200)], edges: [] });
   await page.evaluate(() => window.comb.updateNode("pin", { side: "right" }));
@@ -283,7 +283,7 @@ test("updateNode that sets a pin's side alone tells the offset Comb held within 
 test("updateNode puts a pin on another side, at that side's end past its length", async ({
   page,
 }) => {
-  // Verifies: ARCH-border-nodes-ride-sides, API-edits-report-nested-changes
+  // Verifies: ARCH-border-nodes-ride-sides, API-edits-report-division-moves
   await open(page);
   await loaded(page, ACTION);
   await page.evaluate(() => window.comb.updateNode("pin", { side: "top", offset: 1e6 }));
@@ -325,7 +325,7 @@ test("updateNode puts a pin on another side, at that side's end past its length"
 test("a side or an offset of a node that is no border node is refused by its field in load, addNode, and updateNode", async ({
   page,
 }) => {
-  // Verifies: ARCH-border-nodes-ride-sides, API-edits-report-nested-changes, Q-7
+  // Verifies: ARCH-border-nodes-ride-sides, API-edits-report-division-moves, Q-7
   await open(page);
   await loaded(page, ACTION);
   const problems = await page.evaluate(() => {
@@ -365,7 +365,7 @@ test("a side or an offset of a node that is no border node is refused by its fie
 test("a pin on a pin, a resizable pin, and a pin beside x are refused by their field; one on no node as missingNode", async ({
   page,
 }) => {
-  // Verifies: ARCH-border-nodes-ride-sides, API-edits-report-nested-changes, Q-7
+  // Verifies: ARCH-border-nodes-ride-sides, API-edits-report-division-moves, Q-7
   await open(page);
   await loaded(page, ACTION);
   const cases: [string, object][] = [

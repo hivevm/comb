@@ -1,4 +1,4 @@
-// The resize handles of the selected node (API-edits-report-nested-changes, *Resizing*): where its
+// The resize handles of the selected node (API-edits-report-division-moves, *Resizing*): where its
 // `resizable` is `true`, eight white squares of 8 by 8 screen pixels outlined in the selection's
 // colour, at its four corners and the middles of its four sides, the same size at every scale,
 // drawn in the overlay at the near and the middle level, where the engine hits them

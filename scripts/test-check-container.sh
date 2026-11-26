@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 #
 # Self-test of scripts/check-container.sh.
-# Verifies: DEV-container-adds-bun-and-rust, SEC-no-container-engine
-# Verifies: DEV-container-adds-bun-rust-shellcheck
+# Verifies: DEV-container-adds-bun-rust-shellcheck, SEC-no-container-engine
 # Verifies: PERF-benchmark-drives-host-chrome
 #
 # Each case builds a fixture under a temporary directory — a devcontainer.json with comments that
@@ -10,9 +9,9 @@
 # and the image it copies Bun from by digest and runs the ShellCheck install script, beside an
 # install script that names the release and its SHA-256s — runs the check against it, and asserts
 # the exit code and, for a failing case, the message that names the violation. The baseline passes;
-# every failing case breaks one thing DEV-container-adds-bun-and-rust,
-# DEV-container-adds-bun-rust-shellcheck, or SEC-no-container-engine decides, and the passing cases
-# are near misses the check must not mistake for one.
+# every failing case breaks one thing DEV-container-adds-bun-rust-shellcheck or
+# SEC-no-container-engine decides, and the passing cases are near misses the check must not mistake
+# for one.
 #
 # Usage:
 #     scripts/test-check-container.sh
@@ -122,7 +121,7 @@ d="$(repo baseline)"
 expect pass "a container built from a pinned Dockerfile, with Rust and no engine, passes" "$d" \
   "2 images pinned by digest, ShellCheck 0.11.0 pinned by SHA-256, 1 Features"
 
-# DEV-container-adds-bun-and-rust: the build.
+# DEV-container-adds-bun-rust-shellcheck: the build.
 
 d="$(repo from-image)"
 config "$d" '"image": "mcr.microsoft.com/devcontainers/base:debian",' "ghcr.io/devcontainers/features/rust:1"
@@ -140,7 +139,7 @@ d="$(repo no-config)"
 rm "$d/.devcontainer/devcontainer.json"
 expect fail "no devcontainer.json" "$d" "devcontainer.json: not found"
 
-# DEV-container-adds-bun-and-rust: the digests.
+# DEV-container-adds-bun-rust-shellcheck: the digests.
 
 d="$(repo base-by-tag)"
 dockerfile "$d" \
@@ -368,7 +367,7 @@ dockerfile "$d" \
   "RUN apt-get install -y --allow-unauthenticated tool"
 expect fail "an unauthenticated package allowed" "$d" "--allow-unauthenticated"
 
-# DEV-container-adds-bun-and-rust: no Node.js.
+# DEV-container-adds-bun-rust-shellcheck: no Node.js.
 
 d="$(repo node-feature)"
 config "$d" '"build": { "dockerfile": "Dockerfile" },' \

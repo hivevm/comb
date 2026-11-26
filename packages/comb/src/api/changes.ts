@@ -1,6 +1,6 @@
 // How a change the store records reaches the host application: `GraphChange`, what `onChange`
 // delivers, read from the store and the engine's buffer as copies no listener can reach into
-// (API-edits-report-nested-changes), and the listeners of `onChange` and `onSelectionChange`
+// (API-edits-report-division-moves), and the listeners of `onChange` and `onSelectionChange`
 // told from one subscription; and the listeners of `onContentClick`, told of each click on an
 // element (REN-node-content-and-hits).
 import { positionAt, type Bridge } from "../bridge";
@@ -46,7 +46,7 @@ type AddedEdge = Readonly<
 
 /** The attributes `updateEdge` changes on an edge, as `edgeUpdated` reports them merged: its
  *  colour, arrowhead, lightning bolt, dash pattern or none, and labels, their places filled in,
- *  or none (API-edits-report-nested-changes, API-edges-dock-nodes-or-edges). */
+ *  or none (API-edits-report-division-moves, API-edges-dock-nodes-or-edges). */
 type EdgeChangePatch = {
   readonly [K in keyof EdgePatch]: K extends "labels"
     ? readonly Readonly<KeptLabel>[] | null
@@ -57,7 +57,7 @@ type EdgeChangePatch = {
 export type RegionSize = { readonly id: string; readonly size: number };
 
 /** One change of the graph, by its `kind` and by who made it, `"user"` or `"host"`, as
- *  `onChange` delivers it (API-edits-report-nested-changes). */
+ *  `onChange` delivers it (API-edits-report-division-moves). */
 export type GraphChange =
   /** `load` replaced the graph. */
   | { readonly kind: "loaded"; readonly by: "host" }
@@ -71,7 +71,7 @@ export type GraphChange =
       readonly patch: Readonly<NodePatch>;
     }
   /** A drag left the node `id` at `x`, `y`, relative to `container`, the identifier of the
-   *  container it lies in, or on the canvas for `null` (API-edits-report-nested-changes); or, by
+   *  container it lies in, or on the canvas for `null` (API-edits-report-division-moves); or, by
    *  the host, `updateNode` moved it into the first region of a region it divided anew, or, of
    *  the node it divided while that node held it, into the region at its position, else the
    *  first (ARCH-regions-are-container-slots). */
@@ -84,7 +84,7 @@ export type GraphChange =
       readonly container: string | null;
     }
   /** A drag left the border node `id` on `side` of the node it rides, at `offset` along it
-   *  (ARCH-border-nodes-ride-sides, API-edits-report-nested-changes). */
+   *  (ARCH-border-nodes-ride-sides, API-edits-report-division-moves). */
   | {
       readonly kind: "nodeMoved";
       readonly by: "user";
@@ -95,7 +95,7 @@ export type GraphChange =
   /** A resize left the node `id` at `x`, `y`, relative to its container, `width` × `height`; of
    *  the nodes that lie directly in it, `moved` names each whose position relative to it changed,
    *  with that position, since a resize at the left or the top keeps them where they lie in the
-   *  world (API-edits-report-nested-changes). */
+   *  world (API-edits-report-division-moves). */
   | {
       readonly kind: "nodeResized";
       readonly by: "user";
@@ -356,7 +356,7 @@ function nodeAddedOf(
 
 /** Where the node in `slot` lies: its position relative to its container, the difference of the
  *  world positions the engine keeps, or its world position on the canvas, and the identifier of
- *  its container, or `null` on the canvas (API-edits-report-nested-changes). */
+ *  its container, or `null` on the canvas (API-edits-report-division-moves). */
 function placeOf(state: GraphState, bridge: Bridge, slot: number) {
   const positions = bridge.positions();
   const { container } = state.nodes[slot]!;

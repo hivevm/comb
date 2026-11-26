@@ -1,4 +1,4 @@
-//! The columns of a load the snapshot of `api` builds (API-bridge-columns-carry-nesting), written
+//! The columns of a load the snapshot of `api` builds (API-bridge-columns-keep-no-size), written
 //! by the tests: a batch of nodes and edges as the tests write it, each string column cut into
 //! pieces as the shell's writer cuts it.
 
@@ -59,7 +59,7 @@ impl Refusable for EdgeInput {
 }
 
 /// The bound on a piece of a string column the snapshot of `api` passes its writer
-/// (API-bridge-columns-carry-nesting).
+/// (API-bridge-columns-keep-no-size).
 #[cfg(test)]
 const SNAPSHOT_PIECE: usize = 1 << 28;
 
@@ -137,7 +137,7 @@ pub(crate) struct OwnedColumns {
 }
 
 /// The columns of a load's regions, owned, as the snapshot of `api` writes them
-/// (API-bridge-columns-carry-nesting): each region after the nodes, depth first, `of` naming what
+/// (API-bridge-columns-keep-no-size): each region after the nodes, depth first, `of` naming what
 /// it divides, a node by its index and a region by its own index past the nodes.
 #[cfg(test)]
 #[derive(Default)]
@@ -490,7 +490,7 @@ impl OwnedColumns {
     }
 
     /// Writes the nesting of the node at `index`, `node`, as the snapshot does
-    /// (API-bridge-columns-carry-nesting): a container that is a string names one, resolved once
+    /// (API-bridge-columns-keep-no-size): a container that is a string names one, resolved once
     /// every node is written, and whether it is a container; a value of another type in either
     /// crosses as none, its refusal named.
     fn push_nesting(&mut self, index: u32, node: &NodeInput) {
@@ -535,7 +535,7 @@ impl OwnedColumns {
 
     /// The columns with the nesting `containers`, per node the slot it names or none, and `marks`,
     /// per node whether it is a container, as the snapshot writes them
-    /// (API-bridge-columns-carry-nesting).
+    /// (API-bridge-columns-keep-no-size).
     pub(crate) fn nested(mut self, containers: &[Option<u32>], marks: &[bool]) -> Self {
         self.has_container = containers.iter().map(|c| u8::from(c.is_some())).collect();
         self.container = containers.iter().map(|c| c.unwrap_or(0)).collect();
@@ -1140,7 +1140,7 @@ mod tests {
 
     #[test]
     fn a_container_or_an_attached_to_resolves_to_a_node_by_an_identifier_that_is_a_string() {
-        // Verifies: API-bridge-columns-carry-nesting
+        // Verifies: API-bridge-columns-keep-no-size
         // An identifier of another type is in no map of the snapshot: `""` names no node.
         let unnamed = read::<NodeInput>(&[("id", Value::Number(1.0))]);
         let named = |field: &str| read::<NodeInput>(&[(field, Value::Text(String::new()))]);

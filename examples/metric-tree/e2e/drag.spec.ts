@@ -166,7 +166,7 @@ test("a node dragged across frames stays under the pointer, its edges' ends at i
 test("a node dragged across frames and released tells one nodeMoved, where inspection draws it", async ({
   page,
 }) => {
-  // Verifies: API-edits-report-nested-changes
+  // Verifies: API-edits-report-division-moves
   await open(page);
   await recordChanges(page);
   const id = "0:3.0";
@@ -187,7 +187,7 @@ test("a node dragged across frames and released tells one nodeMoved, where inspe
 });
 
 test("a press and release on a node without a move tells no change", async ({ page }) => {
-  // Verifies: API-edits-report-nested-changes
+  // Verifies: API-edits-report-division-moves
   await open(page);
   await recordChanges(page);
   const from = await screenCentre(page, "0:3.0");
@@ -197,7 +197,7 @@ test("a press and release on a node without a move tells no change", async ({ pa
 });
 
 test("a drag released outside the canvas tells nodeMoved as on it", async ({ page }) => {
-  // Verifies: API-edits-report-nested-changes
+  // Verifies: API-edits-report-division-moves
   await open(page);
   await recordChanges(page);
   const id = "0:3.0";
@@ -217,7 +217,7 @@ test("a drag released outside the canvas tells nodeMoved as on it", async ({ pag
 test("a drag whose engine is lost before the release tells no change, and throws nothing", async ({
   page,
 }) => {
-  // Verifies: API-edits-report-nested-changes, API-trapped-engine-is-lost
+  // Verifies: API-edits-report-division-moves, API-trapped-engine-is-lost
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);

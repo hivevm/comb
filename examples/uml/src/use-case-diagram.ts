@@ -7,7 +7,7 @@
 // anchored at its middle (API-edges-dock-nodes-or-edges); a generalization between two actors or
 // two use cases ends in a hollow triangle. A use case dropped over the subject lands in it, an
 // actor on the canvas, and the example's veto refuses an actor moved into the subject
-// (API-edits-report-nested-changes). The building blocks were settled with the human for ticket 13
+// (API-edits-report-division-moves). The building blocks were settled with the human for ticket 13
 // of uml-diagrams on 2026-11-18.
 import type { Comb, ContainerMove, EdgeData, NodeContent, NodeData, NodeShape } from "comb";
 import { multiplicityLabelsOf, styleOf, type RelationshipKind } from "./relationships";

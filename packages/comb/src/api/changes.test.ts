@@ -16,6 +16,6 @@ const keys: { readonly [K in keyof Required<NodePatch>]: K } = {
 };
 
 test("the delivery of nodeUpdated names for each field of a patch where it reads it, once", () => {
-  // Verifies: API-edits-report-nested-changes
+  // Verifies: API-edits-report-division-moves
   expect(Object.keys(NODE_PATCH_READS).sort()).toEqual(Object.keys(keys).sort());
 });

@@ -103,7 +103,7 @@ impl Graph {
 
     /// Gives the border node in `slot` the side `side` and the offset `offset`, held within that
     /// side's length, and places it there; returns the offset held (`updateNode`,
-    /// API-edits-report-nested-changes). A slot that holds no border node, or an offset that is
+    /// API-edits-report-division-moves). A slot that holds no border node, or an offset that is
     /// not finite, refuses the call, which then changes nothing.
     pub fn set_place(&mut self, slot: u32, side: Side, offset: f64) -> Result<f64, AttachError> {
         self.nodes_held(&[slot])?;

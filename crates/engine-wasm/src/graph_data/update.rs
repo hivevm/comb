@@ -210,7 +210,7 @@ mod tests {
 
     #[test]
     fn a_patch_of_content_lays_the_node_out_anew_and_a_refused_one_changes_nothing() {
-        // Verifies: REN-node-content-and-hits, API-edits-report-nested-changes
+        // Verifies: REN-node-content-and-hits, API-edits-report-division-moves
         use crate::graph_data::tests::{TITLE, b_of, content, load_into, text};
         let mut engine = fonted();
         let nodes = b_of(&[&[TITLE]]);
@@ -268,7 +268,7 @@ mod tests {
 
     #[test]
     fn a_patch_of_a_node_its_regions_grew_lays_it_out_at_its_own_width_as_a_load_does() {
-        // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes
+        // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves
         use crate::graph_data::tests::{added, content, load_into};
         use crate::graph_data::{Divide, Line, OwnedColumns, OwnedEdgeColumns, PatchValue};
         use crate::{Engine, RegionInput};
@@ -361,7 +361,7 @@ mod tests {
 
     #[test]
     fn a_patch_of_height_and_resizable_raises_the_height_and_a_resize_stops_at_the_content() {
-        // Verifies: API-edits-report-nested-changes, REN-node-shapes-cover-uml
+        // Verifies: API-edits-report-division-moves, REN-node-shapes-cover-uml
         use crate::graph_data::PatchValue;
         use crate::graph_data::tests::{TITLE, b_of, content, load_into, text};
         let mut engine = fonted();

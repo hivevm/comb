@@ -1,5 +1,5 @@
 //! The buffers of what a query draws of node content (REN-node-content-and-hits,
-//! API-bridge-columns-carry-nesting): per element placed its kind, role, colour, and drawn text,
+//! API-bridge-columns-keep-no-size): per element placed its kind, role, colour, and drawn text,
 //! the pieces of a progress bar, and the parts and arrow of a metric, which the shell reads through
 //! views on them.
 

@@ -1,6 +1,6 @@
 {
   // "Example: metric tree" builds the engine, serves the example, and opens it in the host's
-  // browser once Vite reports its address (G-9, DEV-container-adds-bun-and-rust).
+  // browser once Vite reports its address (G-9, DEV-container-adds-bun-rust-shellcheck).
   "version": "0.2.0",
   "configurations": [
     {

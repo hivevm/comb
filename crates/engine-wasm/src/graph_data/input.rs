@@ -51,7 +51,7 @@ pub struct NodeInput {
     #[tsify(type = "boolean", optional)]
     pub is_container: Field<Option<bool>>,
     /// Whether the user may resize it by its resize handles; none where not
-    /// (API-edits-report-nested-changes).
+    /// (API-edits-report-division-moves).
     #[tsify(type = "boolean", optional)]
     pub resizable: Field<Option<bool>>,
     /// The direction its regions divide it in; none where it has none

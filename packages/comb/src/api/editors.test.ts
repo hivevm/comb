@@ -253,7 +253,7 @@ describe("the user's deletion", () => {
     [{ kind: "edge", id: "a-b" }, "edges"],
   ] as const) {
     test(`of ${list} removes as the host's removal does, and tells the same change but for by`, () => {
-      // Verifies: API-edits-report-nested-changes
+      // Verifies: API-edits-report-division-moves
       const hostCalls: string[] = [];
       const byHost = editing(recording(hostCalls));
       hostCalls.length = 0;
@@ -363,7 +363,7 @@ describe("a node's node shape", () => {
 
 describe("addNode's container", () => {
   test("that the map does not hold is refused by the bridge after the node's other fields, as a load refuses it", () => {
-    // Verifies: ARCH-one-workspace-per-example, API-edits-report-nested-changes
+    // Verifies: ARCH-one-workspace-per-example, API-edits-report-division-moves
     const { store, host } = editing();
     const before = store.getState();
     const nowhere = { ...node("c"), container: "z" } as NodeData;

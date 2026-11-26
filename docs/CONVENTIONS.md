@@ -45,7 +45,7 @@ skimmed. The design revision drops what prevented nothing
   decide from the graph as it stands then, not from what was found before the call: a slot looked
   up before host code ran may hold another item after it. A veto during whose call Comb tells a
   change to `onChange` ends its gesture with nothing done, a rule `api/editors.ts` writes once for
-  every veto ([API-edits-report-nested-changes](adr/API-edits-report-nested-changes.md)).
+  every veto ([API-edits-report-division-moves](adr/API-edits-report-division-moves.md)).
 - **A refusal added at the bridge is traced to the shell's callers.** Before an export refuses a
   value it took until now, each caller in the shell that can hand it that value from inputs the
   host may give, such as an extreme viewport, either guards it or handles the refusal. A browser

@@ -8,7 +8,7 @@
 //!
 //! The data starts as a value of any shape, as the host application hands it over. A load's nodes
 //! and edges cross as the columns the snapshot of `api` builds of it
-//! (API-bridge-columns-carry-nesting), its strings in pieces of a bound generated with it, each
+//! (API-bridge-columns-keep-no-size), its strings in pieces of a bound generated with it, each
 //! node read as the node of `addNode` is and each edge as the edge of `addEdge` is, but for an
 //! arrowhead and the sides, any string of which crosses as its code, so that a value of the wrong
 //! type or a missing field at any position among them, a string that names no arrowhead or side,
@@ -25,7 +25,7 @@
 //! `updateNode`, and the three accept or refuse it alike; and a patch of any field of `NodePatch`
 //! given to a node of such data is accepted and refused alike with a load of the node it makes,
 //! and lays it out as that load does.
-// Verifies: Q-7, ARCH-one-workspace-per-example, API-bridge-columns-carry-nesting
+// Verifies: Q-7, ARCH-one-workspace-per-example, API-bridge-columns-keep-no-size
 // Verifies: API-edges-dock-nodes-or-edges
 
 use std::cell::Cell;
@@ -330,7 +330,7 @@ fn sometimes(
 }
 
 /// Mostly a height above 0, now and then null, which is none, or one the bridge refuses; loose,
-/// also a value of another type (API-bridge-columns-carry-nesting).
+/// also a value of another type (API-bridge-columns-keep-no-size).
 fn given_height(loose: bool) -> BoxedStrategy<Value> {
     let good = prop_oneof![10 => (1.0..500.0f64).prop_map(Value::Number), 1 => Just(Value::Null), 1 => num()];
     if !loose {
@@ -1577,7 +1577,7 @@ fn the_items_after_one_with_a_refused_field_are_left_unread() {
 
 #[test]
 fn content_read_through_serde_names_its_first_shape_and_reads_the_rest() {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     // A row that is no list and an element that is no object, as `addNode` and `updateNode`
     // read content: the first named, each read as empty in its place.
     let read = |rows: Vec<Value>| ContentInput::deserialize(Value::List(rows)).unwrap();
@@ -1605,7 +1605,7 @@ fn content_read_through_serde_names_its_first_shape_and_reads_the_rest() {
 
 #[test]
 fn a_progress_bar_read_through_serde_names_its_segments_shape_and_reads_the_rest() {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     // Segments that are no list, and a segment that is no object, as `addNode` and `updateNode`
     // read content: the first named, the segments read as none and the segment as NaN.
     let read = |segments: Value| {
@@ -1644,7 +1644,7 @@ fn a_progress_bar_read_through_serde_names_its_segments_shape_and_reads_the_rest
 
 #[test]
 fn a_metric_read_through_serde_fills_its_trend_and_a_trend_that_is_no_object_holds_none() {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     // As `addNode` and `updateNode` read content: a metric's caption, value, and trend's text
     // among the texts, its direction by its code and its colour; a trend that is no object, and
     // a direction or a colour of another type, read as none, which their rules refuse, and no
@@ -1689,7 +1689,7 @@ fn a_metric_read_through_serde_fills_its_trend_and_a_trend_that_is_no_object_hol
 
 #[test]
 fn an_icon_read_through_serde_fills_its_name_among_the_names_and_no_text() {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     // As `addNode` and `updateNode` read content: an icon's name among the names, read as a text
     // is, an `id` or a `text` beside it read as none of its fields; a name of another type crosses
     // empty and marked as none, which its rule refuses.
@@ -1726,7 +1726,7 @@ fn an_icon_read_through_serde_fills_its_name_among_the_names_and_no_text() {
 
 #[test]
 fn a_trend_read_through_serde_reads_its_text_direction_and_colour_alone() {
-    // Verifies: API-bridge-columns-carry-nesting
+    // Verifies: API-bridge-columns-keep-no-size
     // A trend that holds a trend of its own and segments, as a host application may hand one:
     // read for its text, its direction, and its colour, the rest ignored and not read as content.
     let text = |value: &str| Value::Text(value.to_owned());
@@ -1836,7 +1836,7 @@ fn two_nodes(edges: Vec<Value>) -> Value {
     ])
 }
 
-/// The bound on a piece of a string column (API-bridge-columns-carry-nesting): mostly a few code
+/// The bound on a piece of a string column (API-bridge-columns-keep-no-size): mostly a few code
 /// units, so that a column crosses in many pieces, now and then around the longest values, and now
 /// and then the snapshot's.
 fn piece_bound() -> impl Strategy<Value = usize> {
@@ -2349,7 +2349,7 @@ fn graph_data_case(
 /// of an end of an edge are asserted once, after its last case, from counts this test alone holds.
 #[test]
 fn any_graph_data_ends_in_a_typed_error_or_a_graph() {
-    // Verifies: API-bridge-columns-carry-nesting, API-edges-dock-nodes-or-edges
+    // Verifies: API-bridge-columns-keep-no-size, API-edges-dock-nodes-or-edges
     // A panic anywhere below fails the case; the runner catches it and shrinks the input. The load
     // crosses as columns, its strings in pieces of the bound generated with it, and is held to the
     // oracles of the value it was built of.
@@ -2504,7 +2504,7 @@ proptest! {
         patch in edge_patch(),
         bound in piece_bound(),
     ) {
-        // Verifies: ARCH-one-workspace-per-example, API-edits-report-nested-changes, Q-7
+        // Verifies: ARCH-one-workspace-per-example, API-edits-report-division-moves, Q-7
         let mut graph = loaded(bound, two_nodes(vec![Value::Object(base_edge())])).unwrap();
         let before = graph.edge(0).cloned();
         let other = patch
@@ -2748,7 +2748,7 @@ proptest! {
         budget in 0..48_u64,
         edits in prop::collection::vec(edit(), 1..12),
     ) {
-        // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting, Q-7
+        // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size, Q-7
         // The budget lowered so that edits pass it; each edit is taken exactly where the code
         // units the graph holds besides the node, and the node's, stay within it, and the engine's
         // count is the sum of what the nodes it holds were given, counted apart from the bridge.
@@ -2865,7 +2865,7 @@ fn random_nesting() -> impl Strategy<Value = NestingInput> {
 
 #[test]
 fn a_load_s_nesting_is_refused_exactly_where_an_oracle_finds_a_node_out_of_place() {
-    // Verifies: API-bridge-columns-carry-nesting, ARCH-engine-edits-nested-graph, Q-7
+    // Verifies: API-bridge-columns-keep-no-size, ARCH-engine-edits-nested-graph, Q-7
     let cases = NestingCases::default();
     let mut config = ProptestConfig::with_cases(CASES);
     config.source_file = Some(file!());
@@ -3082,7 +3082,7 @@ fn region_value(k: usize, case: &RegionCase, holds: bool, mistyped: Option<usize
 #[test]
 fn a_load_of_random_regions_crosses_them_unchanged_and_refuses_a_value_of_another_type_by_its_field()
  {
-    // Verifies: API-bridge-columns-carry-nesting, ARCH-regions-are-container-slots
+    // Verifies: API-bridge-columns-keep-no-size, ARCH-regions-are-container-slots
     let (crossed, refused) = (Cell::new(0), Cell::new(0));
     let mut config = ProptestConfig::with_cases(2_000);
     config.source_file = Some(file!());
@@ -3749,7 +3749,7 @@ fn placed_taken(
 }
 
 /// The columns of a load of `nodes` and `edges`, each an object, as the snapshot of `api` builds
-/// them (API-bridge-columns-carry-nesting).
+/// them (API-bridge-columns-keep-no-size).
 fn columns_of(nodes: &[Value], edges: &[Value]) -> (OwnedColumns, OwnedEdgeColumns) {
     let nodes: Vec<NodeInput> = nodes
         .iter()
@@ -4112,7 +4112,7 @@ fn taken_case(
 #[test]
 fn a_node_of_nested_data_is_refused_alike_by_a_load_by_add_node_and_by_update_node() {
     // Verifies: ARCH-engine-edits-nested-graph, ARCH-regions-are-container-slots
-    // Verifies: ARCH-border-nodes-ride-sides, API-edits-report-nested-changes, Q-7
+    // Verifies: ARCH-border-nodes-ride-sides, API-edits-report-division-moves, Q-7
     let cases = TakenCases::default();
     let mut config = ProptestConfig::with_cases(4_000);
     config.source_file = Some(file!());
@@ -4417,7 +4417,7 @@ fn patch_case(
 
 #[test]
 fn a_patch_of_any_field_is_accepted_and_refused_alike_with_a_load_of_the_node_it_makes() {
-    // Verifies: API-edits-report-nested-changes, ARCH-regions-are-container-slots
+    // Verifies: API-edits-report-division-moves, ARCH-regions-are-container-slots
     // Verifies: ARCH-border-nodes-ride-sides, REN-node-content-and-hits, Q-7
     let cases = PatchCases::default();
     let mut config = ProptestConfig::with_cases(4_000);

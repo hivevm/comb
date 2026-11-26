@@ -3,7 +3,7 @@
 // Structured data crosses as generated types through serde-wasm-bindgen, but for a load's nodes and
 // edges, which cross as columns of strings in pieces or one typed array each; node positions and
 // the results of a viewport query are read through views on the engine's buffers, created anew on
-// every read because growing memory detaches older views (API-bridge-columns-carry-nesting).
+// every read because growing memory detaches older views (API-bridge-columns-keep-no-size).
 import init, {
   checkGraphSize,
   checkContentBudget,
@@ -201,11 +201,11 @@ export interface Placed {
  *  slots by rank (ARCH-engine-edits-nested-graph), the edge slots it found in
  *  ascending order and the first of each one's vertex indices in the mesh, each found edge label
  *  as its edge's slot and its place in that edge's list of labels, a pair per label in `labels`,
- *  and its point (API-bridge-columns-carry-nesting), the mesh of the found edges and its detail,
+ *  and its point (API-bridge-columns-keep-no-size), the mesh of the found edges and its detail,
  *  where the found nodes' content lies, and the positions and sizes buffers, all read after the
  *  same call. The label points and the mesh's positions are relative to `origin`, a world point
  *  near the query's rectangle, so that `f32` rounds them by their distance from it
- *  (API-bridge-columns-carry-nesting); the positions buffer is not. */
+ *  (API-bridge-columns-keep-no-size); the positions buffer is not. */
 export interface Visible {
   positions: Float32Array;
   sizes: Float32Array;
@@ -411,13 +411,13 @@ export interface Bridge {
   translate(slots: Uint32Array, dx: number, dy: number): void;
   /** Puts the node in `slot` at the world position `(x, y)`, everything it holds with it, as
    *  `translate` moves them: a drag taken back puts the node exactly where it lay at the press
-   *  (API-edits-report-nested-changes). Throws a `SlotError`, and a `NumberError`
+   *  (API-edits-report-division-moves). Throws a `SlotError`, and a `NumberError`
    *  `nonFinitePoint` for a point that is not finite, before anything moves
    *  (API-shell-mistake-refused-as-shells). */
   place(slot: number, x: number, y: number): void;
   /** The slot of the container a drop of the node in `dragged` at the world point `(x, y)` lands
    *  in: of the containers whose outline holds the point, neither the node nor one it holds at
-   *  any depth, the topmost; none for the canvas (API-edits-report-nested-changes). Throws a
+   *  any depth, the topmost; none for the canvas (API-edits-report-division-moves). Throws a
    *  `SlotError`, and a `NumberError` `nonFinitePoint` for a point that is not finite. */
   containerAt(x: number, y: number, dragged: number): number | undefined;
   /** Puts the node in `slot` into the container in the slot `container`, or onto the canvas for
@@ -465,7 +465,7 @@ export interface Bridge {
   /** Resizes the node in `slot`, whose box was `from`, `x, y, width, height`, at the press, by a
    *  drag of `handle` by `(dx, dy)` world units, never smaller than 8 a side, than its content, or
    *  than the boxes of the nodes that lie directly in it; what it holds keeps its world position
-   *  (API-edits-report-nested-changes). Throws a `SlotError`, and a `NumberError`
+   *  (API-edits-report-division-moves). Throws a `SlotError`, and a `NumberError`
    *  `nonFinitePoint` for a box or a drag that is not finite, before anything changes. */
   resizeNode(slot: number, handle: ResizeHandle, from: Float64Array, dx: number, dy: number): void;
   /** What a press at the world point `(x, y)` hits where a screen pixel is `pixel` world units,
@@ -523,7 +523,7 @@ export function bridgeCalls(name: keyof Bridge): number {
 
 /** `bridge` with the engine's memory grown by a page before each of its calls, so that a view
  *  kept across a call is detached and reads empty in tests, not only when memory happens to grow
- *  (API-bridge-columns-carry-nesting), and each call counted by its name. The message of its
+ *  (API-bridge-columns-keep-no-size), and each call counted by its name. The message of its
  *  error carries
  *  `DETACHING_MARK`. */
 function detaching(bridge: Bridge, memory: WebAssembly.Memory): Bridge {
@@ -557,7 +557,7 @@ const lostListeners = new Set<(error: EngineLostError) => void>();
 /** Whether `error`, thrown from a call of the engine, is a trap: WebAssembly's own, or the glue's
  *  refusal of an object a trapped call left borrowed, which only a trap no guard saw leaves. Errors
  *  the bridge returns as values are plain objects, never traps
- *  (API-bridge-columns-carry-nesting). */
+ *  (API-bridge-columns-keep-no-size). */
 function isTrap(error: unknown): boolean {
   return (
     error instanceof WebAssembly.RuntimeError ||
@@ -824,7 +824,7 @@ function queried(
 }
 
 /** Fresh views on `memory`, one per read, since growing memory detaches older ones
- *  (API-bridge-columns-carry-nesting). */
+ *  (API-bridge-columns-keep-no-size). */
 function viewsOn(memory: WebAssembly.Memory) {
   return {
     u32: (ptr: number, len: number) => new Uint32Array(memory.buffer, ptr, len),

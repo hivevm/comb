@@ -145,8 +145,8 @@ impl ContentStore {
     }
 }
 
-// The malformed-data tests of graph data verify API-bridge-columns-carry-nesting (see
-// `graph_data::tests`). Verifies: API-bridge-columns-carry-nesting
+// The malformed-data tests of graph data verify API-bridge-columns-keep-no-size (see
+// `graph_data::tests`). Verifies: API-bridge-columns-keep-no-size
 #[cfg(test)]
 mod tests {
     use crate::graph_data::tests::{
@@ -209,7 +209,7 @@ mod tests {
 
     #[test]
     fn a_node_added_to_a_graph_at_the_budget_is_refused_naming_it_and_the_graph_kept() {
-        // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting, Q-7
+        // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size, Q-7
         let mut engine = at_the_budget();
         let one = node_of("c", content(&[&[text(RoleCode::Title, "x")]]));
         let added = engine.add(&one, (None, None));
@@ -225,7 +225,7 @@ mod tests {
 
     #[test]
     fn an_update_past_the_budget_is_refused_and_one_of_as_many_code_units_or_fewer_taken() {
-        // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting, Q-7
+        // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size, Q-7
         let mut engine = at_the_budget();
         let sizes = engine.graph.sizes().to_vec();
         // `b`'s action of 3 code units grows to 4: refused, and nothing changes.
@@ -270,7 +270,7 @@ mod tests {
 
     #[test]
     fn a_deleted_nodes_code_units_are_free_for_a_node_added_after_it() {
-        // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting, Q-7
+        // Verifies: REN-node-content-and-hits, API-bridge-columns-keep-no-size, Q-7
         let mut engine = at_the_budget();
         // A removal that names a slot holding no node is refused and leaves the count.
         let no_node = Err(crate::SlotError::NoNode { slot: 99 });

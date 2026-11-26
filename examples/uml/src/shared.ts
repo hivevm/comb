@@ -234,7 +234,7 @@ export interface DiagramDescriptor {
   legend: boolean;
   labels?: Partial<Record<RelationshipKind, readonly string[]>>;
   /** The veto of the user's move of a node, of the kind `kind`, into a container or onto the
-   *  canvas, none where every move is allowed (API-edits-report-nested-changes). */
+   *  canvas, none where every move is allowed (API-edits-report-division-moves). */
   canMoveInto?: (move: ContainerMove, kind: NodeKind | undefined) => boolean;
 }
 

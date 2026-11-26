@@ -96,7 +96,7 @@ test("a pin, a value pin, and a parameter set ride an action, an expansion node 
 });
 
 test("the example allows a move into a partition or a region, and refuses one onto the canvas", () => {
-  // Verifies: API-edits-report-nested-changes
+  // Verifies: API-edits-report-division-moves
   expect(canMoveInto({ node: "build", container: "shell" })).toBe(true);
   expect(canMoveInto({ node: "build", container: "interruptible" })).toBe(true);
   expect(canMoveInto({ node: "lay-out", container: "engine" })).toBe(true);

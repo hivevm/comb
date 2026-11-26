@@ -1,6 +1,6 @@
 # API-bridge-columns-carry-nesting: Structured data crosses the bridge through serde-wasm-bindgen with generated types, a load's graph data and node content as columns whose strings cross in pieces, coordinate streams through typed-array views on engine-owned buffers
 
-- **Status:** 🟢 accepted
+- **Status:** ⚪ superseded by [API-bridge-columns-keep-no-size](API-bridge-columns-keep-no-size.md)
 - **Date:** 2026-11-17
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/engine-wasm/`, `packages/comb/src/bridge/`, the snapshot of a load in `packages/comb/src/api/snapshot.ts`, and every value that crosses between them

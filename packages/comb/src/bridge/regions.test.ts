@@ -1,7 +1,7 @@
 // A load of random trees of regions through the snapshot and the columns `columns.ts` writes,
 // into the engine: names, lines, and sizes cross unchanged, each size held apart from the extent
 // it is laid out to, and a value of another type anywhere in a tree, however deep, is refused by
-// its field (API-bridge-columns-carry-nesting, ARCH-regions-are-container-slots).
+// its field (API-bridge-columns-keep-no-size, ARCH-regions-are-container-slots).
 import { beforeAll, expect, test } from "bun:test";
 import { createBridgeSync, type Bridge } from ".";
 import { listsOf, snapshotOf } from "../api/snapshot";
@@ -76,7 +76,7 @@ const activity = (regions: Tree[]) => ({
 });
 
 test("a load of random trees of regions crosses their names, lines, and sizes unchanged through the columns, and refuses a value of another type at any depth", () => {
-  // Verifies: API-bridge-columns-carry-nesting, ARCH-regions-are-container-slots
+  // Verifies: API-bridge-columns-keep-no-size, ARCH-regions-are-container-slots
   const random = lcg(5);
   let [crossed, refused] = [0, 0];
   for (let round = 0; round < 300; round++) {

@@ -7,7 +7,7 @@
     tests.
   - Tickets 04–06 of uml-diagrams pinned the list again each time they added a column.
   - Folding the columns into fewer parameters would revise "one parameter per column" of
-    API-bridge-columns-carry-nesting. That ADR is accepted, so the change needs a superseding ADR.
+    API-bridge-columns-keep-no-size. That ADR is accepted, so the change needs a superseding ADR.
 - **Where:** `crates/engine-wasm/src/lib.rs`, `crates/engine-wasm/src/graph_data/`
   (`node_columns.rs`, `edge_columns.rs`), `packages/comb/src/bridge/columns.ts`,
   `packages/comb/src/bridge/index.ts`, `packages/comb/src/testing.ts`.

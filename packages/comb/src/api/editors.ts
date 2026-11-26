@@ -1,6 +1,6 @@
 // The edits of the graph: every method of `Comb` that changes it, and the user's connection and
 // deletion, each run through `edit`, which holds their order (Q-7,
-// API-edits-report-nested-changes, ARCH-one-workspace-per-example); and `heightOf`, which reads
+// API-edits-report-division-moves, ARCH-one-workspace-per-example); and `heightOf`, which reads
 // and checks as `addNode` does and changes nothing (REN-node-content-and-hits). Refuse once the
 // engine is lost; read the host's input once, whole, into plain data; refuse what the store's map
 // shows, as it stands after the read, since a getter of the input is the host's code and may have
@@ -9,7 +9,7 @@
 // record the change, by whom it names. The user's edits come after the host application's veto,
 // asked here for each, the connection, the deletion, and the move into a container, and a veto
 // during whose call the store records a change, which Comb tells to `onChange`, ends its gesture
-// with nothing done (API-edits-report-nested-changes, API-edits-report-nested-changes).
+// with nothing done (API-edits-report-division-moves).
 import {
   NO_SLOT,
   refuseIfLost,
@@ -322,7 +322,7 @@ function keptOf(regions: unknown, old: readonly number[], state: GraphState): Ui
 /** The slot of the container the node `snapshot` names in the map of `state`, `NO_SLOT` where
  *  the map holds no such identifier, or none on the canvas. The bridge crate refuses a container
  *  by the one rule a load refuses it by, `NO_SLOT` as no node of the graph
- *  (API-edits-report-nested-changes), and a container that is no string by its field. */
+ *  (API-edits-report-division-moves), and a container that is no string by its field. */
 function containerSlotOf(snapshot: unknown, state: GraphState): number | undefined {
   const { container } = snapshot as { container?: unknown };
   if (typeof container !== "string") return undefined;
@@ -509,7 +509,7 @@ function removeEdges({ store, bridge, limits }: Editing, ids: unknown, by: By): 
 }
 
 /** The host application's vetoes of the user's connection, deletion, and move into a container
- *  (API-edits-report-nested-changes, API-edits-report-nested-changes). */
+ *  (API-edits-report-division-moves). */
 export interface Vetoes {
   readonly canConnect?: ((proposal: Proposal) => unknown) | undefined;
   readonly canDelete?: ((deletion: Deletion) => unknown) | undefined;
@@ -518,7 +518,7 @@ export interface Vetoes {
 
 /** What the veto `ask` answers, or `undefined` where the store recorded a change of the graph
  *  during its call, a change Comb tells to `onChange`: its answer was given about a graph that is
- *  gone, so the gesture ends with nothing done, and no error (API-edits-report-nested-changes).
+ *  gone, so the gesture ends with nothing done, and no error (API-edits-report-division-moves).
  *  An error it throws is
  *  thrown on. */
 function answerOf(store: GraphStore, ask: () => unknown): unknown {
@@ -530,7 +530,7 @@ function answerOf(store: GraphStore, ask: () => unknown): unknown {
 /** The user's move of a node into a container, or onto the canvas, after the host application's
  *  `canMoveInto`, without which it is allowed: the engine puts the node there at the world
  *  position it has, and the store records `nodeMoved` with its container
- *  (API-edits-report-nested-changes). */
+ *  (API-edits-report-division-moves). */
 function moveIntoOf({ store, bridge }: Editing, canMoveInto: Vetoes["canMoveInto"]): MoveInto {
   return ({ node, container }) => {
     if (canMoveInto && answerOf(store, () => canMoveInto({ node, container })) !== true)

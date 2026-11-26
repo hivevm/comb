@@ -114,7 +114,7 @@ role as byte codes, the boundaries of each node's rows and each row's elements a
 labels as `Uint32Array`, whether a label's background, a dash, and a lightning bolt are present as
 bytes, and the first value refused by its type as its position, a shape of content the snapshot
 cannot flatten with its row and column, a field of a label with the label's place in its edge's list
-([API-bridge-columns-carry-nesting](adr/API-bridge-columns-carry-nesting.md));
+([API-bridge-columns-keep-no-size](adr/API-bridge-columns-keep-no-size.md));
 serde-wasm-bindgen converts nothing of a load. A string with a lone surrogate, which the bridge
 would read as U+FFFD, `api` hands over as `false`, so that it is refused. `updateNode` and
 `updateEdge` read their patch the same way, every own key of a plain object, before they look up the
@@ -179,7 +179,7 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   among it, or than the boxes of the nodes that lie directly in it, a circle, a crossed circle, and
   a cross as high as wide, the nodes it
   holds kept at their world positions and their positions relative to it kept anew
-  ([API-edits-report-nested-changes](adr/API-edits-report-nested-changes.md)); `containers`,
+  ([API-edits-report-division-moves](adr/API-edits-report-division-moves.md)); `containers`,
   which node each node lies in: a load's `Nesting` checked so that a node lies only in a container
   and never in itself or a node it holds, the world positions as the sums along each chain of
   containers, the lists of what each container holds, and the order of the containers, each after
@@ -294,7 +294,7 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   mark as a container, refuses a node out of place (`invalidContainer`) once every node is checked
   and before the edges, and loads the nodes at their world positions, a sum past the world's limit
   refused as `beyondWorld`
-  ([API-bridge-columns-carry-nesting](adr/API-bridge-columns-carry-nesting.md)),
+  ([API-bridge-columns-keep-no-size](adr/API-bridge-columns-keep-no-size.md)),
   keeps the content of the nodes, gives each node its node shape,
   refusing content in a filled one, and makes each node as high as its node shape needs for its
   content laid out in its inner rectangle in the fonts `setFont` handed over
@@ -345,7 +345,7 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   name whole, as one string `contentTexts` returns, cut by `contentTextBounds…`, the found edge
   slots, and the edge mesh into buffers the engine owns, the label points and the mesh's positions
   relative to the query's origin, which `originX` and `originY` read
-  ([API-bridge-columns-carry-nesting](adr/API-bridge-columns-carry-nesting.md)), and returns the
+  ([API-bridge-columns-keep-no-size](adr/API-bridge-columns-keep-no-size.md)), and returns the
   mesh's detail, complete or coarsened, and refuses a pixel that is not a finite number above zero,
   with where each found edge's indices start in the mesh (`meshEdgeStarts…`); `meshAt` meshes the
   edges at given node slots and the given edge slots, each once, in the rectangle, at the level, and
@@ -420,7 +420,7 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   of it (`Drawn`). `kept` reads the types of `graph_data`, and `graph_data` names no `kept`.
   `packages/comb/src/bridge` is the one module that imports the WebAssembly package and reads those
   buffers through fresh typed-array views per read
-  ([API-bridge-columns-carry-nesting](adr/API-bridge-columns-carry-nesting.md)): its
+  ([API-bridge-columns-keep-no-size](adr/API-bridge-columns-keep-no-size.md)): its
   `columns.ts` holds the writers of a load's columns and the codes they cross as, its `index.ts` the
   facade of the engine, which re-exports them.
 - **Store** (`packages/comb/src/store`) — a vanilla Zustand store with the graph's structure, its
@@ -597,7 +597,7 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   and an image Comb would fetch, cannot draw, that has not loaded, or whose pixels the page may not
   read, and copies the image into a canvas of its own (`api/icons.ts`), and `destroy`; `onChange`
   delivers each change the store records as a `GraphChange`
-  ([API-edits-report-nested-changes](adr/API-edits-report-nested-changes.md)), its positions
+  ([API-edits-report-division-moves](adr/API-edits-report-division-moves.md)), its positions
   read from the engine's buffer, synchronously from one subscription to the store that tells a
   change before the selection it cleared (`api/changes.ts`); `whenRendered` resolves once a change
   is drawn, with one render per animation frame scheduled by `api/frames.ts`. `api/scenes.ts` is the
@@ -919,7 +919,7 @@ connection, deletion, and move into a container, which `interaction` hands to `a
 are asked of their veto there, in one place: only an identifier `canConnect` returns connects, only
 `true` from `canDelete` deletes and from `canMoveInto` moves, and a veto during whose call Comb
 tells a change to `onChange` ends its gesture with nothing done and no error, whatever it returned
-([API-edits-report-nested-changes](adr/API-edits-report-nested-changes.md)). Then the
+([API-edits-report-division-moves](adr/API-edits-report-division-moves.md)). Then the
 connection and the deletion run through the same function, the deletion through `removeNodes` where
 its `Deletion` names nodes, else through `removeEdges`, recorded as `by: "user"`, which every store
 action whose change may be either's requires; a move into a container calls the bridge's `moveInto`
@@ -1012,14 +1012,14 @@ its gzipped JavaScript and the engine file reach the 300 kB of Q-3, when no engi
 when the JavaScript inlines the engine (API-host-hands-comb-engine), and when the bundle carries
 either seam of the bridge's test mode, each by a mark of its own the bridge's source names once,
 `DETACHING_MARK` in the message of `detaching` and `TRAP_EXPORT`, the name of the trap's export
-(API-bridge-columns-carry-nesting, API-trapped-engine-is-lost); it fails too when it does not
+(API-bridge-columns-keep-no-size, API-trapped-engine-is-lost); it fails too when it does not
 recognise each in the library built in test mode, and the trap in the engine of
 `packages/comb/wasm/test-mode/`, and when that engine's generated glue differs from the production
 engine's, which the example hands it over with. The benchmark and the browser test of the built
 example fail where `testMode()` says the build runs the bridge in test mode.
 `scripts/check-dependencies.sh` fails on a lockfile of another package manager beside `bun.lock`
 (DEV-bun-vite-wasm-pack), on tsify's default or `json` features or `serde_json` in the bridge
-crate (API-bridge-columns-carry-nesting), in whatever form the entry takes, and on a listed state
+crate (API-bridge-columns-keep-no-size), in whatever form the entry takes, and on a listed state
 library other than zustand in the library's dependency lists (ARCH-graph-in-zustand-store).
 `scripts/check-devcontainer.sh`, the template's, which `scripts/check-all.sh` and the **Checks**
 workflow run beside `scripts/check-code.sh`, fails on a host Docker socket mounted, a Feature not
@@ -1028,8 +1028,9 @@ referenced by its major tag alone, or a lock that does not name the Features
 `~/.config/gh` writable, no longer creates that source in `initializeCommand`, or no longer runs
 `gh auth setup-git --force` on start (DEV-gh-login-outlives-rebuild). `scripts/check-container.sh`
 fails where the Dev Container does not build from its Dockerfile, where the Dockerfile names an
-image without a digest, or where a Feature installs Node.js (DEV-container-adds-bun-and-rust), on a
-Feature that brings a container engine or a Compose file (SEC-no-container-engine), and where the
+image without a digest, or where a Feature installs Node.js
+(DEV-container-adds-bun-rust-shellcheck), on a Feature that brings a container engine or a Compose
+file (SEC-no-container-engine), and where the
 container does not reach the host by `--add-host=host.docker.internal:host-gateway` or does not
 forward port 4173, which the benchmark on the host needs (PERF-benchmark-drives-host-chrome). It
 also fails where `.devcontainer/install-shellcheck.sh`, the one place that names the ShellCheck

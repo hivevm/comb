@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 #
-# The Dev Container's image and its reach (DEV-container-adds-bun-and-rust,
-# DEV-container-adds-bun-rust-shellcheck, SEC-no-container-engine), and its way to a Chrome on the
-# host (PERF-benchmark-drives-host-chrome).
+# The Dev Container's image and its reach (DEV-container-adds-bun-rust-shellcheck,
+# SEC-no-container-engine), and its way to a Chrome on the host (PERF-benchmark-drives-host-chrome).
 #
 # scripts/check-devcontainer.sh holds the template's part, the socket, the Features' tags, and the
 # lock (NUC-container-hides-host-daemon). This check holds what Comb decided on top of it, from the
@@ -10,12 +9,13 @@
 # name, and fails, naming each, on:
 #
 #   1. Build: .devcontainer/devcontainer.json not building from .devcontainer/Dockerfile — no
-#      '"dockerfile": "Dockerfile"', or an '"image"' of its own (DEV-container-adds-bun-and-rust).
+#      '"dockerfile": "Dockerfile"', or an '"image"' of its own
+#      (DEV-container-adds-bun-rust-shellcheck).
 #   2. Digests: a 'FROM' or a 'COPY --from=' of .devcontainer/Dockerfile that names an image
 #      without '@sha256:' and 64 hex digits; a stage the file itself names with 'AS', in any case,
-#      or a stage by its index is no image and passes (DEV-container-adds-bun-and-rust).
+#      or a stage by its index is no image and passes (DEV-container-adds-bun-rust-shellcheck).
 #   3. Node.js: a Feature whose id is a 'node' Feature ('…/node' or '…/node:N')
-#   (DEV-container-adds-bun-and-rust).
+#   (DEV-container-adds-bun-rust-shellcheck).
 #   4. Engine: a Feature whose id contains 'docker' or 'podman', or a 'dockerComposeFile'
 #      (SEC-no-container-engine).
 #   5. Host: no '--add-host=host.docker.internal:host-gateway' among its run arguments, or no 4173
@@ -104,15 +104,15 @@ SHA256='(^|[^0-9a-f])[0-9a-f]{64}([^0-9a-f]|$)'
 
 features=()
 if [[ ! -f "$ROOT/$CONFIG" ]]; then
-  add_error "$CONFIG: not found — DEV-container-adds-bun-and-rust builds the Dev Container from it"
+  add_error "$CONFIG: not found — DEV-container-adds-bun-rust-shellcheck builds the Dev Container from it"
 else
   config="$(uncommented "$ROOT/$CONFIG" '//')"
 
   # 1. Build.
   grep -qE '"dockerfile"[[:space:]]*:[[:space:]]*"Dockerfile"' <<< "$config" \
-    || add_error "$CONFIG: does not build from \"dockerfile\": \"Dockerfile\" — the Dev Container builds from $DOCKERFILE (DEV-container-adds-bun-and-rust)"
+    || add_error "$CONFIG: does not build from \"dockerfile\": \"Dockerfile\" — the Dev Container builds from $DOCKERFILE (DEV-container-adds-bun-rust-shellcheck)"
   grep -qE '"image"[[:space:]]*:' <<< "$config" \
-    && add_error "$CONFIG: names an \"image\" — the Dev Container builds from $DOCKERFILE, not from an image (DEV-container-adds-bun-and-rust)"
+    && add_error "$CONFIG: names an \"image\" — the Dev Container builds from $DOCKERFILE, not from an image (DEV-container-adds-bun-rust-shellcheck)"
 
   # 4. Engine: Compose.
   grep -qE '"dockerComposeFile"[[:space:]]*:' <<< "$config" \
@@ -128,7 +128,7 @@ else
   for id in "${features[@]}"; do
     # 3. Node.js.
     [[ "$id" =~ /node(:[^/]*)?$ ]] \
-      && add_error "$CONFIG: Feature '$id' installs Node.js — the container carries Bun and no Node.js (DEV-container-adds-bun-and-rust)"
+      && add_error "$CONFIG: Feature '$id' installs Node.js — the container carries Bun and no Node.js (DEV-container-adds-bun-rust-shellcheck)"
     # 4. Engine: a Feature.
     [[ "$id" == *docker* || "$id" == *podman* ]] \
       && add_error "$CONFIG: Feature '$id' brings a container engine — the work inside the Dev Container reaches none (SEC-no-container-engine)"
@@ -138,7 +138,7 @@ fi
 # 2. Digests.
 images=0
 if [[ ! -f "$ROOT/$DOCKERFILE" ]]; then
-  add_error "$DOCKERFILE: not found — DEV-container-adds-bun-and-rust builds the Dev Container from it"
+  add_error "$DOCKERFILE: not found — DEV-container-adds-bun-rust-shellcheck builds the Dev Container from it"
 else
   stages=()
   while read -r instruction rest; do
@@ -166,7 +166,7 @@ else
     if ((stage)); then continue; fi
     images=$((images + 1))
     [[ "$image" =~ $DIGEST ]] \
-      || add_error "$DOCKERFILE: ${instruction^^} names '$image' without a digest — every image is pinned by '@sha256:' (DEV-container-adds-bun-and-rust)"
+      || add_error "$DOCKERFILE: ${instruction^^} names '$image' without a digest — every image is pinned by '@sha256:' (DEV-container-adds-bun-rust-shellcheck)"
   done < <(uncommented "$ROOT/$DOCKERFILE" '#')
   ((images)) || add_error "$DOCKERFILE: names no image in a FROM — there is nothing the Dev Container builds from"
 

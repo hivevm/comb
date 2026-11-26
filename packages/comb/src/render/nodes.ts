@@ -962,7 +962,7 @@ export class NodeGraphic extends Container {
     text.rotation = across ? 0 : -Math.PI / 2;
     text.position.set(across ? width / 2 : t / 2, across ? t / 2 : height / 2);
     // Cut by the engine once the layer has read the views of its buffers, which a call into the
-    // engine may detach (API-bridge-columns-carry-nesting).
+    // engine may detach (API-bridge-columns-keep-no-size).
     this.unnamed = { name, length: across ? width : height };
     const band = across ? { x: 0, y: 0, width, height: t } : { x: 0, y: 0, width: t, height };
     return { ...band, name: "", rotation: text.rotation };

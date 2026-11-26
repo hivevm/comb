@@ -418,7 +418,7 @@ impl Graph {
         clippy::cast_possible_truncation,
         reason = "an end is the middle of a side of a node or a point of its outline, within the \
                   node, whose position and size the engine keeps as f32; the ends cross without \
-                  an origin, rounded by their distance from the world's origin (API-bridge-columns-carry-nesting); a \
+                  an origin, rounded by their distance from the world's origin (API-bridge-columns-keep-no-size); a \
                   node lies within `WORLD_LIMIT`, its far side included, so an end does too, \
                   far within f32"
     )]

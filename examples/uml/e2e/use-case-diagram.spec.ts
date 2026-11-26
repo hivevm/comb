@@ -1,6 +1,6 @@
 // Browser tests of the UML example's use case diagram (G-20): the developer, the user, and the host
 // application as actors outside the subject Comb, which holds the use cases of G-1 to G-17
-// (API-edits-report-nested-changes); a use case's extension points below a separator
+// (API-edits-report-division-moves); a use case's extension points below a separator
 // (REN-node-shapes-cover-uml); associations with a multiplicity at each end, include and extend
 // dashed with an open arrowhead and their keyword, an extend's condition a comment anchored on it
 // (API-edges-dock-nodes-or-edges), and generalizations ending in a hollow triangle; the palette,
@@ -324,7 +324,7 @@ async function dragFrom(page: Page, at: [number, number], x: number, y: number):
 }
 
 test("an actor dragged into the subject is refused and stands where it stood", async ({ page }) => {
-  // Verifies: G-20, G-14, API-edits-report-nested-changes
+  // Verifies: G-20, G-14, API-edits-report-division-moves
   await page.goto("/");
   await open(page);
   await chooseUseCase(page);
@@ -579,7 +579,7 @@ test("a use case at an end of the extend moved, the condition stays anchored at 
 test("an extend changed to another kind loses its condition, the comment and its anchor removed as Comb tells", async ({
   page,
 }) => {
-  // Verifies: G-20, G-4, API-edits-report-nested-changes
+  // Verifies: G-20, G-4, API-edits-report-division-moves
   await page.goto("/");
   await open(page);
   await chooseUseCase(page);

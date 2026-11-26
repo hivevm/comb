@@ -48,7 +48,7 @@ statement and goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), th
 
 Inside the Dev Container, which provides Bun, Rust, wasm-pack, and Chromium
 ([DEV-bun-vite-wasm-pack](docs/adr/DEV-bun-vite-wasm-pack.md),
-[DEV-container-adds-bun-and-rust](docs/adr/DEV-container-adds-bun-and-rust.md)).
+[DEV-container-adds-bun-rust-shellcheck](docs/adr/DEV-container-adds-bun-rust-shellcheck.md)).
 [`scripts/check-code.sh`](scripts/check-code.sh) runs, in order, the first three below, build, lint,
 and test, the engine check before the tests, and then the bundle budget of Q-3 (`bun run build:lib`,
 at most 300 kB gzipped without PixiJS). The checks that need no toolchain, the structural check of

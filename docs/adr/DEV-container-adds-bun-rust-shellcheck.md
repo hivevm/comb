@@ -1,6 +1,6 @@
 # DEV-container-adds-bun-rust-shellcheck: The Dev Container builds from a Dockerfile that adds Bun and a pinned ShellCheck release, which CI's shell lint runs too, and takes Rust as a locked Feature
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-25
 - **Deciders:** Markus Brigl
 - **Applies to:** `.devcontainer/`, `.vscode/launch.json`, `.vscode/extensions.json`, the CI job that sets up the toolchain, the `shell` job of `.github/workflows/checks.yml`, the version line of `scripts/check-shell.sh`, `scripts/check-container.sh`, `scripts/test-check-container.sh`, and `.github/workflows/devcontainer.yml`

@@ -11,9 +11,8 @@
 # on lines of their own in scripts/check-all.sh and in the code job of checks.yml.
 #
 # Needs Bun, Rust with the wasm32-unknown-unknown target, and Chromium for Playwright, as the Dev
-# Container provides them (DEV-container-adds-bun-and-rust). Where Bun or Cargo is missing it fails
-# and says so: a gate
-# that skips itself is one somebody believes in and does not have.
+# Container provides them (DEV-container-adds-bun-rust-shellcheck). Where Bun or Cargo is missing
+# it fails and says so: a gate that skips itself is one somebody believes in and does not have.
 #
 # Usage:
 #     scripts/check-code.sh [--root <dir>]
@@ -37,7 +36,7 @@ for tool in bun cargo; do
   command -v "$tool" > /dev/null || missing+=("$tool")
 done
 if ((${#missing[@]})); then
-  echo "check-code: ${missing[*]} not found — run it in the Dev Container (DEV-container-adds-bun-and-rust)." >&2
+  echo "check-code: ${missing[*]} not found — run it in the Dev Container (DEV-container-adds-bun-rust-shellcheck)." >&2
   exit 1
 fi
 

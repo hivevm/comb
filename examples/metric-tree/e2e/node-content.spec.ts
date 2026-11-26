@@ -421,7 +421,7 @@ test("a trend's text takes each new colour on its pooled text object, and no tex
 test("updateNode replaces the content, the canvas shows it, the node's height follows, and nodeUpdated carries it", async ({
   page,
 }) => {
-  // Verifies: REN-node-content-and-hits, API-edits-report-nested-changes, G-5
+  // Verifies: REN-node-content-and-hits, API-edits-report-division-moves, G-5
   await open(page);
   await loaded(page, { nodes: [node("a")], edges: [] });
   await page.evaluate((content) => window.comb.updateNode("a", { content }), TALL);

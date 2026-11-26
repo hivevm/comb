@@ -2,7 +2,7 @@
 // read once, in JavaScript, into plain data whose every field is a primitive of the type the field
 // expects, so that the bridge checks it and the store keeps it, and no value of the host
 // application, nor any of its code, reaches the engine; a load's nodes and edges are handed over as
-// columns besides (API-bridge-columns-carry-nesting). A value of another type is replaced by
+// columns besides (API-bridge-columns-keep-no-size). A value of another type is replaced by
 // `false`, which the bridge refuses naming the node or edge and the field; a text of content, a
 // label text, and the arrow are handed over no longer than one code unit beyond the bridge's limit
 // for texts, an identifier no longer than one beyond its limit for identifiers, and a node's
@@ -185,7 +185,7 @@ interface ContentSink {
 /** Reads `content`, a node's content, once by `read` and hands it to `sink`: at most one row
  *  beyond `limits.rows`, each at most one element beyond `limits.columns`, and a progress bar at
  *  most one segment beyond `limits.segments`, so that content of any size costs at most that much
- *  to check. The one walk of content both crossings of API-bridge-columns-carry-nesting read it
+ *  to check. The one walk of content both crossings of API-bridge-columns-keep-no-size read it
  *  by: a load hands the
  *  sink that writes its columns, `addNode` and `updateNode` the one that builds plain data. */
 function walkContent(read: Reader, content: unknown, sink: ContentSink, limits: Limits): void {
@@ -563,7 +563,7 @@ function nodeOf(read: Reader, node: Fields) {
  *  its columns, and returns what the store keeps of it: its identifier, its node shape, and its
  *  container, its mark, whether it has a height, whether it is resizable, and its division where it
  *  has them, no copy of its size or its content (REN-node-content-and-hits,
- *  API-edits-report-nested-changes); and the views of its regions, which take the slots after the
+ *  API-edits-report-division-moves); and the views of its regions, which take the slots after the
  *  nodes. */
 function written(
   read: Reader,

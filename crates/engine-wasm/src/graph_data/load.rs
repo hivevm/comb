@@ -609,8 +609,8 @@ pub(crate) fn graph_of(batch: &GraphBatch) -> Result<Graph, GraphDataProblem> {
     .map(|loaded| loaded.graph)
 }
 
-// The malformed-data tests of graph data verify API-bridge-columns-carry-nesting (see
-// `graph_data::tests`). Verifies: API-bridge-columns-carry-nesting
+// The malformed-data tests of graph data verify API-bridge-columns-keep-no-size (see
+// `graph_data::tests`). Verifies: API-bridge-columns-keep-no-size
 #[cfg(test)]
 mod tests {
     use super::super::node_columns::Refused;
@@ -806,7 +806,7 @@ mod tests {
 
     #[test]
     fn an_added_node_names_its_regions_of_another_type_before_its_content_as_a_load_does() {
-        // Verifies: API-bridge-columns-carry-nesting, ARCH-regions-are-container-slots, Q-7
+        // Verifies: API-bridge-columns-keep-no-size, ARCH-regions-are-container-slots, Q-7
         // A load's first pass names the regions by their type before any rule of content; so does
         // `addNode`, the one sequence a node is refused by.
         use super::super::problem::A_REGION_LIST;
@@ -830,7 +830,7 @@ mod tests {
 
     #[test]
     fn a_coordinate_not_finite_in_an_early_node_is_named_before_a_title_in_a_later_one() {
-        // Verifies: API-bridge-columns-carry-nesting
+        // Verifies: API-bridge-columns-keep-no-size
         // The first pass names only the values `Field<T>` reads; a title is checked at its rule,
         // in the second pass, after the nodes before it.
         let ids: Vec<String> = (0..6).map(|i| format!("n{i}")).collect();
@@ -849,7 +849,7 @@ mod tests {
 
     #[test]
     fn the_first_value_refused_by_its_type_is_named_across_nodes_and_edges() {
-        // Verifies: API-bridge-columns-carry-nesting
+        // Verifies: API-bridge-columns-keep-no-size
         // A node's refused field is named before any edge's, and an earlier edge's arrowhead
         // that names nothing before a later edge's field the shell named.
         let mut nodes = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]).nodes;
@@ -955,7 +955,7 @@ mod tests {
     #[test]
     fn an_outline_loads_as_given_and_one_naming_none_or_dashed_as_no_edge_is_is_refused_by_its_field()
      {
-        // Verifies: REN-node-shapes-cover-uml, API-bridge-columns-carry-nesting, Q-7
+        // Verifies: REN-node-shapes-cover-uml, API-bridge-columns-keep-no-size, Q-7
         use super::super::Outline as O;
         use super::super::problem::AN_OUTLINE;
         let dashed = |dash, gap| Some(O::Dashed(super::super::Pair([dash, gap])));
@@ -998,7 +998,7 @@ mod tests {
 
     #[test]
     fn an_outline_of_add_node_is_refused_as_a_load_s_and_columns_of_no_outline_are_malformed() {
-        // Verifies: REN-node-shapes-cover-uml, API-bridge-columns-carry-nesting, Q-7
+        // Verifies: REN-node-shapes-cover-uml, API-bridge-columns-keep-no-size, Q-7
         use super::super::Outline as O;
         use super::super::problem::AN_OUTLINE;
         let dashed = |dash, gap| Some(O::Dashed(super::super::Pair([dash, gap])));
@@ -1034,7 +1034,7 @@ mod tests {
 
     #[test]
     fn a_separator_row_that_holds_elements_or_a_byte_past_one_is_malformed() {
-        // Verifies: API-bridge-columns-carry-nesting
+        // Verifies: API-bridge-columns-keep-no-size
         let mut columns = a_and(|_| ());
         // Node `b`'s one row, its title, marked a separator.
         columns.content.separators[1] = 1;
@@ -1058,7 +1058,7 @@ mod tests {
     #[test]
     fn a_height_below_the_content_s_is_raised_a_greater_one_kept_and_content_s_asked_alone() {
         // Verifies: REN-node-shapes-cover-uml, REN-node-content-and-hits,
-        // Verifies: API-bridge-columns-carry-nesting, REN-node-content-and-hits
+        // Verifies: API-bridge-columns-keep-no-size, REN-node-content-and-hits
         let given = |height: f64| move |n: &mut NodeInput| n.height = Some(height).into();
         // Of one title, 64 high: a height of 20 raised to it, one of 300 kept.
         for (height, drawn) in [(20.0, 64.0), (300.0, 300.0)] {
@@ -1091,7 +1091,7 @@ mod tests {
 
     #[test]
     fn a_height_not_finite_or_not_above_0_as_f32_holds_it_is_refused_naming_the_node() {
-        // Verifies: API-bridge-columns-carry-nesting, Q-7
+        // Verifies: API-bridge-columns-keep-no-size, Q-7
         let refused = || GraphDataProblem::InvalidSize { node: "b".into() };
         for height in [0.0, -1.0, f64::NAN, f64::INFINITY, 1e300] {
             let columns = a_and(|n| n.height = Some(height).into());
@@ -1269,7 +1269,7 @@ mod tests {
     }
 }
 
-/// The tests of a load's nesting (API-bridge-columns-carry-nesting,
+/// The tests of a load's nesting (API-bridge-columns-keep-no-size,
 /// ARCH-engine-edits-nested-graph).
 #[cfg(test)]
 mod nesting_tests {
@@ -1320,7 +1320,7 @@ mod nesting_tests {
 
     #[test]
     fn a_node_added_into_a_container_lies_at_the_sum_of_its_position_and_the_container_s() {
-        // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-nested-changes
+        // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-division-moves
         let mut graph = loaded_three();
         let node = batch(&[("n", 5.0, 7.0)], &[]).nodes.remove(0);
         let slot = add_into(&mut graph, &node, Some(0)).unwrap();
@@ -1338,7 +1338,7 @@ mod nesting_tests {
 
     #[test]
     fn a_node_added_into_no_container_or_past_the_world_is_refused_and_the_graph_stays() {
-        // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-nested-changes, Q-7
+        // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-division-moves, Q-7
         let mut graph = loaded_three();
         let node = batch(&[("n", 5.0, 7.0)], &[]).nodes.remove(0);
         // A node that is no container, a slot that holds no node.
@@ -1390,7 +1390,7 @@ mod nesting_tests {
 
     #[test]
     fn a_container_s_nodes_load_at_the_sums_of_their_positions_and_its() {
-        // Verifies: API-bridge-columns-carry-nesting, ARCH-engine-edits-nested-graph
+        // Verifies: API-bridge-columns-keep-no-size, ARCH-engine-edits-nested-graph
         let (nodes, _) = three(&[None, Some(0), Some(0)], &[true, false, false]);
         let graph = load_columns(&nodes).unwrap();
         assert_eq!(
@@ -1402,7 +1402,7 @@ mod nesting_tests {
 
     #[test]
     fn a_container_that_names_no_node_no_container_the_node_or_one_it_holds_is_refused() {
-        // Verifies: API-bridge-columns-carry-nesting, ARCH-engine-edits-nested-graph
+        // Verifies: API-bridge-columns-keep-no-size, ARCH-engine-edits-nested-graph
         let cases = [
             // Past the slots, as the snapshot writes an identifier that names no node.
             (
@@ -1452,7 +1452,7 @@ mod nesting_tests {
 
     #[test]
     fn a_nesting_refused_comes_after_every_node_s_checks_and_before_the_edges() {
-        // Verifies: API-bridge-columns-carry-nesting
+        // Verifies: API-bridge-columns-keep-no-size
         // A node after the nested one with a width that is negative, and an edge to no node.
         let mut data = batch(
             &[("c", 0.0, 0.0), ("a", 0.0, 0.0), ("b", 0.0, 0.0)],
@@ -1479,7 +1479,7 @@ mod nesting_tests {
 
     #[test]
     fn a_container_or_a_mark_of_another_type_is_refused_by_its_field_in_the_first_pass() {
-        // Verifies: API-bridge-columns-carry-nesting
+        // Verifies: API-bridge-columns-keep-no-size
         for (field, name, expected) in [
             (NodeField::Container, "container", AN_ID_OR_NONE),
             (NodeField::IsContainer, "isContainer", A_FLAG),
@@ -1513,7 +1513,7 @@ mod nesting_tests {
 
     #[test]
     fn a_world_position_past_the_world_s_limit_is_refused_by_the_field_it_passes_by() {
-        // Verifies: API-bridge-columns-carry-nesting, Q-7
+        // Verifies: API-bridge-columns-keep-no-size, Q-7
         // Each position within the limit, their sum past it.
         let far = WORLD_LIMIT * 0.75;
         let data = batch(&[("c", far, 0.0), ("a", far, 0.0)], &[]);

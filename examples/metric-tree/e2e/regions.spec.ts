@@ -4,7 +4,7 @@
 // region holds; a press on an empty region drags the divided node; `updateNode` divides it anew and
 // a region left out goes with its content; Comb tells each region's size as the engine holds it,
 // so that a load of the host's copy draws the same; and a region is no node to an edge or a call
-// that names a node (ARCH-regions-are-container-slots, API-edits-report-nested-changes).
+// that names a node (ARCH-regions-are-container-slots, API-edits-report-division-moves).
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphData, PlacedNodeData } from "comb";
 import { clickWorld, dragWorld, loaded, node, open, pagePoint, selections, told } from "./shared";
@@ -71,7 +71,7 @@ async function topOf(page: Page) {
 test("an activity divided into partitions, one divided again, draws their boxes tiling the part below its content, their bands, and their lines", async ({
   page,
 }) => {
-  // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes, G-16
+  // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves, G-16
   await open(page);
   await loaded(page, ACTIVITY);
   const top = await topOf(page);
@@ -117,7 +117,7 @@ test("an activity divided into partitions, one divided again, draws their boxes 
 test("a drag of the line before a partition changes it and its neighbour, keeps what it holds in the world, tells one regionsMoved, and stops at what it holds", async ({
   page,
 }) => {
-  // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes, G-16
+  // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves, G-16
   await open(page);
   await loaded(page, ACTIVITY);
   const top = await topOf(page);
@@ -262,7 +262,7 @@ test("a press on a partition where no node lies drags the activity with its part
 test("a resize of the activity at its right side widens the last partition and tells it in nodeResized", async ({
   page,
 }) => {
-  // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes, G-15
+  // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves, G-15
   await open(page);
   await loaded(page, ACTIVITY);
   const top = await topOf(page);
@@ -289,7 +289,7 @@ test("a resize of the activity at its right side widens the last partition and t
 test("a node dropped from one partition into another lies in it, told once with the partition", async ({
   page,
 }) => {
-  // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes, G-14
+  // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves, G-14
   await open(page);
   await loaded(page, ACTIVITY);
   const top = await topOf(page);
@@ -302,7 +302,7 @@ test("a node dropped from one partition into another lies in it, told once with 
 test("updateNode with partitions that leave two out removes their content and tells it, and the others take the patch's sizes, the last the rest, told by the size it holds", async ({
   page,
 }) => {
-  // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes, G-16
+  // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves, G-16
   await open(page);
   await loaded(page, ACTIVITY);
   const top = await topOf(page);
@@ -343,7 +343,7 @@ test("updateNode with partitions that leave two out removes their content and te
 test("an edge whose end names a region, and removeNodes and updateNode naming one, are refused and the graph stays as it was", async ({
   page,
 }) => {
-  // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes, Q-7
+  // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves, Q-7
   await open(page);
   await loaded(page, ACTIVITY);
   const before = await drawnBoxes(page);
@@ -388,7 +388,7 @@ test("an edge whose end names a region, and removeNodes and updateNode naming on
 test("a node is refused in a divided partition by a load, by addNode, and by a drop on its band", async ({
   page,
 }) => {
-  // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes
+  // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves
   await open(page);
   await loaded(page, ACTIVITY);
   const top = await topOf(page);
@@ -448,7 +448,7 @@ test("a node is refused in a divided partition by a load, by addNode, and by a d
 test("updateNode into no regions, or a division without regions, leaves the activity undivided and no container", async ({
   page,
 }) => {
-  // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes
+  // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves
   for (const patch of [{ regions: [] }, { divide: "down" as const }]) {
     await open(page);
     await loaded(page, ACTIVITY);
@@ -633,7 +633,7 @@ test("a drag of a line out and back to where it began tells the last region's si
 test("a deletion of the activity asks canDelete about no region and tells none removed", async ({
   page,
 }) => {
-  // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes
+  // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves
   await open(page);
   await loaded(page, ACTIVITY);
   const top = await topOf(page);
@@ -657,7 +657,7 @@ test("a deletion of the activity asks canDelete about no region and tells none r
 test("a drag of a line between partitions divided again the same way tells the inner regions at the line too", async ({
   page,
 }) => {
-  // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes
+  // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves
   await open(page);
   await loaded(page, {
     nodes: [
@@ -742,7 +742,7 @@ test("a chain of regions ten thousand deep loads and draws without a walk that r
 test("updateNode that divides a kept partition moves what it held into its first region at its world position, told as the host's nodeMoved", async ({
   page,
 }) => {
-  // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes
+  // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves
   // The human's decision of 2026-11-18: nothing goes, `a` lies in `p3a` where it lay.
   await open(page);
   await loaded(page, ACTIVITY);
@@ -783,7 +783,7 @@ test("updateNode that divides a kept partition moves what it held into its first
 test("updateNode that divides a container moves each node it held into the region at its position where it lay, else the first, told as the host's nodeMoved", async ({
   page,
 }) => {
-  // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes,
+  // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves,
   // API-edits-report-division-moves
   // The maintainer's decisions of 2026-11-25: a divided node holds its regions alone, so what `c`
   // held directly goes, where it lay, into the region at its position, as a drop there would:
