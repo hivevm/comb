@@ -61,7 +61,7 @@ describe("deleting the selection", () => {
   test("a veto that changes the graph itself refuses the deletion", () => {
     // Verifies: API-edits-report-nested-changes
     const { store, bridge, remove, calls } = selected(() => {
-      store.getState().updateNode("b", true);
+      store.getState().updateNode({ id: "b", patch: { content: [] } });
       return true;
     });
     deleteSelection(store, bridge, remove);

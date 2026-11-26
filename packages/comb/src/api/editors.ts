@@ -31,7 +31,6 @@ import type {
   NodeShape,
   NodeData,
   NodePatch,
-  NodeSizing,
   Divided,
   KeptEdge,
 } from "../store";
@@ -221,7 +220,6 @@ function updateNode({ store, bridge, limits }: Editing, id: string, patch: unkno
     },
     engine: ({ slot, plain, kept }) => bridge.updateNode(slot, id, plain, kept),
     record: (state, { slot, plain, old, moving }, removal) => {
-      const sizing = sizingOf(plain);
       const divided = old.length > 0 || "regions" in plain || "divide" in plain;
       // What went with a region the patch left out goes as the host's removal, before the change
       // of the node (ARCH-regions-are-container-slots, *Removing a region*).
@@ -230,26 +228,13 @@ function updateNode({ store, bridge, limits }: Editing, id: string, patch: unkno
         state.removeNodes([...removal.nodes], [...removal.edges], "host");
       const after = store.getState();
       const anew = divided ? dividedAnew(plain, after, bridge, slot, old) : undefined;
-      after.updateNode(id, "content" in plain, sizing, anew);
+      after.updateNode({ id, patch: plain, divided: anew });
       // What a kept region divided anew held now lies in its first region, the host's move.
       for (const { node, into } of moving) store.getState().nodeMoved(node, into, "host");
       // The regions moved, or a border node, which a query the scene keeps does not survive.
-      if (divided || sizing.side || sizing.offset) store.getState().positionsMoved();
+      if (divided || "side" in plain || "offset" in plain) store.getState().positionsMoved();
     },
   });
-}
-
-/** What the patch `plain` set of a node's size, as the store keeps it, and whether it set a border
- *  node's side or offset, which the engine keeps (ARCH-border-nodes-ride-sides). */
-function sizingOf(plain: PlainPatch): NodeSizing {
-  const { height, resizable, outline } = plain;
-  return {
-    ...("height" in plain ? { height } : {}),
-    ...("resizable" in plain ? { resizable } : {}),
-    ...("outline" in plain ? { outline } : {}),
-    ...("side" in plain ? { side: true as const } : {}),
-    ...("offset" in plain ? { offset: true as const } : {}),
-  };
 }
 
 /** How the patch `plain` divided the node in `slot` anew, which held the regions in `old`: in

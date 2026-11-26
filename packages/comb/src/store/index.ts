@@ -305,12 +305,13 @@ export interface Divided {
   readonly old: readonly number[];
 }
 
-/** What a patch of `updateNode` set besides content, as the store keeps it, and whether it set a
- *  border node's side or offset, which the engine keeps. */
-export type NodeSizing = Pick<NodePatch, "height" | "resizable" | "outline"> & {
-  side?: true;
-  offset?: true;
-};
+/** A patch of `updateNode` the engine took of the node `id`, and how it divided the node anew
+ *  where it did: what the store's `updateNode` records. */
+export interface NodeUpdate {
+  readonly id: string;
+  readonly patch: Readonly<NodePatch>;
+  readonly divided?: Divided;
+}
 
 /** Who made a change: the user on the canvas, or the host application through `Comb`. */
 export type By = "user" | "host";
@@ -368,20 +369,9 @@ export type StoreChange =
       readonly kind: "nodeUpdated";
       readonly by: "host";
       readonly id: string;
-      /** Whether the patch set the node's content, which the engine keeps. */
-      readonly content: boolean;
-      /** Set where the patch set the node's height, which the engine keeps as raised. */
-      readonly height?: true;
-      /** Whether the node is resizable, where the patch set it. */
-      readonly resizable?: boolean;
-      /** How its outline is drawn, where the patch set it (REN-node-shapes-cover-uml). */
-      readonly outline?: Outline;
-      /** Set where the patch divided the node into regions anew. */
-      readonly regions?: true;
-      /** Set where the patch set a border node's side, and its offset, which the engine keeps
-       *  (ARCH-border-nodes-ride-sides). */
-      readonly side?: true;
-      readonly offset?: true;
+      /** The fields of `NodePatch` the patch set, which `api` reads from the store and the
+       *  engine as it delivers the change. */
+      readonly fields: readonly (keyof NodePatch)[];
     };
 
 /** A connection the user drags from the connector `side` of the node in slot `source`
@@ -443,11 +433,10 @@ export interface GraphState extends GraphView {
    *  `read` into one list, which the engine took into `slots` in their order
    *  (ARCH-regions-are-container-slots). */
   addNode(node: NodeData, slot: number, regions?: TakenRegions): void;
-  /** Records that the engine took a patch of the node `id`, which set its content where
-   *  `content`, its height and whether it is resizable where `sizing` names them, and divided it
-   *  anew where `divided` says how: its regions, which the engine took into `slots`, depth first,
-   *  in place of those in `old`. */
-  updateNode(id: string, content: boolean, sizing?: NodeSizing, divided?: Divided): void;
+  /** Records that the engine took `patch` of the node `id`, keeping what the patch set of what
+   *  the store keeps, and divided it anew where `divided` says how: its regions, which the engine
+   *  took into `slots`, depth first, in place of those in `old`. */
+  updateNode(update: NodeUpdate): void;
   /** Records that a resize, now released, changed the size of the node `id`, which the engine
    *  keeps, the positions relative to it of the nodes `moved`, and the sizes of its regions
    *  `regions` (API-edits-report-nested-changes). */
@@ -692,17 +681,13 @@ function patched(edge: EdgeView, patch: EdgePatch): EdgeView {
   } as EdgeView;
 }
 
-/** What `updateNode` changes of `state`: the node `id` a new object where its content changed, so
- *  that a view tells the change by identity, and the change recorded. */
-function updatedFrom(
-  state: GraphView,
-  id: string,
-  content: boolean,
-  sizing: NodeSizing = {},
-  divided?: Divided,
-): Partial<GraphView> {
-  const { height, resizable, outline } = sizing;
+/** What `updateNode` changes of `state`: the node `id` a new object where its content or what the
+ *  store keeps of it changed, so that a view tells the change by identity, and the change
+ *  recorded. */
+function updatedFrom(state: GraphView, { id, patch, divided }: NodeUpdate): Partial<GraphView> {
+  const { height, resizable, outline } = patch;
   const sized = height !== undefined || resizable !== undefined || outline !== undefined;
+  const content = patch.content !== undefined;
   const view = (node: NodeView) => {
     const updated = nodeViewOf({
       ...node,
@@ -725,25 +710,17 @@ function updatedFrom(
   if (divided) {
     ({ nodes, slots, idUnits } = withRegions(nodes, slots, idUnits, id, divided));
   }
-  return { nodes, slots, idUnits, change: updateOf(id, content, sizing, divided !== undefined) };
+  return { nodes, slots, idUnits, change: updateOf(id, patch, divided !== undefined) };
 }
 
-/** The change `updateNode` records of the node `id`: whether it set content, what it set of the
- *  node's size and place, and whether it divided the node anew. */
-function updateOf(id: string, content: boolean, sizing: NodeSizing, divided: boolean) {
-  const { height, resizable, side, offset, outline } = sizing;
-  return {
-    kind: "nodeUpdated",
-    by: "host",
-    id,
-    content,
-    ...(height === undefined ? {} : { height: true as const }),
-    ...(resizable === undefined ? {} : { resizable }),
-    ...(outline === undefined ? {} : { outline }),
-    ...(divided ? { regions: true as const } : {}),
-    ...(side ? { side: true as const } : {}),
-    ...(offset ? { offset: true as const } : {}),
-  } as const;
+/** The change `updateNode` records of the node `id`: the fields `patch` set, and with a side the
+ *  offset, which the engine holds within the new side
+ *  (ARCH-border-nodes-ride-sides), and with a division anew its direction and its regions. */
+function updateOf(id: string, patch: Readonly<NodePatch>, divided: boolean): StoreChange {
+  const fields = new Set(Object.keys(patch) as (keyof NodePatch)[]);
+  if (fields.has("side")) fields.add("offset");
+  if (divided) fields.add("regions").add("divide");
+  return { kind: "nodeUpdated", by: "host", id, fields: [...fields] };
 }
 
 /** `nodes`, `slots`, and `idUnits` without the regions in `divided.old` the store still keeps and
@@ -840,8 +817,7 @@ export function createGraphStore() {
     load: (graph, idUnits) => set((state) => loadedFrom(state, graph, idUnits)),
     addNode: (node, slot, regions = { read: [], slots: [] }) =>
       set((state) => withNode(state, node, slot, regions)),
-    updateNode: (id, content, sizing, divided) =>
-      set((state) => updatedFrom(state, id, content, sizing, divided)),
+    updateNode: (update) => set((state) => updatedFrom(state, update)),
     // The engine keeps the size the resize left (ARCH-graph-in-zustand-store).
     nodeResized: (id, moved, regions = []) =>
       set({ change: { kind: "nodeResized", by: "user", id, moved, regions } }),

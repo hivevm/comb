@@ -202,43 +202,58 @@ function heightAt(bridge: Bridge, slot: number): number {
   return bridge.nodeBuffers().sizes[slot * 2 + 1]!;
 }
 
-/** The change `nodeUpdated` as `onChange` delivers it, with the content the engine keeps, built
- *  for this delivery, where the patch set it, the height the node has where it set one, raised
- *  where it was below its content's, and whether it is resizable where it set it. */
+/** Where the delivery of `nodeUpdated` reads what it tells of the node in `slot`. */
+interface PatchRead {
+  readonly state: GraphState;
+  readonly bridge: Bridge;
+  readonly slot: number;
+}
+
+/** For each field of `NodePatch`, where the delivery of `nodeUpdated` reads it once the patch
+ *  changed it: what the engine keeps from the engine, what the store keeps from the node's view,
+ *  each a copy no listener reaches into, none where the node has none. A new field of a patch
+ *  takes its entry here, which the type checker asks for. */
+export const NODE_PATCH_READS: {
+  readonly [K in keyof Required<NodePatch>]: (read: PatchRead) => NodePatch[K];
+} = {
+  // The content the engine keeps, built for this delivery (REN-node-content-and-hits).
+  content: ({ bridge, slot }) => bridge.content(slot),
+  // The height the node has, raised where the patch's was below its content's.
+  height: ({ bridge, slot }) => heightAt(bridge, slot),
+  resizable: ({ state, slot }) => state.nodes[slot]!.resizable,
+  // How its outline is drawn (REN-node-shapes-cover-uml).
+  outline: ({ state, slot }) => {
+    const { outline } = state.nodes[slot]!;
+    return typeof outline === "object" ? [outline[0], outline[1]] : outline;
+  },
+  divide: ({ state, slot }) => state.nodes[slot]!.divide,
+  regions: ({ state, bridge, slot }) => regionsAt(state, bridge, slot),
+  // A border node's side, and its offset as the engine holds it within that side, so that the
+  // host's copy follows what Comb took (ARCH-border-nodes-ride-sides).
+  side: ({ bridge, slot }) => bridge.borderOf(slot)?.side,
+  offset: ({ bridge, slot }) => bridge.borderOf(slot)?.offset,
+};
+
+/** The change `nodeUpdated` as `onChange` delivers it: each field the patch changed, read where
+ *  `NODE_PATCH_READS` names, and left out where the node has none. */
 function nodeUpdatedOf(
   change: Extract<StoreChange, { kind: "nodeUpdated" }>,
   state: GraphState,
   bridge: Bridge,
 ): GraphChange {
-  const slot = state.slots.get(change.id)!;
-  const patch: NodePatch = change.content ? { content: bridge.content(slot) } : {};
-  if (change.height) patch.height = heightAt(bridge, slot);
-  if (change.resizable !== undefined) patch.resizable = change.resizable;
-  if (change.outline !== undefined) patch.outline = change.outline;
-  if (change.regions) {
-    const { divide } = state.nodes[slot]!;
-    if (divide !== undefined) patch.divide = divide;
-    patch.regions = regionsAt(state, bridge, slot);
-  }
-  Object.assign(patch, placePatched(change, bridge, slot));
+  const read: PatchRead = { state, bridge, slot: state.slots.get(change.id)! };
+  const patch: NodePatch = {};
+  // In the table's order, whatever order the host's patch named its fields in.
+  for (const field of Object.keys(NODE_PATCH_READS) as (keyof NodePatch)[])
+    if (change.fields.includes(field)) readInto(patch, field, read);
   return { kind: change.kind, by: change.by, id: change.id, patch };
 }
 
-/** What the patch of `change` set of the place of the border node in `slot`: its side, and its
- *  offset as the engine held it, told also where the patch set the side alone, since the engine
- *  holds the offset within the new side, so that the host's copy follows what Comb took
- *  (ARCH-border-nodes-ride-sides). */
-function placePatched(
-  change: Extract<StoreChange, { kind: "nodeUpdated" }>,
-  bridge: Bridge,
-  slot: number,
-): Pick<NodePatch, "side" | "offset"> {
-  const place = change.side || change.offset ? bridge.borderOf(slot) : undefined;
-  if (!place) return {};
-  return {
-    ...(change.side ? { side: place.side } : {}),
-    offset: place.offset,
-  };
+/** `patch` with its field `field` read where `NODE_PATCH_READS` names, none where the node has
+ *  none. */
+function readInto<K extends keyof NodePatch>(patch: NodePatch, field: K, read: PatchRead): void {
+  const value = NODE_PATCH_READS[field](read);
+  if (value !== undefined) patch[field] = value;
 }
 
 /** The size of the region in `slot` as the engine keeps it: its extent along the direction of

@@ -49,7 +49,7 @@ describe("graph store", () => {
     const store = createGraphStore();
     store.getState().load(graph as KeptGraph, units);
     const before = store.getState().nodes;
-    store.getState().updateNode("b", true);
+    store.getState().updateNode({ id: "b", patch: { content: titled("B2") } });
     const after = store.getState().nodes;
     expect(after[0]).toBe(before[0]);
     // A node of new content is a new object, which a view tells by identity; the engine keeps
@@ -60,7 +60,7 @@ describe("graph store", () => {
       kind: "nodeUpdated",
       by: "host",
       id: "b",
-      content: true,
+      fields: ["content"],
     });
   });
 
@@ -88,6 +88,34 @@ describe("graph store", () => {
   });
 });
 
+describe("graph store node updates", () => {
+  test("a node's update records it by its identifier and the fields of the patch it changed", () => {
+    // Verifies: API-edits-report-nested-changes, ARCH-graph-in-zustand-store
+    const store = createGraphStore();
+    store.getState().load(graph as KeptGraph, units);
+    const { nodes } = store.getState();
+    store.getState().updateNode({ id: "a", patch: { resizable: true, outline: [4, 2] } });
+    expect(store.getState().nodes[0]).toEqual({ id: "a", resizable: true, outline: [4, 2] });
+    expect(store.getState().change).toEqual({
+      kind: "nodeUpdated",
+      by: "host",
+      id: "a",
+      fields: ["resizable", "outline"],
+    });
+    // A side changes the offset too, which the engine holds within the new side
+    // (ARCH-border-nodes-ride-sides); the engine keeps both, so the node stays the same object.
+    const kept = store.getState().nodes[1];
+    store.getState().updateNode({ id: "b", patch: { side: "top" } });
+    expect(store.getState().nodes[1]).toBe(kept);
+    expect(store.getState().change).toMatchObject({ fields: ["side", "offset"] });
+    // A division anew changes both the direction and the regions.
+    const divided = { divide: "down" as const, regions: [], slots: [], old: [] };
+    store.getState().updateNode({ id: "a", patch: { regions: [] }, divided });
+    expect(store.getState().change).toMatchObject({ fields: ["regions", "divide"] });
+    expect(nodes[0]).toEqual({ id: "a" });
+  });
+});
+
 describe("graph store sizes", () => {
   test("a node's view holds no size, only whether the host gave a height, and a resize records none", () => {
     // Verifies: ARCH-graph-in-zustand-store, API-bridge-columns-keep-no-size
@@ -96,7 +124,7 @@ describe("graph store sizes", () => {
     store.getState().load({ nodes: [given], edges: [] } as unknown as KeptGraph, 1);
     store.getState().addNode({ id: "h", x: 0, y: 0, width: 80, height: 40, content: [] }, 1);
     store.getState().addNode({ id: "i", x: 0, y: 0, width: 80, content: [] }, 2);
-    store.getState().updateNode("i", false, { height: 30 });
+    store.getState().updateNode({ id: "i", patch: { height: 30 } });
     expect(store.getState().nodes).toEqual([
       { id: "g", heightGiven: true },
       { id: "h", heightGiven: true },

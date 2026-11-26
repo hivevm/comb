@@ -786,7 +786,10 @@ describe("interaction drops a dragged node into a container", () => {
     ["undefined", () => undefined],
     [
       "true after updating a node",
-      (store: GraphStore) => (store.getState().updateNode("c", true), true),
+      (store: GraphStore) => (
+        store.getState().updateNode({ id: "c", patch: { content: [] } }),
+        true
+      ),
     ],
   ] as const) {
     test(`a veto answering ${name} places the node where it lay at the press and records no move`, () => {
