@@ -4,6 +4,7 @@
 use comb_engine::geometry::{Dock, Side, Sides};
 use comb_engine::shape::NodeShape;
 
+use super::checks::Given;
 use super::content;
 use super::problem::{
     A_BORDER_SIDE, A_CONTENT, A_FLAG, A_HEIGHT, A_NODE_ID_OR_NONE, A_NUMBER, A_ROW, A_SEGMENT_LIST,
@@ -38,13 +39,11 @@ pub(super) struct Node<'a> {
     pub(super) border: Option<Border>,
 }
 
-/// The place of a border node as its data gives it, and the first of its fields `x`, `y`, and
-/// `container` that stands beside its `attachedTo`, which refuses it.
+/// The place of a border node as its data gives it.
 #[derive(Clone, Copy)]
 pub(super) struct Border {
     pub(super) side: Side,
     pub(super) offset: f64,
-    pub(super) beside: Option<&'static str>,
 }
 
 /// An edge label with every field read, its path parameter and offset filled in where it named
@@ -218,11 +217,6 @@ pub(super) fn node_of(
             _ => Ok(value.unwrap_or(0.0)),
         }
     };
-    let beside = [("x", node.x.0), ("y", node.y.0)]
-        .into_iter()
-        .find(|(_, value)| matches!(value, Some(Some(_))))
-        .map(|(field, _)| field)
-        .or_else(|| matches!(node.container.0, Some(Some(_))).then_some("container"));
     let mut read = Node {
         id,
         x: position("x", node.x)?,
@@ -259,11 +253,29 @@ pub(super) fn node_of(
         read.border = Some(Border {
             side: side.into(),
             offset,
-            beside,
         });
     }
     let content = content_of(&item, node.content.0.as_ref())?;
     Ok((read, content))
+}
+
+/// What `node` gives of `x`, `y`, `container`, `side`, and `offset`, each given where it holds a
+/// value, of any type, as the snapshot of a load says it in its column `given`; the rest of what
+/// the rule of its attachment reads its reading says (ARCH-border-nodes-ride-sides).
+pub(super) const fn given_of(node: &NodeInput) -> Given {
+    const fn gives<T>(field: &Field<Option<T>>) -> bool {
+        !matches!(field.0, Some(None))
+    }
+    Given {
+        x: gives(&node.x),
+        y: gives(&node.y),
+        container: gives(&node.container),
+        is_container: false,
+        regions: false,
+        resizable: false,
+        side: gives(&node.side),
+        offset: gives(&node.offset),
+    }
 }
 
 /// The content of the item `item`, or the refusal of content that is no list or of its first

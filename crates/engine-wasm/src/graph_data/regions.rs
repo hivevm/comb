@@ -12,7 +12,7 @@ use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use tsify::Tsify;
 
-use super::checks::{dash_of, id_length};
+use super::checks::{dash_of, divided, id_length};
 use super::problem::{A_DIVIDE, A_REGION_LIST};
 use super::{Field, GraphDataProblem, GraphList, MAX_TEXT, Pair, utf16_length};
 
@@ -287,7 +287,7 @@ pub(crate) fn within_world_divided(
     top: f32,
     regions: &[Region],
 ) -> Result<(), GraphDataProblem> {
-    let Some(divide) = divide else {
+    let Some(divide) = divided(divide, regions) else {
         return Ok(());
     };
     let (_, need) =
@@ -609,7 +609,7 @@ mod tests {
     fn add_node_to_divided(graph: &mut Graph, container: u32) -> Result<u32, GraphDataProblem> {
         let node = added(10.0, 10.0, |n| n.id = "x".to_owned().into());
         super::super::add_node_to(graph, &node, (Some(container), None), &Fonts::default(), 0)
-            .map(|(slot, _)| slot)
+            .map(|added| added.slot)
     }
 
     #[test]

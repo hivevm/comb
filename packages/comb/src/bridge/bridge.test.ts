@@ -514,6 +514,28 @@ describe("bridge columns of nesting", () => {
   });
 });
 
+describe("bridge columns of border nodes", () => {
+  test("what a node gives of x, y, container, side, and offset crosses as bits the bridge checks", () => {
+    // Verifies: API-bridge-columns-carry-nesting, ARCH-border-nodes-ride-sides
+    const pin = { id: "p", width: 10, content: [], attachedTo: "a", side: "top", offset: 0 };
+    const { snapshot } = snapshotted([
+      node("a", 0, 0),
+      { ...node("b", 0, 0), side: "left" },
+      { ...node("c", 0, 0), container: null, offset: 4 },
+      pin,
+      { ...pin, id: "q", y: 4, container: "a" },
+    ]);
+    // x 1, y 2, container 4, side 8, offset 16; null and undefined are no value.
+    expect([...snapshot.nodes.given]).toEqual([3, 11, 19, 24, 30]);
+    // The first of them the bridge crate refuses: `b` by its side, no border node.
+    expect(outcome(() => bridge.loadGraph(snapshot))).toStrictEqual({
+      kind: "invalidAttachment",
+      node: "b",
+      field: "side",
+    });
+  });
+});
+
 describe("bridge columns of a load", () => {
   test("identifiers cut inside a surrogate pair side by side are refused for their length", () => {
     // Verifies: API-bridge-columns-carry-nesting

@@ -57,7 +57,7 @@ const columns: Same<
     attached: Uint32Array | number[],
     side: Uint8Array | number[],
     offset: Float64Array | number[],
-    beside: Uint8Array | number[],
+    given: Uint8Array | number[],
     attachedMissing: string | null | undefined,
     rowBounds: Uint32Array | number[],
     elementBounds: Uint32Array | number[],

@@ -97,14 +97,14 @@ export interface NodeColumns {
   readonly regions: RegionColumns;
   /** Per node whether it is a border node, 1 or 0; the slot of the node its `attachedTo` names
    *  among the nodes, `NO_SLOT` where none has that identifier; its side as its code; its offset;
-   *  and the first of its `x`, `y`, and `container` beside its `attachedTo`, 1 to 3, or of a node
-   *  that is no border node a `side` or an `offset`, 4 or 5, or 0; and the
-   *  identifier the first border node attached to no node names (ARCH-border-nodes-ride-sides). */
+   *  which of its `x`, `y`, `container`, `side`, and `offset` it gives at all, by the bits of
+   *  `GIVEN`, by which the bridge crate checks its attachment; and the identifier the first border
+   *  node attached to no node names (ARCH-border-nodes-ride-sides). */
   readonly hasAttached: Uint8Array;
   readonly attached: Uint32Array;
   readonly side: Uint8Array;
   readonly offset: Float64Array;
-  readonly beside: Uint8Array;
+  readonly given: Uint8Array;
   readonly attachedMissing: string | undefined;
   readonly content: ContentColumns;
   readonly refused:
@@ -364,6 +364,10 @@ function roleCode(role: unknown): RoleCode {
  *  refuses as naming no node of the graph (API-bridge-columns-carry-nesting). */
 export const NO_SLOT = 0xffff_ffff;
 
+/** The bit of each field of a node in the column `given`, as the bridge crate's `Given` reads it
+ *  (ARCH-border-nodes-ride-sides). */
+const GIVEN = { x: 1, y: 2, container: 4, side: 8, offset: 16 } as const;
+
 /** Whether `value` stands for a field left out: null or undefined. */
 const absent = (value: unknown) => value === undefined || value === null;
 
@@ -395,7 +399,7 @@ class NodeWriter implements NodeColumnWriter {
   private readonly attached: Uint32Array;
   private readonly side: ReturnType<typeof codeColumn<SideCode>>;
   private readonly offset: Float64Array;
-  private readonly beside: Uint8Array;
+  private readonly given: Uint8Array;
   /** The identifier each border node's `attachedTo` names, by the node's index. */
   private readonly attachments = new Map<number, string>();
   /** The regions written, each by what it divides: a node by its index, a region by its own
@@ -462,7 +466,7 @@ class NodeWriter implements NodeColumnWriter {
     this.attached = new Uint32Array(count);
     this.side = codeColumn(count, SIDES, SideCode.Unnamed);
     this.offset = new Float64Array(count);
-    this.beside = new Uint8Array(count);
+    this.given = new Uint8Array(count);
     this.regionIds = stringColumn(16, bound);
     this.regionNames = stringColumn(16, bound);
     this.rowBounds = new Uint32Array(count + 1);
@@ -549,10 +553,13 @@ class NodeWriter implements NodeColumnWriter {
   }
 
   /** The position of the node being written: a border node has none, one left out is none, and
-   *  one given stands beside its `attachedTo`, which refuses it (ARCH-border-nodes-ride-sides). */
+   *  one given, as a container given, the bridge refuses beside its `attachedTo`
+   *  (ARCH-border-nodes-ride-sides). */
   private position(x: unknown, y: unknown, container: unknown, attachedTo: unknown): void {
     const bordered = typeof attachedTo === "string";
-    if (bordered) this.beside[this.at] = [x, y, container].findIndex((v) => !absent(v)) + 1;
+    this.give(GIVEN.x, x);
+    this.give(GIVEN.y, y);
+    this.give(GIVEN.container, container);
     if (!bordered || !absent(x)) this.number(this.x, x, NodeField.X);
     if (!bordered || !absent(y)) this.number(this.y, y, NodeField.Y);
   }
@@ -731,11 +738,17 @@ class NodeWriter implements NodeColumnWriter {
     if (endsRow) this.endRow();
   }
 
+  /** Sets `bit` in `given` of the node being written where it gives `value` at all. */
+  private give(bit: number, value: unknown): void {
+    if (!absent(value)) this.given[this.at] = this.given[this.at]! | bit;
+  }
+
   border(attachedTo: unknown, side: unknown, offset: unknown): void {
+    // A side or an offset of a node that is no border node, which the bridge refuses.
+    this.give(GIVEN.side, side);
+    this.give(GIVEN.offset, offset);
     if (typeof attachedTo !== "string") {
       if (!absent(attachedTo)) this.refuse(NodeField.AttachedTo);
-      // A side or an offset of a node that is no border node, which refuses it.
-      else this.beside[this.at] = !absent(side) ? 4 : !absent(offset) ? 5 : 0;
       return;
     }
     this.hasAttached[this.at] = 1;
@@ -824,7 +837,7 @@ class NodeWriter implements NodeColumnWriter {
       attached,
       side: this.side.column(this.at),
       offset: this.offset.subarray(0, this.at),
-      beside: this.beside.subarray(0, this.at),
+      given: this.given.subarray(0, this.at),
       attachedMissing,
     };
   }

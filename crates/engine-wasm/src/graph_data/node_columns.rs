@@ -134,31 +134,24 @@ pub struct NodeColumns<'a> {
     pub regions: RegionColumns<'a>,
     /// Per node whether it is a border node, 1 or 0; the slot of the node it is attached to,
     /// which the snapshot found by its identifier among the nodes, or `CANVAS` where it names
-    /// none; its side as the code of `SideCode`; its offset as handed over; and the first of its
-    /// `x`, `y`, and `container` that stands beside its `attachedTo`, 1, 2, and 3, or of a node
-    /// that is no border node its `side` or `offset`, 4 or 5, or 0
+    /// none; its side as the code of `SideCode`; its offset as handed over; and per node which of
+    /// its `x`, `y`, `container`, `side`, and `offset` its data gives at all, by the bits
+    /// `Given::of_bits` reads, which the rule of its attachment refuses by
     /// (ARCH-border-nodes-ride-sides). `attached_missing` is the identifier the first border
     /// node attached to no node names, in slot order.
     pub has_attached: &'a [u8],
     pub attached: &'a [u32],
     pub side: &'a [u8],
     pub offset: &'a [f64],
-    pub beside: &'a [u8],
+    pub given: &'a [u8],
     pub attached_missing: Option<&'a str>,
     pub content: ContentColumns<'a>,
     pub refused: Option<Refused>,
 }
 
-/// The fields of a node that may stand beside its `attachedTo`, by their codes in `beside`.
-/// Of a node that is no border node, a `side` or an `offset` it may not have.
-const BESIDE: [Option<&str>; 6] = [
-    None,
-    Some("x"),
-    Some("y"),
-    Some("container"),
-    Some("side"),
-    Some("offset"),
-];
+/// The bits of the column `given`: `x`, `y`, `container`, `side`, and `offset`, which `Given`
+/// reads.
+const GIVEN_BITS: u8 = 0b1_1111;
 
 /// Columns of the nodes that do not fit together, which the shell never hands over.
 pub(super) fn unfit() -> GraphDataProblem {
@@ -267,16 +260,13 @@ impl NodeColumns<'_> {
             && self.attached.len() == count
             && self.side.len() == count
             && self.offset.len() == count
-            && self.beside.len() == count
+            && self.given.len() == count
             && self.has_attached.iter().all(|&byte| byte <= 1)
             && self
                 .side
                 .iter()
                 .all(|&code| code <= SideCode::Unnamed as u8)
-            && self
-                .beside
-                .iter()
-                .all(|&code| usize::from(code) < BESIDE.len())
+            && self.given.iter().all(|&bits| bits & !GIVEN_BITS == 0)
             && missing == self.attached_missing.is_some();
         let fit = bordered
             && numbers.iter().all(|&len| len == count)
@@ -422,15 +412,6 @@ impl NodeColumns<'_> {
         }
     }
 
-    /// The field, `side` or `offset`, that the node at `index`, no border node, may not have, or
-    /// none (ARCH-border-nodes-ride-sides).
-    pub(super) fn not_border(&self, index: usize) -> Option<&'static str> {
-        let beside = usize::from(self.beside[index]);
-        (self.has_attached[index] == 0 && beside >= 4)
-            .then(|| BESIDE[beside])
-            .flatten()
-    }
-
     /// The nodes with every field read, their identifiers mapped onto the string Rust holds.
     pub(super) fn nodes(&self) -> Result<Vec<Node<'_>>, GraphDataProblem> {
         let ids = values(self.ids, self.id_bounds)?;
@@ -446,7 +427,6 @@ impl NodeColumns<'_> {
                         Ok::<_, GraphDataProblem>(Border {
                             side: (*side).into(),
                             offset: self.offset[i],
-                            beside: BESIDE[usize::from(self.beside[i])],
                         })
                     })
                     .transpose()?;

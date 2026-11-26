@@ -692,7 +692,7 @@ function nodeValues(nodes: NodeColumns) {
     nodes.attached,
     nodes.side,
     nodes.offset,
-    nodes.beside,
+    nodes.given,
     nodes.attachedMissing,
     c.rowBounds,
     c.elementBounds,

@@ -658,8 +658,9 @@ impl Engine {
     /// units, the numbers as `Float64Array`, a height its data gives with a byte that says whether
     /// it does, whether it is resizable as a byte, the node shapes as the codes of `NodeShapeCode`,
     /// the outlines as the codes of `OutlineCode` with the dash and the gap of a dashed one,
-    /// per border node the slot it is attached to, its side, its offset, and what stands beside
-    /// its `attachedTo`, with the identifier the first one attached to no node names
+    /// per border node the slot it is attached to, its side, and its offset, per node which of its
+    /// `x`, `y`, `container`, `side`, and `offset` it gives, with the identifier the first border
+    /// node attached to no node names
     /// (ARCH-border-nodes-ride-sides), the content as the columns of `ContentColumns`, a byte per
     /// row saying whether it is a separator among them, its texts
     /// in pieces as the identifiers are,
@@ -720,7 +721,7 @@ impl Engine {
         attached: &[u32],
         side: &[u8],
         offset: &[f64],
-        beside: &[u8],
+        given: &[u8],
         attached_missing: Option<String>,
         row_bounds: Vec<u32>,
         element_bounds: Vec<u32>,
@@ -863,7 +864,7 @@ impl Engine {
             attached,
             side,
             offset,
-            beside,
+            given,
             attached_missing: attached_missing.as_deref(),
             content: content.view(),
             refused,
@@ -1486,16 +1487,12 @@ impl Engine {
         nest: (Option<u32>, Option<u32>),
     ) -> Result<u32, GraphDataProblem> {
         let units = self.content.units();
-        let (slot, content) = add_node_to(&mut self.graph, node, nest, &self.fonts, units)?;
-        self.content.set(slot, content);
-        // Read again, as `add_node_to` took them, for the code units of their names.
-        let id = node.id.0.as_deref().unwrap_or_default();
-        let names = graph_data::regions_of(id, 0, &node.divide, &node.regions)
-            .map(|(_, regions)| regions.iter().map(graph_data::Region::name_units).collect())
-            .unwrap_or_else(|_| Vec::new());
-        let regions = self.graph.regions_of(slot);
-        self.content.set_regions(regions.into_iter().zip(names));
-        Ok(slot)
+        let added = add_node_to(&mut self.graph, node, nest, &self.fonts, units)?;
+        self.content.set(added.slot, added.content);
+        let regions = self.graph.regions_of(added.slot);
+        self.content
+            .set_regions(regions.into_iter().zip(added.names));
+        Ok(added.slot)
     }
 
     /// `updateNode` of the node `id` in `slot` by `patch`, read: its strings of content counted on

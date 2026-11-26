@@ -123,7 +123,7 @@ pub(crate) struct OwnedColumns {
     pub(super) attached: Vec<u32>,
     pub(super) side: Vec<u8>,
     pub(super) offset: Vec<f64>,
-    pub(super) beside: Vec<u8>,
+    pub(super) given: Vec<u8>,
     pub(super) attached_missing: Option<String>,
     /// The identifier each border node names, resolved once every node is written.
     attached_ids: Vec<Option<String>>,
@@ -270,7 +270,7 @@ impl OwnedColumns {
                 columns.on_canvas();
                 columns.resizable.push(0);
                 columns.divide.push(0);
-                columns.no_border();
+                columns.no_border(0);
                 columns.content.end_node();
                 continue;
             };
@@ -391,26 +391,28 @@ impl OwnedColumns {
         }
     }
 
-    /// Writes the next node as no border node.
-    fn no_border(&mut self) {
+    /// Writes the next node as no border node, its data giving the fields of the bits `given`.
+    fn no_border(&mut self, given: u8) {
         self.has_attached.push(0);
         self.attached.push(0);
         self.side.push(0);
         self.offset.push(0.0);
-        self.beside.push(0);
+        self.given.push(given);
         self.attached_ids.push(None);
     }
 
     /// Writes the attachment of the node at `index`, `node`, as the snapshot does
     /// (ARCH-border-nodes-ride-sides): its `attachedTo`, resolved once every node is written; its
     /// side as its code, `Unnamed` where missing or of another type; its offset, its refusal named
-    /// where missing or of another type; and the first of `x`, `y`, and `container` beside it.
+    /// where missing or of another type; and of any node which of `x`, `y`, `container`, `side`,
+    /// and `offset` it gives.
     fn push_border(&mut self, index: u32, node: &NodeInput) {
+        let given = super::item::given_of(node).bits();
         let Some(Some(on)) = node.attached_to.0.clone() else {
             if node.attached_to.0.is_none() {
                 self.refuse_at(index, NodeField::AttachedTo);
             }
-            self.no_border();
+            self.no_border(given);
             return;
         };
         self.has_attached.push(1);
@@ -434,12 +436,7 @@ impl OwnedColumns {
                 self.offset.push(f64::NAN);
             }
         }
-        let beside = [node.x.0, node.y.0]
-            .iter()
-            .position(|value| matches!(value, Some(Some(_))))
-            .map(|at| at as u8 + 1)
-            .or_else(|| matches!(node.container.0, Some(Some(_))).then_some(3));
-        self.beside.push(beside.unwrap_or(0));
+        self.given.push(given);
     }
 
     /// Resolves the `attachedTo` of each border node against the identifiers of the nodes, as the
@@ -545,7 +542,7 @@ impl OwnedColumns {
             attached: &self.attached,
             side: &self.side,
             offset: &self.offset,
-            beside: &self.beside,
+            given: &self.given,
             attached_missing: self.attached_missing.as_deref(),
             content: self.content.view(),
             refused: self.refused,

@@ -360,3 +360,30 @@ describe("a node's node shape", () => {
     expect(store.getState()).toBe(before);
   });
 });
+
+describe("addNode's container", () => {
+  test("that the map does not hold is refused by the bridge after the node's other fields, as a load refuses it", () => {
+    // Verifies: ARCH-one-workspace-per-example, API-edits-report-nested-changes
+    const { store, host } = editing();
+    const before = store.getState();
+    const nowhere = { ...node("c"), container: "z" } as NodeData;
+    expect(refusal(() => host.addNode(nowhere))).toEqual({
+      kind: "invalidContainer",
+      node: "c",
+      field: "container",
+      expected: "the identifier of a node of the graph",
+    });
+    // A width not finite is refused first, by the node, as a load refuses it.
+    const wide = { ...nowhere, width: Number.NaN } as NodeData;
+    const invalidSize = { kind: "invalidSize", node: "c" };
+    expect(refusal(() => host.addNode(wide))).toEqual(invalidSize);
+    expect(refusal(() => host.load({ nodes: [node("a"), wide], edges: [] }))).toEqual(invalidSize);
+    // A border node beside a container the map does not hold is refused by that container.
+    const pin = { id: "p", width: 10, content: [], attachedTo: "a", side: "top" as const };
+    const placed = { ...pin, offset: 0, container: "z" } as unknown as NodeData;
+    const attachment = { kind: "invalidAttachment", node: "p", field: "container" };
+    expect(refusal(() => host.addNode(placed))).toEqual(attachment);
+    expect(refusal(() => host.load({ nodes: [node("a"), placed], edges: [] }))).toEqual(attachment);
+    expect(store.getState()).toBe(before);
+  });
+});

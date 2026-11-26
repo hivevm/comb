@@ -1,6 +1,7 @@
-//! `updateNode`: a patch of a node checked by `patch_of` as a load checks a node, given to the node
-//! in the graph and laid out anew as a load lays a node out, and answered with what the content
-//! the bridge keeps takes of it.
+//! `updateNode`: a patch of a node, its fields read and checked by `patch_of` and then held, by
+//! `update_node_in`, to the graph's size, the budget of content, the rule of its attachment, and
+//! the world, in the order a load checks a node; given to the node in the graph and laid out anew
+//! as a load lays a node out, and answered with what the content the bridge keeps takes of it.
 
 use comb_engine::content::Fonts;
 use comb_engine::geometry::Side;
@@ -8,8 +9,8 @@ use comb_engine::graph::{Axis, DivideError, Divided, Graph, Place, RegionSlots, 
 use comb_engine::shape::NodeShape;
 
 use super::{
-    Checked, ContentData, GraphDataProblem, NodePatch, Region, check_graph_size, content_top,
-    division_problem, malformed, node_height, parts_of, patch_of, within_budget, within_by_height,
+    Checked, ContentData, GraphDataProblem, NodePatch, Region, check_attachment, check_graph_size,
+    checked_height, content_top, division_problem, malformed, names_within, parts_of, patch_of,
     within_world_divided,
 };
 
@@ -94,7 +95,7 @@ pub(crate) fn update_node_in(
         fonts,
         besides,
     )?;
-    if patched.is_empty() {
+    if patched.is_inert() {
         return Ok(Updated::default());
     }
     if !graph.holds_node(slot) {
@@ -111,15 +112,14 @@ pub(crate) fn update_node_in(
         let nodes = f64::from(graph.nodes_in_use()) + regions.len() as f64 - old as f64;
         check_graph_size(nodes, 0.0)?;
         // Their names count against the budget of content beside the node's content.
-        let names: u64 = regions.iter().map(Region::name_units).sum();
         let content = patched
             .content
             .as_ref()
             .map_or(held.units, |(checked, _)| checked.units);
-        if names > 0 {
-            within_budget(id, besides + content + names)?;
-        }
+        names_within(id, besides + content, regions)?;
     }
+    // Then the rule of its attachment, after the budget, as a load and `addNode` check a node.
+    check_attachment(id, place.is_some(), patched.given)?;
     // The height the node then has, never less than its content, old or new, needs.
     let given = patched.height.or_else(|| graph.given_height(slot));
     let laid = patched.content.as_ref().map_or_else(
@@ -130,9 +130,8 @@ pub(crate) fn update_node_in(
         |&(_, laid)| laid,
     );
     let width = graph.sizes()[slot as usize * 2];
-    let height = node_height(shape, width, laid, given);
     let at = [0, 1].map(|axis| graph.positions()[slot as usize * 2 + axis]);
-    within_by_height(id, at[1], height)?;
+    let height = checked_height(id, shape, [at[1], width], laid, given)?;
     let top = content_top(shape, width, laid);
     if let Some((divide, regions)) = &patched.regions {
         within_world_divided(id, *divide, at, [width, height], top, regions)?;

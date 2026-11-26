@@ -360,9 +360,10 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   take them as the node's `regions`, which `api` flattens into one list, each region after the one
   it lies in, so that no walk over regions recurses; `updateNode` divides the node anew and returns
   what went with a region left out, and a region's name counts against the budget of content; a load
-  takes the border nodes as columns of their own, the slot each rides, its side, its offset, and
-  what stands beside its `attachedTo`, `addNode` takes the slot of the node it rides beside its
-  container, `updateNode` sets a border node's `side` and `offset`, `borderOf` names where one sits,
+  takes the border nodes as columns of their own, the slot each rides, its side, and its offset, and
+  per node which of its `x`, `y`, `container`, `side`, and `offset` it gives, `addNode` takes the
+  slot of the node it rides beside its container, a container `api`'s map does not hold as
+  `NO_SLOT`, `updateNode` sets a border node's `side` and `offset`, `borderOf` names where one sits,
   and `slide` drags one to the point of the outline nearest the pointer; a load, `addNode`, and
   `updateNode` take a node's `outline` and a content row's separator byte, and `innerOf` names the
   inner rectangle a node's content lies in, a frame's tab; `setLabelSize` takes the measure of a
@@ -393,7 +394,9 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   `limits` holds the limits of a load, `field` the lenient reading of a field, `input` the types the
   host application hands over, `strings` the decoding of every string column, `node_columns` and
   `edge_columns` the columns of a load's nodes and edges, `problem` the refusals, `item` the reading
-  of a node or an edge, `checks` the rules of each, `load` a load and `addNode`, `edit` `addEdge`
+  of a node or an edge, `checks` the rules of each, each rule of a node, its attachment and its
+  container among them, one function a load, `addNode`, and `updateNode` reach alike, `load` a load
+  and `addNode`, `edit` `addEdge`
   and the patches, `update` the work of `updateNode`, a patch given to the graph and answered with
   what the content `kept` holds takes of it, `regions` the regions of a divided node as `addNode`,
   `updateNode`, and a load's columns hand them over, checked and built into node slots of their

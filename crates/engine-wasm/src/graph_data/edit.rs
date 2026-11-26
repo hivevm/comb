@@ -15,8 +15,8 @@ use serde::{Deserialize, Deserializer};
 use tsify::Tsify;
 
 use super::checks::{
-    arrowhead_of, color_of, dash_of, edge_end_field, edge_ids_of, given_height, label_ids_of,
-    label_placements, outline_of, spec_of,
+    Given, arrowhead_of, color_of, dash_of, divided, edge_end_field, edge_ids_of, given_height,
+    label_ids_of, label_placements, outline_of, spec_of,
 };
 use super::edge_columns::IdLengths;
 use super::item::{EndRead, Item, content_of, edge_of, labels_of};
@@ -355,12 +355,18 @@ pub(crate) struct Patched {
     pub offset: Option<f64>,
     /// How the node's outline is to be drawn, none where the patch keeps it.
     pub outline: Option<shape::Outline>,
+    /// What the patch gives that the rule of the node's attachment reads, which `update_node_in`
+    /// checks after the budget, as a load checks a node (ARCH-border-nodes-ride-sides).
+    pub given: Given,
 }
 
 impl Patched {
-    /// Whether the patch set nothing.
-    pub(crate) const fn is_empty(&self) -> bool {
-        self.content.is_none()
+    /// Whether the patch is inert: it sets nothing, and gives no side or offset, which the rule
+    /// of the attachment of a node that is no border node refuses.
+    pub(crate) const fn is_inert(&self) -> bool {
+        !self.given.side
+            && !self.given.offset
+            && self.content.is_none()
             && self.height.is_none()
             && self.resizable.is_none()
             && self.regions.is_none()
@@ -375,7 +381,8 @@ impl Patched {
 /// on from `held`, the code units of content the graph holds besides the node's, laid out in
 /// `fonts`; its height as a load checks a node's; whether the node is resizable; and its regions
 /// as a load checks a node's, divided as the patch says or, where it says nothing of that, as
-/// `current`; or names its first offending field.
+/// `current`; and what it gives that the rule of the attachment of a node, a border node where
+/// `bordered`, reads; or names its first offending field.
 pub(crate) fn patch_of(
     node: &str,
     (shape, bordered): (NodeShape, bool),
@@ -388,6 +395,7 @@ pub(crate) fn patch_of(
     let mut item = Item::new(GraphList::Nodes, 0);
     item.id = Some(node);
     let (mut divide, mut regions) = (None, None);
+    let mut given = Given::default();
     for (field, value) in &patch.0 {
         match value {
             PatchValue::Content(value) => {
@@ -400,16 +408,16 @@ pub(crate) fn patch_of(
             }
             PatchValue::Resizable(value) => {
                 let resizable = item.read("resizable", *value, A_FLAG)?;
-                if resizable && bordered {
-                    return Err(attachment(node, "resizable"));
-                }
+                given.resizable = resizable;
                 patched.resizable = Some(resizable);
             }
-            // Only a border node has a side and an offset.
-            PatchValue::Side(value) if bordered => {
+            // Only a border node has a side and an offset; any other gives them, of any type.
+            PatchValue::Side(_) if !bordered => given.side = true,
+            PatchValue::Offset(_) if !bordered => given.offset = true,
+            PatchValue::Side(value) => {
                 patched.side = Some(item.read("side", *value, A_BORDER_SIDE)?.into());
             }
-            PatchValue::Offset(value) if bordered => {
+            PatchValue::Offset(value) => {
                 let offset = item.read("offset", *value, A_NUMBER)?;
                 if !offset.is_finite() {
                     return Err(GraphDataProblem::NonFiniteCoordinate {
@@ -424,8 +432,6 @@ pub(crate) fn patch_of(
             }
             PatchValue::Divide(value) => divide = Some(value),
             PatchValue::Regions(value) => regions = Some(value),
-            // A node that is no border node has neither (ARCH-border-nodes-ride-sides).
-            PatchValue::Side(_) | PatchValue::Offset(_) => return Err(attachment(node, field)),
             PatchValue::Other => {
                 return Err(GraphDataProblem::UnknownPatchField {
                     node: node.to_owned(),
@@ -436,27 +442,17 @@ pub(crate) fn patch_of(
     }
     // The regions of a patch replace the node's, divided as the patch says or as the node is; a
     // division without regions divides it into none.
-    // An empty list is no regions, as a load reads it.
-    if bordered && regions.is_some_and(|r| matches!(&r.0, Some(Some(list)) if !list.is_empty())) {
-        return Err(attachment(node, "regions"));
-    }
     if divide.is_some() || regions.is_some() {
         let none = Field(Some(None));
         let divide = divide.map_or(Field(Some(current.map(Divide::from))), |d| *d);
         let (axis, list) = regions_of(node, 0, &divide, regions.unwrap_or(&none))?;
         let mut taken = HashSet::from([node.to_owned()]);
         check_regions(node, 0, axis, &list, &mut taken)?;
+        given.regions = divided(axis, &list).is_some();
         patched.regions = Some((axis, list));
     }
+    patched.given = given;
     Ok(patched)
-}
-
-/// The refusal of the border node `node` by its field `field` (ARCH-border-nodes-ride-sides).
-fn attachment(node: &str, field: &str) -> GraphDataProblem {
-    GraphDataProblem::InvalidAttachment {
-        node: node.to_owned(),
-        field: field.to_owned(),
-    }
 }
 
 // The malformed-data tests of graph data verify API-bridge-columns-carry-nesting (see

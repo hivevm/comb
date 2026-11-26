@@ -2564,7 +2564,7 @@ proptest! {
             .map_err(unshaped)
             .and_then(|node| add_node_to(&mut graph, &node, (None, None), &Fonts::default(), 0));
         match (added, as_load) {
-            (Ok((slot, _)), Ok((positions, sizes))) => {
+            (Ok(super::load::Added { slot, .. }), Ok((positions, sizes))) => {
                 prop_assert_eq!(slot, 1);
                 prop_assert_eq!(&graph.positions()[2..], &positions[..]);
                 prop_assert_eq!(&graph.sizes()[2..], &sizes[..]);

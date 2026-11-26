@@ -32,7 +32,6 @@ import type {
   NodeData,
   NodePatch,
   NodeSizing,
-  NodeView,
   Divided,
   KeptEdge,
   KeptGraph,
@@ -338,34 +337,14 @@ function keptOf(regions: unknown, old: readonly number[], state: GraphState): Ui
   });
 }
 
-/** What `invalidContainer` says a node's container has to be, as a load says it
- *  (ARCH-engine-edits-nested-graph). */
-const A_NODE_OF_THE_GRAPH = "the identifier of a node of the graph";
-const A_MARKED_CONTAINER = "the identifier of a node marked isContainer";
-const AN_UNDIVIDED =
-  "the identifier of a container or a region, not of a node divided into regions";
-
-/** What `invalidContainer` says a container has to be where `view` is none, or none where it may
- *  hold a node: a node or a region divided into regions holds its regions alone
- *  (ARCH-regions-are-container-slots, *Regions in a slot*). */
-function refusedAs(view: NodeView | undefined): string | undefined {
-  if (view === undefined) return A_NODE_OF_THE_GRAPH;
-  if ((view.divide ?? view.region?.divide) !== undefined) return AN_UNDIVIDED;
-  return view.isContainer === true ? undefined : A_MARKED_CONTAINER;
-}
-
-/** The slot of the container the node `snapshot` names in the map of `state`, or none on the
- *  canvas; refuses a container the graph does not hold, or one that is no container, as a load
- *  refuses it (API-edits-report-nested-changes). A container that is no string the bridge refuses
- *  by its field. */
+/** The slot of the container the node `snapshot` names in the map of `state`, `NO_SLOT` where
+ *  the map holds no such identifier, or none on the canvas. The bridge crate refuses a container
+ *  by the one rule a load refuses it by, `NO_SLOT` as no node of the graph
+ *  (API-edits-report-nested-changes), and a container that is no string by its field. */
 function containerOf(snapshot: unknown, state: GraphState): number | undefined {
-  const { id, container } = snapshot as { id?: unknown; container?: unknown };
+  const { container } = snapshot as { container?: unknown };
   if (typeof container !== "string") return undefined;
-  const slot = state.slots.get(container);
-  const expected = refusedAs(slot === undefined ? undefined : state.nodes[slot]!);
-  if (expected === undefined) return slot;
-  const node = typeof id === "string" ? id : "";
-  throw new GraphDataError({ kind: "invalidContainer", node, field: "container", expected });
+  return state.slots.get(container) ?? NO_SLOT;
 }
 
 /** The slot of the node the border node `snapshot` names by its `attachedTo` in the map of
@@ -381,9 +360,10 @@ function attachedOf(snapshot: unknown, state: GraphState): number | undefined {
   throw new GraphDataError({ kind: "missingNode", borderNode, node: attachedTo });
 }
 
-/** `addNode`: an identifier the map holds already refused, and a container it does not hold as
- *  one; the engine chooses the slot the store keeps the node in, and places it relative to its
- *  container (ARCH-engine-edits-nested-graph). */
+/** `addNode`: an identifier the map holds already refused; the bridge refuses a container that
+ *  cannot hold the node, one the map does not hold among them; the engine chooses the slot the
+ *  store keeps the node in, and places it relative to its container
+ *  (ARCH-engine-edits-nested-graph). */
 function addNode({ store, bridge, limits }: Editing, node: unknown): void {
   edit(store, bridge, {
     read: () => nodeSnapshotOf(node, limits),
