@@ -450,8 +450,13 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   tells a click on the element of the node's content under the release, hit anew, through the
   `click` of the gestures' `Context`; a border node it slides along its node's outline by the
   engine's `slide` instead, asks no veto, and records `nodeMoved` at the release only where its
-  side or offset changed; a drag signals as dragged the slots `removalOf` names, a node's content
-  and border nodes among them; a cancelled pointer ends a gesture as no release;
+  side or offset changed; a cancelled pointer ends a gesture as no release.
+  `drag.ts` holds the drag signal of the moving layer, which no other module calls: each gesture
+  that moves nodes, a node's or a border node's drag, a resize, and a line's drag, hands a `drag`
+  its engine call of each move and what its release records; the first move signals as dragged the
+  slots `removalOf` names, a node's content and border nodes among them, and `takenOf` says what
+  takes a gesture's node. `regions.ts` holds the places of a divided node's regions, which a resize
+  and a line's drag compare at the release; no gesture imports another gesture's module;
   `pan.ts` selects an edge on press and pans once the pointer has moved beyond the same slop, or
   clears the selection on the empty canvas and pans; `index.ts` zooms around the pointer and sets
   the cursor over what a press would hit;

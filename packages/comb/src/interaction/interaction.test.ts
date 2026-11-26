@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { readdirSync, readFileSync } from "node:fs";
 import type { Application } from "pixi.js";
 import { attachInteraction, type Connect, type ContainerMove, type MoveInto } from ".";
 import { editorsOf } from "../api/editors";
@@ -862,5 +863,45 @@ describe("interaction drops a node by what the veto's call changed and where the
     const { drag, calls, changes, asked } = dropping(() => true, null);
     drag();
     expect([asked, calls, changes]).toEqual([[], [], [moved]]);
+  });
+});
+
+/** The modules of `interaction` beside this file, tests aside, each by its file name and its
+ *  source. */
+const modules = readdirSync(new URL(".", import.meta.url))
+  .filter((name) => name.endsWith(".ts") && !name.endsWith(".test.ts"))
+  .sort()
+  .map((name) => ({ name, source: readFileSync(new URL(name, import.meta.url), "utf8") }));
+
+describe("the drag signal of the moving layer is one module's", () => {
+  test("only the drag module calls the store's dragStarted, dragMoved, and dragEnded", () => {
+    // Verifies: REN-moving-layer-moves-content
+    const signalling = modules
+      .filter(({ source }) => /\.(dragStarted|dragMoved|dragEnded)\(/.test(source))
+      .map(({ name }) => name);
+    expect(signalling).toEqual(["drag.ts"]);
+  });
+
+  test("no gesture imports another gesture's module", () => {
+    // Verifies: REN-moving-layer-moves-content
+    // A gesture is a module that builds a `Gesture`, the dispatcher in `index.ts` aside.
+    const gestures = new Set(
+      modules
+        .filter(({ name, source }) => {
+          const built = /import [^;]*\bGesture\b[^;]* from "\.\/gesture";/.test(source);
+          return name !== "index.ts" && built;
+        })
+        .map(({ name }) => name),
+    );
+    expect(gestures.size).toBeGreaterThan(1);
+    const crossing = modules
+      .filter(({ name }) => gestures.has(name))
+      .flatMap(({ name, source }) =>
+        [...source.matchAll(/ from "\.\/([\w-]+)";/g)]
+          .map((found) => `${found[1]}.ts`)
+          .filter((imported) => gestures.has(imported))
+          .map((imported) => `${name} imports ${imported}`),
+      );
+    expect(crossing).toEqual([]);
   });
 });

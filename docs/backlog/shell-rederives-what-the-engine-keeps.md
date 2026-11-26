@@ -8,5 +8,5 @@
   - The store carries bookkeeping of the region tree (`regionViewsOf`, `withRegions`) beside the
     engine's slots.
 - **Where:** `packages/comb/src/interaction/resize.ts`,
-  `packages/comb/src/interaction/region-line.ts`, `packages/comb/src/api/changes.ts`,
+  `packages/comb/src/interaction/regions.ts`, `packages/comb/src/api/changes.ts`,
   `packages/comb/src/store/index.ts`.

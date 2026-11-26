@@ -13,6 +13,7 @@
 import { positionAt, type BorderPlace, type Hit } from "../bridge";
 import type { GraphState } from "../store";
 import { toWorld } from "../store/viewport";
+import { drag, takenOf } from "./drag";
 import { SLOP, type Context, type Gesture } from "./gesture";
 
 /** The node a drag moves: its slot, its identifier, the container it lay in at the press, or
@@ -23,15 +24,6 @@ interface Dragged {
   readonly own: string | null;
   readonly x: number;
   readonly y: number;
-}
-
-/** The slots a drag of the node in `slot` moves: the node, where it is a container everything it
- *  holds at every depth, and the border nodes of each, as the engine names them
- *  (REN-moving-layer-moves-content). */
-export function draggedOf({ bridge }: Pick<Context, "store" | "bridge">, slot: number): number[] {
-  // The nodes a removal of the node would take along are those it holds, at every depth, and
-  // their border nodes: the one export that names them, read once a drag, its edges unused.
-  return [...bridge.removalOf(Uint32Array.of(slot)).nodes];
 }
 
 /** The world position of the top left corner of the container `container`, or the origin for the
@@ -113,12 +105,6 @@ function clickOn({ store, click, hitAt }: Context, slot: number, id: string) {
   };
 }
 
-/** A load, or a removal of the node `id` in `slot`, which a node that took its slot does not make
- *  good. */
-function takenOf(slot: number, id: string) {
-  return (state: GraphState) => state.change?.kind === "loaded" || state.nodes[slot]?.id !== id;
-}
-
 /** Whether a border node sits at `one` and at `other` alike, side and offset. */
 function samePlace(one: BorderPlace | undefined, other: BorderPlace | undefined): boolean {
   return one?.side === other?.side && one?.offset === other?.offset;
@@ -137,7 +123,8 @@ function borderDrag(
 ): Gesture {
   const { store, bridge } = context;
   const pressed = bridge.borderOf(slot);
-  let [waiting, dragging] = [true, false];
+  let waiting = true;
+  const dragging = drag(context, slot);
   const clickAt = clickOn(context, slot, id);
   const taken = takenOf(slot, id);
   return {
@@ -150,18 +137,14 @@ function borderDrag(
       const world = toWorld(store.getState().viewport, x, y);
       // A finite point (API-shell-mistake-refused-as-shells), as `targetOf` guards it.
       if (!Number.isFinite(world.x) || !Number.isFinite(world.y)) return;
-      bridge.slide(slot, world.x, world.y);
-      if (!dragging) store.getState().dragStarted(draggedOf(context, slot));
-      else store.getState().dragMoved();
-      dragging = true;
+      dragging.move(() => bridge.slide(slot, world.x, world.y));
     },
     end(released, at) {
-      if (dragging) {
-        store.getState().dragEnded();
+      dragging.end(() => {
         const held = store.getState().nodes[slot]?.id === id;
         if (held && !samePlace(pressed, bridge.borderOf(slot)))
           store.getState().nodeMoved(id, null);
-      }
+      });
       if (released && waiting && at) clickAt(at.x, at.y);
     },
     taken,
@@ -186,6 +169,7 @@ export function nodeDrag(
   if (node.attachedTo !== undefined) return borderDrag(context, slot, id, pressX, pressY);
   let [lastX, lastY, waiting] = [pressX, pressY, true];
   let dragged: Dragged | undefined;
+  const dragging = drag(context, slot);
   const clickAt = clickOn(context, slot, id);
   const taken = takenOf(slot, id);
   return {
@@ -199,18 +183,16 @@ export function nodeDrag(
       [lastX, lastY] = [x, y];
       if (dx === 0 && dy === 0) return;
       const { scale } = store.getState().viewport;
-      const first = !dragged;
       dragged ??= pressedOf(context, slot, id);
       // A finite delta (API-shell-mistake-refused-as-shells): every writer of `viewport.scale` goes
       // through `clampScale`.
-      bridge.translate(new Uint32Array([slot]), dx / scale, dy / scale);
-      if (first) store.getState().dragStarted(draggedOf({ store, bridge }, slot));
-      else store.getState().dragMoved();
+      dragging.move(() => bridge.translate(new Uint32Array([slot]), dx / scale, dy / scale));
     },
     end(released, at) {
-      if (dragged) store.getState().dragEnded();
-      const held = store.getState().nodes[slot]?.id === id;
-      if (dragged && held) dropped(context, dragged, released ? at : undefined, taken);
+      dragging.end(() => {
+        const held = store.getState().nodes[slot]?.id === id;
+        if (dragged && held) dropped(context, dragged, released ? at : undefined, taken);
+      });
       if (released && waiting && at) clickAt(at.x, at.y);
     },
     taken,
