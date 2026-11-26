@@ -16,6 +16,7 @@ import {
 import engineUrl from "comb/engine.wasm?url";
 import {
   bridgeCalls,
+  edgeIndices,
   edgeVertices,
   gpuEdgeIndices,
   hitKind,
@@ -108,6 +109,7 @@ declare global {
     work: () => ReturnType<typeof work>;
     edgeVertices: () => ReturnType<typeof edgeVertices>;
     gpuEdgeIndices: () => ReturnType<typeof gpuEdgeIndices>;
+    edgeIndices: () => ReturnType<typeof edgeIndices>;
   }
 }
 
@@ -599,4 +601,5 @@ window.visibleRect = (margin) => visibleRect(comb, margin);
 window.work = () => work(comb);
 window.edgeVertices = () => edgeVertices(comb);
 window.gpuEdgeIndices = () => gpuEdgeIndices(comb);
+window.edgeIndices = () => edgeIndices(comb);
 window.loadReport = load();

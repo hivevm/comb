@@ -3,7 +3,7 @@
 // (G-11). A small shader leaves out the gaps of a dash pattern by the distance along the path. On
 // the Canvas 2D renderer a host application opts into (REN-webgl2-or-canvas-fallback), which runs
 // no shader, `EdgeFill` in `edges-canvas.ts` draws the layer instead.
-import { Container, Geometry, Mesh, Shader } from "pixi.js";
+import { Container, Geometry, Mesh, Shader, type Buffer } from "pixi.js";
 import type { EdgeMesh } from "../bridge";
 import type { EdgeData } from "../store";
 
@@ -138,6 +138,12 @@ export class MeshBuffers {
    *  the earlier ones marked too, and a `hide` keeps this mark instead of marking its own span
    *  (REN-moving-layer-moves-content). */
   private wholeMarked = 0;
+  /** The bytes of each buffer the last mark since the last draw covers. */
+  private marks = new Map<Buffer, number>();
+  /** How many bytes of the mesh the draws uploaded, each by the last mark of each buffer before
+   *  it: counted by Comb from what it hands PixiJS, with nothing internal to PixiJS, for the
+   *  testing entry. */
+  uploaded = 0;
   private arrays = {
     positions: new Float32Array(0),
     distances: new Float32Array(0),
@@ -169,6 +175,13 @@ export class MeshBuffers {
     }
   }
 
+  /** Marks the first `size` elements of the index buffer for upload. */
+  private markIndices(size: number): void {
+    const array = this.arrays.indices;
+    this.geometry.indexBuffer.setDataWithSize(array, size, true);
+    this.marks.set(this.geometry.indexBuffer, size * array.BYTES_PER_ELEMENT);
+  }
+
   private attribute(name: (typeof ATTRIBUTES)[number]["name"]) {
     return this.geometry.getAttribute(name).buffer;
   }
@@ -195,12 +208,13 @@ export class MeshBuffers {
       const data = this.view(from);
       const used = from === "colors" ? vertices * 4 : vertices * values;
       this.attribute(name).setDataWithSize(data, used, true);
+      this.marks.set(this.attribute(name), used * data.BYTES_PER_ELEMENT);
     }
     const array = this.arrays.indices;
     array.set(mesh.indices);
     if (this.indices > indices) array.fill(0, indices, this.indices);
     this.wholeMarked = Math.max(indices, this.indices, this.wholeMarked);
-    this.geometry.indexBuffer.setDataWithSize(array, this.wholeMarked, true);
+    this.markIndices(this.wholeMarked);
     this.vertices = vertices;
     this.indices = indices;
   }
@@ -208,6 +222,8 @@ export class MeshBuffers {
   /** Takes up a draw of the mesh, which uploaded what was marked. */
   drawn(): void {
     this.wholeMarked = 0;
+    for (const bytes of this.marks.values()) this.uploaded += bytes;
+    this.marks.clear();
   }
 
   /** Leaves the triangles of `ranges` of the indices out, as empty triangles, and marks the one
@@ -223,11 +239,12 @@ export class MeshBuffers {
       [first, last] = [Math.min(first, start), Math.max(last, end)];
     }
     if (this.wholeMarked > 0) {
-      this.geometry.indexBuffer.setDataWithSize(array, this.wholeMarked, true);
+      this.markIndices(this.wholeMarked);
       return;
     }
     const bytes = array.BYTES_PER_ELEMENT;
     this.geometry.indexBuffer.update((last - first) * bytes, first * bytes);
+    this.marks.set(this.geometry.indexBuffer, (last - first) * bytes);
   }
 }
 
@@ -287,6 +304,12 @@ export class EdgesContainer extends Container implements EdgeLayer {
   size(): MeshSize {
     const { vertices, indices } = this.buffers;
     return { vertices, indices, capacity: this.buffers.capacity() };
+  }
+
+  /** How many bytes of the mesh its draws uploaded, by what Comb marked for upload; see
+   *  `MeshBuffers.uploaded`. */
+  uploaded(): number {
+    return this.buffers.uploaded;
   }
 
   /** How many triangles the mesh drew last. */

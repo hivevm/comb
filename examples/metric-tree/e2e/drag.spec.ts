@@ -267,10 +267,14 @@ test("a query during a drag uploads the whole new mesh, its indices all, not the
       queried: after.queries - before.queries,
       meshBytes: window.work().meshBytesUploaded - before.work.meshBytesUploaded,
       mesh: after.edgeMesh,
+      // What the GPU holds of the indices, whenever PixiJS uploaded them, and what Comb drew.
+      gpu: Array.from(window.gpuEdgeIndices().subarray(0, after.edgeMesh.indices)),
+      cpu: Array.from(window.edgeIndices()),
     };
   });
   await page.mouse.up();
   expect(render.queried).toBe(1);
+  expect(render.gpu).toEqual(render.cpu);
   // Positions, distances, colours, and dashes of each vertex, 24 bytes, and every index, 4.
   const { vertices, indices } = render.mesh;
   expect(render.meshBytes).toBeGreaterThanOrEqual(vertices * 24 + indices * 4);

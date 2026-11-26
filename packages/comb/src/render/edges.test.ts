@@ -50,6 +50,29 @@ test("a set before the draw marks what the sets since the last draw marked", () 
   expect(marked()).toBe(6);
 });
 
+test("a draw counts the bytes of each buffer's last mark, with no renderer to upload them", () => {
+  // Verifies: REN-moving-layer-moves-content
+  // The count is Comb's own, of what it hands PixiJS: it needs no buffer system of a renderer,
+  // nor any method internal to PixiJS, so it holds whatever version uploads the marks.
+  const buffers = new MeshBuffers(meshGeometry());
+  const hide = (slot: number) => buffers.hide(hiddenRanges(edges, starts, 12, new Set([slot])));
+  // Positions, distances, colours, and dashes of each vertex, 24 bytes, and each index, 4.
+  const whole = 8 * 24 + 12 * 4;
+  buffers.set(mesh);
+  hide(7);
+  expect(buffers.uploaded).toBe(0);
+  // The draw takes the set's marks of every buffer, which the hide kept for the indices.
+  buffers.drawn();
+  expect(buffers.uploaded).toBe(whole);
+  // A draw with nothing marked since the last one counts nothing.
+  buffers.drawn();
+  expect(buffers.uploaded).toBe(whole);
+  // A hide after a draw marks the span it hides alone, six indices.
+  hide(4);
+  buffers.drawn();
+  expect(buffers.uploaded).toBe(whole + 6 * 4);
+});
+
 test("a mesh's ascending edge slots hold a slot by halving, at either end and in between", () => {
   // Verifies: REN-moving-layer-moves-content
   const slots = Uint32Array.from([2, 5, 9, 40]);
