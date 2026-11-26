@@ -227,9 +227,10 @@ skimmed. The design revision drops what prevented nothing
   - a transition from a fork into a receive signal symbol, or from one into a join, since a receive
     signal is its transition's trigger and a fork's or a join's segment has none
     (`fork_segment_guards`, `join_segment_guards`);
-  - a transition from a pseudostate into a receive signal symbol, since a transition out of a
-    pseudostate has no trigger (`outgoing_pseudostates`), nor one out of an initial pseudostate
-    (`outgoing_from_initial`).
+  - a transition from an initial pseudostate into a receive signal symbol, since a transition out
+    of an initial pseudostate has no trigger (`outgoing_from_initial`);
+  - a transition from any other pseudostate into a receive signal symbol, since a transition out
+    of a pseudostate has no trigger (`outgoing_pseudostates`).
 
   The sidebar offers no trigger on a transition out of a pseudostate, nor on one into a join, and no
   guard on one out of an initial pseudostate or a fork, or into a join, by the same constraints.
