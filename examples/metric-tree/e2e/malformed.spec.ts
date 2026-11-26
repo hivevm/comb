@@ -1066,6 +1066,7 @@ for (const kind of HOSTILE) {
 /** The kinds of refusal `refusal` provokes. */
 type RefusalKind =
   | "bigX"
+  | "bigTitle"
   | "sharedTitle"
   | "symbolKey"
   | "hiddenKey"
@@ -1075,24 +1076,32 @@ type RefusalKind =
   | "loneSurrogateTitle"
   | "loneSurrogateKey";
 
-/** In the page: loads one node `a`, provokes the refusal of `kind`, and reports what it threw, how
- *  long it took, and what the canvas drew after a valid load that follows it. */
-async function refusal(kind: RefusalKind) {
+/** What `refusal` leaves in the page for `leastTurns`: the refusal it provokes, by a text, and
+ *  the long and the short text. */
+interface Refusing {
+  refuse: (big: string) => unknown;
+  texts: { long: string; short: string };
+}
+
+/** In the page: loads one node `a`, provokes the refusal of `kind` with a text of 50 million code
+ *  units and again with one of 1,001, one beyond the limit, what the bridge cuts a long text to,
+ *  and reports what each threw; it leaves the refusal and the texts in the page for
+ *  `leastTurns`. */
+function refusal(kind: RefusalKind) {
   const nodeAt = (id: string) => window.node(id);
   window.comb.load({ nodes: [nodeAt("a")], edges: [] });
-  const big = "\u4e00".repeat(50_000_000);
+  const long = "\u4e00".repeat(50_000_000);
+  const short = "\u4e00".repeat(1001);
   const textOf = (text: string) => [[{ kind: "text" as const, role: "title" as const, text }]];
   // A thrown value whose prototype chain runs the host's code.
-  const thrown = new Proxy(
-    {},
-    {
-      getPrototypeOf: () => {
-        throw new TypeError("host code");
-      },
-    },
-  );
-  const calls = {
+  const hostCode = () => {
+    throw new TypeError("host code");
+  };
+  const thrown = new Proxy({}, { getPrototypeOf: hostCode });
+  const callsWith = (big: string): Record<RefusalKind, () => void> => ({
     bigX: () => window.comb.load({ nodes: [{ ...nodeAt("a"), x: big as never }], edges: [] }),
+    bigTitle: () =>
+      window.comb.load({ nodes: [{ ...nodeAt("a"), content: textOf(big) }], edges: [] }),
     sharedTitle: () =>
       window.comb.load({
         nodes: Array.from({ length: 10_000 }, (_, i) => ({
@@ -1123,27 +1132,63 @@ async function refusal(kind: RefusalKind) {
         ],
         edges: [],
       }),
-  };
-  const start = performance.now();
-  let problem: unknown = null;
-  try {
-    calls[kind]();
-  } catch (error) {
-    problem =
-      error instanceof Error && error.name === "GraphDataError"
+  });
+  const refuse = (big: string) => {
+    try {
+      callsWith(big)[kind]();
+      return null;
+    } catch (error) {
+      return error instanceof Error && error.name === "GraphDataError"
         ? (error as Error & { problem: unknown }).problem
         : `untyped ${typeof error}`;
-  }
-  const ms = performance.now() - start;
-  window.comb.load({ nodes: [nodeAt("ok")], edges: [] });
-  await window.comb.whenRendered();
-  return { problem, ms, titles: window.inspect().nodes.map(({ title }) => title) };
+    }
+  };
+  Object.assign(window, { refuse, texts: { long, short } } satisfies Refusing);
+  // The first refusal of each text flattens the long one, which the page built by joining.
+  return { long: refuse(long), short: refuse(short) };
 }
 
-const REFUSALS: { name: string; kind: RefusalKind; problem: unknown }[] = [
+/** In the page: times the refusal `refusal` left with the long text and with the short one in
+ *  turns, five of each, every turn the same number of calls, enough for the short text's least
+ *  turn to span milliseconds, and reports the least turn of each. A refusal that reads no more of
+ *  a text than the limit allows does the same work for both, whatever the machine's load, and one
+ *  that reads the whole text does fifty thousand times as much. */
+function leastTurns() {
+  const { refuse, texts } = window as unknown as Refusing;
+  /** The milliseconds `calls` refusals with `big` take, or more than `enough` once they have. */
+  const turn = (big: string, calls: number, enough = Infinity) => {
+    const start = performance.now();
+    for (let call = 0; call < calls && performance.now() - start <= enough; call++) refuse(big);
+    return performance.now() - start;
+  };
+  // The least of three turns, so that a pause of the page does not settle the number of calls.
+  const leastOf = (big: string, calls: number) =>
+    Math.min(turn(big, calls), turn(big, calls), turn(big, calls));
+  let calls = 1;
+  while (calls < 65536 && leastOf(texts.short, calls) < 5) calls *= 2;
+  const least = { long: Infinity, short: Infinity };
+  for (let round = 0; round < 5; round++) {
+    least.short = Math.min(least.short, turn(texts.short, calls));
+    // A turn of the long text past four of the short one's least decides nothing more.
+    least.long = Math.min(least.long, turn(texts.long, calls, 4 * least.short));
+  }
+  return { least, calls };
+}
+
+/** In the page: what the canvas draws after a valid load of one node `ok`. */
+async function titlesAfterLoad() {
+  window.comb.load({ nodes: [window.node("ok")], edges: [] });
+  await window.comb.whenRendered();
+  return window.inspect().nodes.map(({ title }) => title);
+}
+
+/** Each refusal `refusal` provokes, with the problem it throws; `long` where it is handed the
+ *  text of 50 million code units, which the other refusals ignore. */
+const REFUSALS: { name: string; kind: RefusalKind; long: boolean; problem: unknown }[] = [
   {
     name: "a coordinate that is a string of 50 million characters",
     kind: "bigX",
+    long: true,
     problem: {
       kind: "invalidField",
       list: "nodes",
@@ -1154,8 +1199,22 @@ const REFUSALS: { name: string; kind: RefusalKind; problem: unknown }[] = [
     },
   },
   {
+    name: "a title of 50 million characters",
+    kind: "bigTitle",
+    long: true,
+    problem: {
+      kind: "contentTextTooLong",
+      node: "a",
+      row: 0,
+      column: 0,
+      field: "text",
+      limit: 1000,
+    },
+  },
+  {
     name: "a title of 50 million characters shared by 10,000 nodes",
     kind: "sharedTitle",
+    long: true,
     problem: {
       kind: "contentTextTooLong",
       node: "n0",
@@ -1168,21 +1227,25 @@ const REFUSALS: { name: string; kind: RefusalKind; problem: unknown }[] = [
   {
     name: "a patch with a Symbol key",
     kind: "symbolKey",
+    long: false,
     problem: { kind: "malformed", message: "comb: the patch has a key that is no string" },
   },
   {
     name: "a patch with a key that is not enumerable",
     kind: "hiddenKey",
+    long: false,
     problem: { kind: "unknownPatchField", node: "a", field: "id" },
   },
   {
     name: "a patch with a key of 50 million characters",
     kind: "hugeKey",
+    long: true,
     problem: { kind: "unknownPatchField", node: "a", field: "\u4e00".repeat(1001) },
   },
   {
     name: "identifiers that differ in a lone surrogate",
     kind: "loneSurrogateId",
+    long: false,
     problem: {
       kind: "invalidField",
       list: "nodes",
@@ -1194,6 +1257,7 @@ const REFUSALS: { name: string; kind: RefusalKind; problem: unknown }[] = [
   {
     name: "a title with a lone surrogate",
     kind: "loneSurrogateTitle",
+    long: false,
     problem: { kind: "invalidContentText", node: "a", row: 0, column: 0, field: "text" },
   },
   {
@@ -1201,28 +1265,43 @@ const REFUSALS: { name: string; kind: RefusalKind; problem: unknown }[] = [
     // string can carry it.
     name: "a patch with a key that holds a lone surrogate",
     kind: "loneSurrogateKey",
+    long: false,
     problem: { kind: "unknownPatchField", node: "a", field: "x\uFFFD" },
   },
   {
     name: "a getter that throws a Proxy",
     kind: "thrownProxy",
+    long: false,
     problem: { kind: "malformed", message: "comb: graph data could not be read" },
   },
 ];
 
-for (const { name, kind, problem } of REFUSALS) {
-  test(`refuses ${name} quickly with a typed problem, and the engine still loads`, async ({
+for (const { name, kind, long, problem } of REFUSALS) {
+  const cost = long ? " at the cost of a text one beyond the limit" : "";
+  test(`refuses ${name} with a typed problem${cost}, and the engine still loads`, async ({
     page,
   }) => {
     // Verifies: Q-7, ARCH-one-workspace-per-example
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
-    const result = await page.evaluate(refusal, kind);
+    const problems = await page.evaluate(refusal, kind);
+    const turns = long ? await page.evaluate(leastTurns) : undefined;
+    const titles = await page.evaluate(titlesAfterLoad);
     expect(errors).toEqual([]);
-    expect({ problem: result.problem, titles: result.titles }).toEqual({ problem, titles: ["ok"] });
-    // A text is handed over no longer than the limit allows, so its length costs nothing.
-    expect(result.ms).toBeLessThan(500);
+    expect({ problems, titles }).toEqual({
+      problems: { long: problem, short: problem },
+      titles: ["ok"],
+    });
+    if (!turns) return;
+    const { least, calls } = turns;
+    console.log(
+      `${kind}: ${calls} calls, least turn ${least.long.toFixed(2)} ms of 50 million, ${least.short.toFixed(2)} ms of 1,001`,
+    );
+    // A text is handed over no longer than the limit allows, so its length costs nothing: the
+    // long text costs what the short one does in the same page, decided by the work and not by
+    // the machine's load, which slows both turns alike.
+    expect(least.long).toBeLessThan(4 * least.short);
   });
 }
 
