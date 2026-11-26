@@ -3171,3 +3171,99 @@ fn titled_node(id: &str) -> Value {
         ("content".to_owned(), titled("t")),
     ])
 }
+
+/// The boxes and the marks of the node in slot 0 and of its regions, at every depth, in the order
+/// `regions_of` gives them: each slot with its box, whether it is a region, a container, and
+/// divided, and in which direction.
+type Laid = Vec<(u32, [f32; 4], bool, bool, Option<comb_engine::graph::Axis>)>;
+
+/// What `engine` holds of the node in slot 0 and its regions, as `Laid` says.
+fn laid_out(engine: &Engine) -> Laid {
+    let graph = &engine.graph;
+    std::iter::once(0)
+        .chain(graph.regions_of(0))
+        .map(|slot| {
+            let i = slot as usize * 2;
+            let (at, size) = (graph.positions(), graph.sizes());
+            let bounds = [at[i], at[i + 1], size[i], size[i + 1]];
+            let marks = (graph.is_region(slot), graph.is_container(slot));
+            (slot, bounds, marks.0, marks.1, graph.divided(slot))
+        })
+        .collect()
+}
+
+#[test]
+fn a_random_division_by_a_load_by_add_node_and_by_update_node_gives_equal_boxes_and_marks() {
+    // Verifies: ARCH-regions-are-container-slots, ARCH-engine-edits-nested-graph
+    // The division of a node is one operation of the engine, whichever of the three paths
+    // hands it over, so that all three lay the node and its regions out alike.
+    let compared = Cell::new(0);
+    let mut config = ProptestConfig::with_cases(1_000);
+    config.source_file = Some(file!());
+    let mut runner = TestRunner::new(proptest::test_runner::contextualize_config(config));
+    let strategy = (
+        random_regions(),
+        any::<bool>(),
+        any::<bool>(),
+        20.0..400.0f64,
+    );
+    let result = runner.run(&strategy, |((mut cases, _), across, marked, width)| {
+        for (k, case) in cases.iter_mut().enumerate() {
+            case.0 = case.0.filter(|_| k > 0).map(|pick| pick % k);
+        }
+        let mut holds = vec![false; cases.len()];
+        for parent in cases.iter().filter_map(|case| case.0) {
+            holds[parent] = true;
+        }
+        let regions = Value::List(
+            cases
+                .iter()
+                .enumerate()
+                .map(|(k, case)| region_value(k, case, holds[k], None))
+                .collect(),
+        );
+        let divide = Value::Text(if across { "across" } else { "down" }.to_owned());
+        let mut plain = match titled_node("act") {
+            Value::Object(fields) => fields,
+            _ => unreachable!("a node is an object"),
+        };
+        plain.retain(|(key, _)| key != "width");
+        plain.push(("width".to_owned(), Value::Number(width)));
+        plain.push(("isContainer".to_owned(), Value::Bool(marked)));
+        let mut divided = plain.clone();
+        divided.push(("divide".to_owned(), divide.clone()));
+        divided.push(("regions".to_owned(), regions.clone()));
+        let node = |fields: Vec<(String, Value)>| {
+            NodeInput::deserialize(Value::Object(fields)).expect("a node of the right shape")
+        };
+        let (plain, divided) = (node(plain), node(divided));
+        // By a load.
+        let mut loaded = Engine::new();
+        let columns = OwnedColumns::of([Some(&divided)]);
+        load_into(&mut loaded, &columns, &OwnedEdgeColumns::of([])).expect("a valid load");
+        // By `addNode`.
+        let mut added = Engine::new();
+        added.add(&divided, (None, None)).expect("a valid node");
+        // By `updateNode` of the node added undivided.
+        let mut updated = Engine::new();
+        let slot = updated.add(&plain, (None, None)).expect("a valid node");
+        let patch = NodePatch::deserialize(Value::Object(vec![
+            ("divide".to_owned(), divide),
+            ("regions".to_owned(), regions),
+        ]))
+        .expect("a patch of the right shape");
+        updated.update(slot, "act", &patch).expect("a valid patch");
+        let laid = laid_out(&loaded);
+        prop_assert_eq!(laid.len(), cases.len() + 1);
+        prop_assert_eq!(&laid_out(&added), &laid);
+        prop_assert_eq!(&laid_out(&updated), &laid);
+        compared.set(compared.get() + 1);
+        Ok(())
+    });
+    if let Err(error) = result {
+        panic!("{error}\n{runner}");
+    }
+    // The cases run, and before them the seeds `proptest-regressions/properties.txt` keeps for
+    // this file, which proptest replays and which pass as any case does: so at least the cases.
+    assert!(compared.get() >= 1_000, "{compared:?}");
+}

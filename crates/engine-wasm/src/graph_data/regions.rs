@@ -1,12 +1,12 @@
 //! The regions a node is divided into (ARCH-regions-are-container-slots,
 //! API-edits-report-nested-changes): as the host application hands them over to `addNode` and
 //! `updateNode`, as a load's columns carry them (API-bridge-columns-carry-nesting), checked, and
-//! built into the engine's graph as node slots of their own.
+//! handed to the engine's division as its parts.
 
 use std::collections::HashSet;
 use std::fmt;
 
-use comb_engine::graph::{Axis, Graph};
+use comb_engine::graph::{Axis, DivideError, Part};
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use tsify::Tsify;
@@ -187,15 +187,6 @@ fn read_region(at: usize, input: &RegionInput) -> Option<Region> {
     })
 }
 
-/// Whether each of `regions` holds regions of its own.
-pub(crate) fn holding(regions: &[Region]) -> Vec<bool> {
-    let mut holds = vec![false; regions.len()];
-    for parent in regions.iter().filter_map(|region| region.parent) {
-        holds[parent] = true;
-    }
-    holds
-}
-
 /// Holds the regions of the node `id` at `index` of a load, or 0 for an edit, divided by
 /// `divide`, to the rules of a load, in their order, each region's fields in their order: regions
 /// need a division of what they lie in (`invalidField` of `divide`); an identifier no longer than
@@ -257,41 +248,41 @@ pub(crate) fn check_regions(
     Ok(units)
 }
 
-/// Adds the regions `regions` into the node in `slot`, divided by `divide`, each into what it
-/// lies in, at its size along that direction, and returns their slots in their order; `arrange`
-/// of the divided node lays them out. A region that holds none is not divided. The slot holds a
-/// node, and the regions passed `check_regions`.
-pub(crate) fn add_regions(
-    graph: &mut Graph,
-    slot: u32,
-    divide: Axis,
-    regions: &[Region],
-) -> Result<Vec<u32>, GraphDataProblem> {
-    let holds = holding(regions);
-    let mut slots: Vec<u32> = Vec::with_capacity(regions.len());
-    for (region, &holds) in regions.iter().zip(&holds) {
-        let (into, axis) = region.parent.map_or((slot, Some(divide)), |parent| {
-            (slots[parent], regions[parent].divide)
-        });
-        let mut size = [0.0; 2];
-        #[expect(
-            clippy::cast_possible_truncation,
-            reason = "a size `check_regions` held to f32"
-        )]
-        let extent = region.size as f32;
-        size[axis.map_or(0, Axis::index)] = extent;
-        let added = graph
-            .add_node_in(into, true, [0.0, 0.0, size[0], size[1]])
-            .map_err(|_| GraphDataProblem::from(comb_engine::graph::TooManySlots))?;
-        // A slot just added, which no mark refuses.
-        let _ = graph.mark_region(
-            added,
-            region.name.is_some(),
-            region.divide.filter(|_| holds),
-        );
-        slots.push(added);
+/// The parts of the engine's division of `regions`, which passed `check_regions`, each keeping
+/// the region in the slot `kept` names at its index, where it names one
+/// (ARCH-regions-are-container-slots).
+pub(crate) fn parts_of(regions: &[Region], kept: &[u32]) -> Vec<Part> {
+    regions
+        .iter()
+        .enumerate()
+        .map(|(index, region)| {
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "a size `check_regions` held to f32"
+            )]
+            let size = region.size as f32;
+            Part {
+                size,
+                named: region.name.is_some(),
+                divide: region.divide,
+                of: region.parent,
+                keeps: kept.get(index).copied().filter(|&slot| slot != u32::MAX),
+            }
+        })
+        .collect()
+}
+
+/// The problem of a division `addNode` or `updateNode` hands the engine: past the limit of node
+/// slots, which each checks first, `tooManyNodes`; a slot that holds no node or a part out of
+/// place, which their checks leave no room for, a malformed call refused, never a panic that would
+/// trap the engine (API-shell-mistake-refused-as-shells).
+pub(crate) fn division_problem(error: DivideError) -> GraphDataProblem {
+    match error {
+        DivideError::TooManySlots(error) => GraphDataProblem::from(error),
+        DivideError::Slot(_) | DivideError::Part { .. } => {
+            super::malformed("regions the engine could not divide the node into")
+        }
     }
-    Ok(slots)
 }
 
 /// The regions of a load as columns (API-bridge-columns-carry-nesting), region `k` in the node
@@ -378,6 +369,7 @@ mod tests {
     use super::super::{EdgeCells, OwnedColumns, OwnedEdgeColumns, graph_of, load_of};
     use super::*;
     use comb_engine::content::Fonts;
+    use comb_engine::graph::Graph;
 
     /// A region `id` of `size`, solid, unnamed unless `name`, divided by `divide`, in the region at
     /// `of` of its list, or in the node for none.
@@ -722,6 +714,39 @@ mod tests {
             assert!(!engine.graph.is_container(slot));
             assert_eq!(engine.graph.sizes()[0], 300.0);
         }
+    }
+
+    #[test]
+    fn no_regions_leave_the_node_undivided_by_a_load_by_add_node_and_by_update_node() {
+        // Verifies: ARCH-regions-are-container-slots, API-bridge-columns-carry-nesting
+        use super::super::PatchValue;
+        // A division across into no regions, 300 wide, not marked a container.
+        let act = added(0.0, 0.0, |n| {
+            n.id = "act".to_owned().into();
+            n.width = 300.0.into();
+            n.divide = Some(Divide::Across).into();
+            n.regions = Some(Vec::new()).into();
+        });
+        let undivided = |graph: &Graph, slot: u32| {
+            assert!(graph.regions_of(slot).is_empty());
+            assert_eq!(graph.divided(slot), None);
+            assert!(!graph.is_container(slot));
+            assert_eq!(graph.sizes()[slot as usize * 2], 300.0);
+        };
+        let loaded = load_columns(&OwnedColumns::of([Some(&act)])).unwrap();
+        undivided(&loaded, 0);
+        let mut engine = crate::Engine::new();
+        let slot = engine.add(&act, (None, None)).unwrap();
+        undivided(&engine.graph, slot);
+        let (mut engine, slot) = engine_with_activity();
+        let fields = vec![
+            ("divide", PatchValue::Divide(Some(Divide::Across).into())),
+            ("regions", PatchValue::Regions(Some(Vec::new()).into())),
+        ];
+        engine
+            .update_with(slot, "act", &patch(fields), &[])
+            .unwrap();
+        undivided(&engine.graph, slot);
     }
 
     #[test]

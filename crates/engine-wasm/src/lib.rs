@@ -25,7 +25,7 @@ use comb_engine::geometry::Point;
 use comb_engine::geometry::Rect;
 use comb_engine::graph::{
     AttachError, Axis, CANVAS, Graph, Handle, Level, LineError, MeshAt, MoveError, MoveIntoError,
-    PositionError, SlotError as GraphSlotError, Target, Visible,
+    PositionError, RegionSlots, SlotError as GraphSlotError, Target, Visible,
 };
 use comb_engine::shape::Outline;
 use comb_engine::stroke::{Detail, Mesh};
@@ -1582,12 +1582,7 @@ impl Engine {
         self.graph
             .set_outline(slot, patched.outline.unwrap_or(self.graph.outline(slot)))?;
         let top = graph_data::content_top(shape, width, laid);
-        self.graph.set_top(slot, top);
-        let removed = match patched.regions {
-            Some((divide, regions)) => self.divide_anew(slot, divide, &regions, kept, top)?,
-            None => Vec::new(),
-        };
-        self.graph.arrange(slot);
+        let removed = self.divide_anew(slot, patched.regions, kept, top)?;
         if let Some(place) = place {
             self.place_anew(slot, place, patched.side, patched.offset)?;
         }
@@ -1614,85 +1609,34 @@ impl Engine {
         Ok(())
     }
 
-    /// Divides the node in `slot` anew into `regions` in the direction `divide`, below its
-    /// content, `top` high, in place of the regions it has, and returns what went with those as
-    /// `removed` lays it out: the regions, and what a region `kept` does not name held, with every
-    /// edge at it. `kept` names, per region of `regions` at every depth, depth first, the slot of
-    /// the region of the node that has its identifier, or `u32::MAX`; what that region holds
-    /// directly moves into the new one at its position relative to it
-    /// (ARCH-regions-are-container-slots, *Removing a region*).
+    /// Divides the node in `slot` anew into `regions` in their direction, below its content, `top`
+    /// high, in place of the regions it has, by the engine's one division, and returns what went
+    /// with those as `removed` lays it out: the regions, and what a region `kept` does not name
+    /// held, with every edge at it. `kept` names, per region of `regions` at every depth, depth
+    /// first, the slot of the region of the node that has its identifier, or `u32::MAX`
+    /// (ARCH-regions-are-container-slots, *Removing a region*). Without regions, the node's regions
+    /// are laid out anew below its content, and nothing goes.
     fn divide_anew(
         &mut self,
         slot: u32,
-        divide: Option<Axis>,
-        regions: &[graph_data::Region],
+        regions: Option<(Option<Axis>, Vec<graph_data::Region>)>,
         kept: &[u32],
         top: f32,
     ) -> Result<Vec<u32>, CallRefusal> {
-        let old = self.graph.regions_of(slot);
-        // Divided into no regions, it is divided no more (ARCH-regions-are-container-slots).
-        let divide = divide.filter(|_| !regions.is_empty());
-        let holds = graph_data::holding(regions);
-        // What each kept region holds directly that is no region, taken out onto the canvas so
-        // that its removal leaves it, and where it goes: into the region of the same identifier
-        // at its position relative to it, or, where that region now holds regions, nothing lying
-        // beside them, into its first region, to any depth, at its world position (the human's
-        // decision of 2026-11-18).
-        let mut moved = Vec::new();
-        for (index, &from) in kept.iter().enumerate() {
-            if !old.contains(&from) || index >= regions.len() {
-                continue;
-            }
-            let into = first_leaf(regions, &holds, index);
-            let origin = self.graph.positions()[from as usize * 2..][..2].to_vec();
-            for &held in &self.graph.held_by(from) {
-                if self.graph.is_region(held) {
-                    continue;
-                }
-                let at = &self.graph.positions()[held as usize * 2..];
-                let world = [f64::from(at[0]), f64::from(at[1])];
-                let place = if into == index {
-                    Landing::Relative([
-                        world[0] - f64::from(origin[0]),
-                        world[1] - f64::from(origin[1]),
-                    ])
-                } else {
-                    Landing::World(world)
-                };
-                moved.push((into, held, place));
-            }
-        }
-        for &(_, held, _) in &moved {
-            let _ = self.graph.move_into(held, CANVAS);
-        }
-        let tops: Vec<u32> = old
-            .iter()
-            .copied()
-            .filter(|&r| self.graph.container(r) == slot)
-            .collect();
-        let (nodes, edges) = self.graph.remove_nodes(&tops)?;
-        self.content.remove(&nodes);
-        self.graph.divide(slot, divide, top)?;
-        let added = match divide {
-            Some(axis) => graph_data::add_regions(&mut self.graph, slot, axis, regions)?,
-            None => Vec::new(),
+        let Some((divide, regions)) = regions else {
+            self.graph.set_top(slot, top);
+            return Ok(Vec::new());
         };
+        let parts = graph_data::parts_of(&regions, kept);
+        let divided = self
+            .graph
+            .divide(slot, divide, top, &parts, RegionSlots::Added)
+            .map_err(graph_data::division_problem)?;
+        self.content.remove(&divided.nodes);
         let names = regions.iter().map(graph_data::Region::name_units);
-        self.content.set_regions(added.iter().copied().zip(names));
-        self.graph.arrange(slot);
-        for (index, held, place) in moved {
-            let Some(&region) = added.get(index) else {
-                continue;
-            };
-            let at = &self.graph.positions()[region as usize * 2..];
-            let world = match place {
-                Landing::Relative([x, y]) => [f64::from(at[0]) + x, f64::from(at[1]) + y],
-                Landing::World(world) => world,
-            };
-            let _ = self.graph.move_into(held, region);
-            let _ = self.graph.place(held, world[0], world[1]);
-        }
-        Ok(removed(&nodes, &edges))
+        self.content
+            .set_regions(divided.regions.iter().copied().zip(names));
+        Ok(removed(&divided.nodes, &divided.edges))
     }
 
     /// The element of the content of the node in `slot` whose rectangle holds `point`, of those
@@ -1759,11 +1703,8 @@ impl Engine {
                 // A slot that holds a node, as the check above found, which no resize refuses.
                 let _ = self.graph.resize_node(slot, height);
             }
-            if self.graph.divided(slot).is_some() {
-                self.graph
-                    .set_top(slot, graph_data::content_top(shape, width, laid));
-                self.graph.arrange(slot);
-            }
+            self.graph
+                .set_top(slot, graph_data::content_top(shape, width, laid));
         }
     }
 
@@ -1847,28 +1788,6 @@ impl Engine {
                 .push(graph_data::numbered(self.dashes.len() / 4));
         }
     }
-}
-
-/// Where a node a kept region held lies once the regions are divided anew: at its position
-/// relative to the region of the same identifier, or at its world position in another.
-#[derive(Clone, Copy)]
-enum Landing {
-    Relative([f64; 2]),
-    World([f64; 2]),
-}
-
-/// The region of `regions` a node held by the region at `index` moves into: that region where it
-/// holds none, else its first region, to any depth (the human's decision of 2026-11-18).
-fn first_leaf(regions: &[graph_data::Region], holds: &[bool], index: usize) -> usize {
-    let mut at = index;
-    while holds[at] {
-        // A region that holds regions holds one after it, the first of them next in the list.
-        match (at + 1..regions.len()).find(|&next| regions[next].parent == Some(at)) {
-            Some(next) => at = next,
-            None => break,
-        }
-    }
-    at
 }
 
 /// The buffers the shell reads, each as a pointer into WebAssembly memory and a length in values.
@@ -2353,12 +2272,13 @@ mod tests {
         assert_eq!(graph.attach(3, 2, BoxSide::Right, 10.0), Ok(10.0));
         graph.set_sizing(2, None, true).unwrap();
         assert_eq!(graph.add_node(0.0, 400.0, 300.0, 200.0), Ok(4));
-        graph.divide(4, Some(Axis::Across), 0.0).unwrap();
-        for _ in 0..2 {
-            let region = graph.add_node_in(4, true, [0.0, 0.0, 100.0, 0.0]).unwrap();
-            graph.mark_region(region, false, None).unwrap();
-        }
-        graph.arrange(4);
+        let part = comb_engine::graph::Part {
+            size: 100.0,
+            ..comb_engine::graph::Part::default()
+        };
+        let parts = [part, part];
+        let divided = graph.divide(4, Some(Axis::Across), 0.0, &parts, RegionSlots::Added);
+        assert_eq!(divided.unwrap().regions, [5, 6]);
         assert_eq!(
             engine.remove_nodes(&[2, 4]),
             Ok(vec![5, 2, 4, 5, 6, 3, 1, 2])

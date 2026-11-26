@@ -5,7 +5,7 @@ use comb_engine::content::Fonts;
 use comb_engine::geometry::WORLD_LIMIT;
 use std::collections::HashSet;
 
-use comb_engine::graph::{AddNodeError, Axis, CANVAS, Graph, NestError, Nesting};
+use comb_engine::graph::{AddNodeError, Axis, CANVAS, Graph, NestError, Nesting, RegionSlots};
 use comb_engine::shape::{NodeShape, Outline};
 
 use super::borders::{Marks, attached, check_border, check_target, invalid, target_of};
@@ -23,8 +23,8 @@ use super::{
     check_graph_size, lengths, text_spans,
 };
 use super::{
-    Region, RegionColumns, add_regions, check_regions, divide_of, malformed, numbered, regions_of,
-    within_budget,
+    Region, RegionColumns, check_regions, divide_of, division_problem, malformed, numbered,
+    parts_of, regions_of, within_budget,
 };
 
 /// A load the bridge accepted: the engine's graph, where each text of its content lies in its
@@ -245,10 +245,10 @@ fn divided_nesting(
     Ok(())
 }
 
-/// Divides the nodes of a load `trees` names and marks its regions, `columns` naming each
-/// region's band and division, the regions below each node's content, `tops` high, a node its
-/// data does not mark a container one by its division alone; then lays out the regions of each
-/// divided node (ARCH-regions-are-container-slots).
+/// Divides each node of a load `trees` divides into its regions, in the slots the load built for
+/// them after the nodes, each region `k` of `columns` in slot `count + k`, the regions below the
+/// node's content, `tops` high, a node its data does not mark a container one by its division
+/// alone (ARCH-regions-are-container-slots).
 fn divide_loaded(
     graph: &mut Graph,
     columns: &NodeColumns,
@@ -256,27 +256,32 @@ fn divide_loaded(
     tops: &[f32],
 ) {
     let count = trees.len();
-    let regions = &columns.regions;
-    let divided = divisions(trees, regions);
-    let nodes: Vec<u32> = (0..count)
-        .filter(|&slot| divided[slot])
-        .map(numbered)
-        .collect();
-    for &slot in &nodes {
-        let i = slot as usize;
-        // Slots of nodes just built, which no division refuses.
-        let _ = graph.divide(slot, trees[i].0, tops[i]);
-        if columns.is_container[i] != 1 {
-            graph.made_by_division(slot);
+    // The slots of each node's regions, in the order of its tree, as `region_names` reads them.
+    let mut slots: Vec<Vec<u32>> = vec![Vec::new(); count];
+    let mut roots: Vec<usize> = Vec::with_capacity(columns.regions.of.len());
+    for (k, &of) in columns.regions.of.iter().enumerate() {
+        let of = of as usize;
+        let root = if of < count { of } else { roots[of - count] };
+        roots.push(root);
+        slots[root].push(numbered(count + k));
+    }
+    for (i, ((divide, regions), slots)) in trees.iter().zip(&slots).enumerate() {
+        if divide.is_none() || regions.is_empty() {
+            continue;
         }
-    }
-    for k in 0..regions.of.len() {
-        let slot = numbered(count + k);
-        let divide = divide_of(regions.divide[k]).filter(|_| divided[count + k]);
-        let _ = graph.mark_region(slot, regions.named[k] == 1, divide);
-    }
-    for slot in nodes {
-        graph.arrange(slot);
+        let built = RegionSlots::Built {
+            slots,
+            marked: columns.is_container[i] == 1,
+        };
+        // Slots of nodes and regions just built, each region in what it divides, which no
+        // division refuses.
+        let _ = graph.divide(
+            numbered(i),
+            *divide,
+            tops[i],
+            &parts_of(regions, &[]),
+            built,
+        );
     }
 }
 
@@ -515,11 +520,7 @@ pub(crate) fn add_node_to(
         }
     };
     let slot = graph
-        .add_node_in(
-            container,
-            is_container || divide.is_some(),
-            [x, y, width, height],
-        )
+        .add_node_in(container, is_container, [x, y, width, height])
         .map_err(|error| match error {
             AddNodeError::TooManySlots(error) => GraphDataProblem::from(error),
             // The match above refused every slot that holds no container, before it read the
@@ -533,13 +534,16 @@ pub(crate) fn add_node_to(
     if let (Some(on), Some(border)) = (ride, &border) {
         attached(graph, slot, on, border)?;
     }
-    if let Some(axis) = divide {
-        let _ = graph.divide(slot, Some(axis), top);
-        add_regions(graph, slot, axis, &regions)?;
-        if !is_container {
-            graph.made_by_division(slot);
-        }
-        graph.arrange(slot);
+    if divide.is_some() {
+        graph
+            .divide(
+                slot,
+                divide,
+                top,
+                &parts_of(&regions, &[]),
+                RegionSlots::Added,
+            )
+            .map_err(division_problem)?;
     }
     Ok((slot, content))
 }

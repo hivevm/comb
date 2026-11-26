@@ -64,7 +64,9 @@ pub use node_columns::{NodeColumns, NodeField, NodeShapeCode, OutlineCode};
 pub use problem::{GraphDataProblem, GraphList};
 pub(crate) use problem::{malformed, slot, unshaped};
 pub use regions::{Divide, Line, RegionColumns, RegionInput};
-pub(crate) use regions::{Region, add_regions, check_regions, divide_of, holding, regions_of};
+pub(crate) use regions::{
+    Region, check_regions, divide_of, division_problem, parts_of, regions_of,
+};
 #[cfg(test)]
 pub(crate) use snapshot::{EdgeCells, GraphBatch, OwnedColumns, OwnedEdgeColumns};
 use strings::{bounds_fit, lengths, runs_fit, string_at, value_at, values};

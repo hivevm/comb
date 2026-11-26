@@ -76,7 +76,7 @@ impl Graph {
     }
 
     /// `add_node_in` past its check of `container`, which is `CANVAS` or holds a container.
-    fn add_nested(
+    pub(super) fn add_nested(
         &mut self,
         container: u32,
         is_container: bool,
