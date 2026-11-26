@@ -211,7 +211,7 @@ function updateNode({ store, bridge, limits }: Editing, id: string, patch: unkno
       const divides = "regions" in plain || "divide" in plain;
       const old = divides ? [...bridge.regionsOf(slot)] : [];
       const kept = divides ? keptOf(plain.regions, old, state) : new Uint32Array();
-      return { slot, plain, old, kept, moving: movingOf(plain.regions, kept, state) };
+      return { slot, plain, old, kept, held: divides ? heldIn(id, old, state) : [] };
     },
     idUnits(plain, state) {
       const old = [...bridge.regionsOf(state.slots.get(id)!)];
@@ -219,7 +219,7 @@ function updateNode({ store, bridge, limits }: Editing, id: string, patch: unkno
       return state.idUnits - before + idsIn(plain.regions).reduce((n, i) => n + i.length, 0);
     },
     engine: ({ slot, plain, kept }) => bridge.updateNode(slot, id, plain, kept),
-    record: (state, { slot, plain, old, moving }, removal) => {
+    record: (state, { slot, plain, old, held }, removal) => {
       const divided = old.length > 0 || "regions" in plain || "divide" in plain;
       // What went with a region the patch left out goes as the host's removal, before the change
       // of the node (ARCH-regions-are-container-slots, *Removing a region*).
@@ -229,8 +229,9 @@ function updateNode({ store, bridge, limits }: Editing, id: string, patch: unkno
       const after = store.getState();
       const anew = divided ? dividedAnew(plain, after, bridge, slot, old) : undefined;
       after.updateNode({ id, patch: plain, divided: anew });
-      // What a kept region divided anew held now lies in its first region, the host's move.
-      for (const { node, into } of moving) store.getState().nodeMoved(node, into, "host");
+      // What the division moved into another region, where the engine put it, the host's move.
+      for (const { node, into } of movedBy(bridge, store.getState(), held))
+        store.getState().nodeMoved(node, into, "host");
       // The regions moved, or a border node, which a query the scene keeps does not survive.
       if (divided || "side" in plain || "offset" in plain) store.getState().positionsMoved();
     },
@@ -268,32 +269,41 @@ function idsIn(regions: unknown): string[] {
   return (regions as RegionRead[]).map(({ id }) => id);
 }
 
-/** The nodes a kept region holds that the patch `regions` divides into regions of its own, each
- *  with the region it moves into: its first region, to any depth, by the human's decision of
- *  2026-11-18 (ARCH-regions-are-container-slots); `kept` names the region the node has per region
- *  of the patch. */
-function movingOf(
-  regions: unknown,
-  kept: Uint32Array,
+/** The nodes that lie directly in the node `id` or in one of its regions `old`, no regions, each
+ *  with the identifier of what holds it: what a division anew may move into another region. */
+function heldIn(
+  id: string,
+  old: readonly number[],
   state: GraphState,
+): { node: string; from: string }[] {
+  const holders = new Set([id, ...old.map((slot) => state.nodes[slot]!.id)]);
+  const held: { node: string; from: string }[] = [];
+  for (const node of state.nodes)
+    if (node && !node.region && node.container !== undefined && holders.has(node.container))
+      held.push({ node: node.id, from: node.container });
+  return held;
+}
+
+/** Of `held`, the nodes a division anew left in the graph in another container than the one that
+ *  held them, each with the region the engine put it in (`containerOf`), as `state` names it once
+ *  it took the division: what a kept region divided anew held, which goes into its first region
+ *  (the human's decision of 2026-11-18), and what the node held directly, which goes into the
+ *  region at its position, else the first (the maintainer's decisions of 2026-11-25,
+ *  ARCH-regions-are-container-slots). One rule, the engine's, for both. */
+function movedBy(
+  bridge: Bridge,
+  state: GraphState,
+  held: readonly { node: string; from: string }[],
 ): { node: string; into: string }[] {
-  if (!Array.isArray(regions)) return [];
-  const read = regions as RegionRead[];
-  const first = new Map<number, number>();
-  read.forEach(({ of }, i) => {
-    if (of !== undefined && !first.has(of)) first.set(of, i);
-  });
-  const moving: { node: string; into: string }[] = [];
-  kept.forEach((slot, i) => {
-    if (slot === NO_SLOT || !first.has(i)) return;
-    let leaf = i;
-    while (first.has(leaf)) leaf = first.get(leaf)!;
-    const from = state.nodes[slot]!.id;
-    for (const node of state.nodes)
-      if (node && !node.region && node.container === from)
-        moving.push({ node: node.id, into: read[leaf]!.id });
-  });
-  return moving;
+  const moved: { node: string; into: string }[] = [];
+  for (const { node, from } of held) {
+    const slot = state.slots.get(node);
+    if (slot === undefined) continue;
+    const container = bridge.containerOf(slot);
+    const into = container === undefined ? undefined : state.nodes[container]?.id;
+    if (into !== undefined && into !== from) moved.push({ node, into });
+  }
+  return moved;
 }
 
 /** Per region of the patch `regions`, depth first, the slot of the region of its identifier in

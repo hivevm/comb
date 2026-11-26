@@ -353,7 +353,8 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   a connector where the shell asks for connectors, a label, a node, or an edge by its slot, or
   nothing, as one generated value, refusing a pixel as `query` does and a point that is not finite,
   `resizeNode` resizes a node by a handle from the box it had at the press, its content's height the
-  least, `regionsOf` names the regions of a divided node depth first, `moveLine` moves the line
+  least, `regionsOf` names the regions of a divided node depth first, `containerOf` names the
+  container a node lies in, where a division chose it, `moveLine` moves the line
   after a region, `bandName` cuts a region's name to its band in the font of `title`,
   `bandThickness` hands the shell the band's thickness the engine lays regions out by, a load takes
   the regions as columns of their own in the slots after the nodes, and `addNode` and `updateNode`

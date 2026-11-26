@@ -565,3 +565,59 @@ test("updateNode that divides a kept partition moves what it held into its first
   });
   expect(Object.keys(after)).toContain("b");
 });
+
+test("updateNode that divides a container moves each node it held into the region at its position where it lay, else the first, told as the host's nodeMoved", async ({
+  page,
+}) => {
+  // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes,
+  // API-edits-report-division-moves
+  // The maintainer's decisions of 2026-11-25: a divided node holds its regions alone, so what `c`
+  // held directly goes, where it lay, into the region at its position, as a drop there would:
+  // `x` into `r1a`, the region of `r1`, and `y` into `r2`; `z`, beside every region, into the
+  // first, `r1a`.
+  await open(page);
+  await loaded(page, {
+    nodes: [
+      { ...node("c", 0, 0), width: 300, height: 200, isContainer: true },
+      { id: "x", x: 10, y: 150, width: 20, content: [], container: "c" },
+      { id: "y", x: 200, y: 150, width: 20, content: [], container: "c" },
+      { id: "z", x: 500, y: 150, width: 20, content: [], container: "c" },
+    ],
+    edges: [],
+  });
+  const before = await drawnBoxes(page);
+  await page.evaluate(() =>
+    window.comb.updateNode("c", {
+      divide: "across",
+      regions: [
+        {
+          id: "r1",
+          size: 150,
+          line: "solid",
+          divide: "down",
+          regions: [{ id: "r1a", size: 80, line: "solid" }],
+        },
+        { id: "r2", size: 150, line: "solid" },
+      ],
+    }),
+  );
+  const kinds = (await told<{ kind: string }>(page)).map(({ kind }) => kind);
+  expect(kinds).toEqual(["nodeUpdated", "nodeMoved", "nodeMoved", "nodeMoved"]);
+  const after = await drawnBoxes(page);
+  const moved = await toldOf(page, "nodeMoved");
+  for (const [id, into] of [
+    ["x", "r1a"],
+    ["y", "r2"],
+    ["z", "r1a"],
+  ] as const) {
+    expect([after[id]!.x, after[id]!.y]).toEqual([before[id]!.x, before[id]!.y]);
+    expect(moved.find((change) => (change as { id?: string }).id === id)).toEqual({
+      kind: "nodeMoved",
+      by: "host",
+      id,
+      x: before[id]!.x - after[into]!.x,
+      y: before[id]!.y - after[into]!.y,
+      container: into,
+    });
+  }
+});

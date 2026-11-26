@@ -72,8 +72,9 @@ export type GraphChange =
     }
   /** A drag left the node `id` at `x`, `y`, relative to `container`, the identifier of the
    *  container it lies in, or on the canvas for `null` (API-edits-report-nested-changes); or, by
-   *  the host, `updateNode` moved it into the first region of a region it divided anew
-   *  (ARCH-regions-are-container-slots). */
+   *  the host, `updateNode` moved it into the first region of a region it divided anew, or, of
+   *  the node it divided while that node held it, into the region at its position, else the
+   *  first (ARCH-regions-are-container-slots). */
   | {
       readonly kind: "nodeMoved";
       readonly by: By;

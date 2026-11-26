@@ -188,7 +188,8 @@ impl From<TooManySlots> for AddNodeError {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MoveIntoError {
     Slot(SlotError),
-    /// The slot named as the container holds no node, or a node that is no container.
+    /// The slot named as the container holds no node, a node that is no container, or a node or
+    /// a region divided into regions, which holds its regions alone.
     NoContainer {
         slot: u32,
     },

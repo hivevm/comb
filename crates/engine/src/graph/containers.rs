@@ -330,10 +330,11 @@ impl Graph {
     /// `CANVAS`, at the world position it has, so that its position relative to its container
     /// changes, and gives it the next rank, as an added node takes it; a container takes its place
     /// among the containers by it (ARCH-engine-edits-nested-graph, *Moving into a container*). A
-    /// slot that holds no node, a container that holds no container, and a container that is the
-    /// node or a node it holds refuse the move, the shell's own mistakes, and the graph stays as
-    /// it was. A move into the node's own container changes nothing, its rank kept, as a drop
-    /// within it keeps its rank (API-edits-report-nested-changes, *Vetoes*).
+    /// slot that holds no node, a container that holds no container or is divided into regions,
+    /// and a container that is the node or a node it holds refuse the move, the shell's own
+    /// mistakes, and the graph stays as it was. A move into the node's own container changes
+    /// nothing, its rank kept, as a drop within it keeps its rank (API-edits-report-nested-changes,
+    /// *Vetoes*).
     pub fn move_into(&mut self, slot: u32, container: u32) -> Result<(), MoveIntoError> {
         self.nodes_held(&[slot])?;
         // A border node lies where its node lies, and goes into a container only with it
@@ -342,7 +343,12 @@ impl Graph {
             return Ok(());
         }
         if container != CANVAS {
-            if !(self.holds_node(container) && self.is_container(container)) {
+            // A node or a region divided into regions holds its regions alone, as a load and a drop
+            // hold it (ARCH-regions-are-container-slots, *Regions in a slot*).
+            let takes = self.holds_node(container)
+                && self.is_container(container)
+                && !self.holds_regions(container);
+            if !takes {
                 return Err(MoveIntoError::NoContainer { slot: container });
             }
             if self.lies_in(container, slot) {

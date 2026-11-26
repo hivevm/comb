@@ -1,10 +1,11 @@
 //! The graphs the tests of the graph's modules build, and the tests that hold the whole graph to
 //! a scan: queries, hits, and the lists of edges at each node after random additions, removals,
-//! and moves (ARCH-engine-edits-nested-graph), and the refusals of a load and of a slot that
-//! holds nothing.
+//! and moves (ARCH-engine-edits-nested-graph), the refusals of a load and of a slot that holds
+//! nothing, and one property test that combines nesting, regions, border nodes, and edges on edges
+//! against a model.
 
 use super::*;
-use crate::geometry::{Dock, Side, WORLD_LIMIT};
+use crate::geometry::{Dock, Side, WORLD_LIMIT, centre, end_of, on_edge};
 use crate::stroke::Arrowhead;
 
 /// Sides of an edge, mostly the default, now and then any pair of the four sides and the
@@ -1948,4 +1949,1259 @@ fn border_nodes_stay_on_their_node_s_outline_at_their_side_through_moves_resizes
         );
     }
     assert!(counts.nearest >= 100, "{} drags", counts.nearest);
+}
+
+/// What a node of the combined property test is: a node, a container, a node divided into
+/// regions, a region, or a border node.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Kind {
+    Plain,
+    Container,
+    Divided,
+    Region,
+    Border,
+}
+
+/// A node of the combined property test as the test made it: its kind, its container, the node a
+/// border node rides, its world position and its position relative to its container where it is
+/// neither a region nor a border node, its rank, its node shape, and of regions its band and its
+/// division, and of a divided node its division and the height of its content.
+#[derive(Clone, Copy, Debug)]
+struct Item {
+    kind: Kind,
+    container: u32,
+    on: u32,
+    at: [f32; 2],
+    relative: [f64; 2],
+    rank: u32,
+    shape: NodeShape,
+    band: bool,
+    divide: Option<Axis>,
+    top: f32,
+}
+
+impl Item {
+    const fn holds(&self) -> bool {
+        matches!(self.kind, Kind::Container | Kind::Divided | Kind::Region)
+    }
+
+    /// Whether a node may lie directly in it: a container, or a region not divided again.
+    const fn takes(&self) -> bool {
+        match self.kind {
+            Kind::Container => true,
+            Kind::Region => self.divide.is_none(),
+            _ => false,
+        }
+    }
+}
+
+/// What a scan finds of the edges near a press: the edge it hits, none, or a press so near the
+/// edge of the reach that the flattening of the stroke decides.
+enum Near {
+    Edge(u32),
+    None,
+    Unsure,
+}
+
+/// A nested graph with divided nodes, border nodes, edges between containers and the nodes they
+/// hold, and edges on edges, and its model beside it: the nodes and edges as the test made them
+/// and the border nodes' places as the calls returned them. The model keeps the world positions of
+/// the nodes that are neither regions nor border nodes; the graph's boxes of regions and border
+/// nodes are judged by how they tile and ride the boxes the model keeps.
+struct Combined {
+    graph: Graph,
+    items: Vec<Option<Item>>,
+    edges: Vec<Option<EdgeSpec>>,
+    riders: Vec<Rider>,
+    next_rank: u32,
+}
+
+/// Per clause of the combined property test, the cases it rests on (`docs/CONVENTIONS.md`).
+#[derive(Debug, Default)]
+struct Mixed {
+    /// Moves that carried a node held in a region by the move of a node around it.
+    carried: u32,
+    /// Moves into a region, and moves of a node carrying border nodes or regions into a container
+    /// or out of one.
+    moved_into: u32,
+    /// Moves into a node or a region divided into regions, refused.
+    refused_divided: u32,
+    /// Resizes of a divided node with border nodes.
+    resized: u32,
+    /// Containers divided while they held nodes, and the nodes they held that a region other than
+    /// the first took, the one whose box holds the node's position.
+    divided_holding: u32,
+    landed_at: u32,
+    /// Drags of a line that moved it.
+    lines: u32,
+    /// Drags of a border node.
+    slid: u32,
+    /// Removals of a node that took border nodes along, and those that took an edge on an edge
+    /// along.
+    removed_borders: u32,
+    removed_anchored: u32,
+    /// Ends on an edge checked after a step that moved the edge they end on.
+    anchored: u32,
+    /// Edges between a container and a node it holds checked after a step that moved either.
+    inward: u32,
+    /// Divided nodes whose regions were checked to tile them.
+    tiled: u32,
+    /// Hits on a border node, on a region, on a node held in a region, and on an edge above a
+    /// container.
+    hit_borders: u32,
+    hit_regions: u32,
+    hit_held: u32,
+    hit_edges: u32,
+}
+
+impl Combined {
+    fn item(&self, slot: u32) -> Item {
+        self.items[slot as usize].unwrap()
+    }
+
+    fn in_use(&self) -> impl Iterator<Item = (u32, Item)> + '_ {
+        (0..self.items.len() as u32).filter_map(|s| self.items[s as usize].map(|i| (s, i)))
+    }
+
+    /// The slots in use of the kinds `kinds`.
+    fn of(&self, kinds: &[Kind]) -> Vec<u32> {
+        self.in_use()
+            .filter(|(_, i)| kinds.contains(&i.kind))
+            .map(|(s, _)| s)
+            .collect()
+    }
+
+    fn pick(rng: &mut Lcg, slots: &[u32]) -> Option<u32> {
+        (!slots.is_empty()).then(|| slots[rng.below(slots.len()) as usize])
+    }
+
+    /// The world position of the top left corner of the node in `slot`: the model's, or the
+    /// graph's for a region, whose box the test judges by how it tiles.
+    fn origin(&self, slot: u32) -> [f64; 2] {
+        let item = self.item(slot);
+        if item.kind == Kind::Region {
+            let i = slot as usize * 2;
+            [0, 1].map(|axis| f64::from(self.graph.positions()[i + axis]))
+        } else {
+            item.at.map(f64::from)
+        }
+    }
+
+    /// Keeps the position of the node in `slot` relative to its container from the two world
+    /// positions as they are now.
+    fn keep_relative(&mut self, slot: u32) {
+        let item = self.item(slot);
+        let relative = if item.container == CANVAS {
+            [0.0; 2]
+        } else {
+            let origin = self.origin(item.container);
+            [0, 1].map(|axis| f64::from(item.at[axis]) - origin[axis])
+        };
+        self.items[slot as usize].as_mut().unwrap().relative = relative;
+    }
+
+    /// `slot` and every node it holds at every depth, each container before what it holds.
+    fn subtree(&self, slot: u32) -> Vec<u32> {
+        let mut found = vec![slot];
+        let mut i = 0;
+        while i < found.len() {
+            let parent = found[i];
+            found.extend(
+                self.in_use()
+                    .filter(|(_, n)| n.container == parent)
+                    .map(|(s, _)| s),
+            );
+            i += 1;
+        }
+        found
+    }
+
+    /// Whether the node in `node` is the node in `slot` or lies in it at any depth.
+    fn lies_in(&self, node: u32, slot: u32) -> bool {
+        let mut at = node;
+        while at != CANVAS {
+            if at == slot {
+                return true;
+            }
+            at = self.item(at).container;
+        }
+        false
+    }
+
+    /// The node the region in `slot` divides at its outermost; the slot itself for no region.
+    fn divided_node(&self, slot: u32) -> u32 {
+        let mut at = slot;
+        while self.item(at).kind == Kind::Region {
+            at = self.item(at).container;
+        }
+        at
+    }
+
+    /// The regions that divide the node or region in `slot` directly, in the order of their parts,
+    /// which they were added in.
+    fn regions_in(&self, slot: u32) -> Vec<u32> {
+        let mut regions: Vec<(u32, u32)> = self
+            .in_use()
+            .filter(|(_, n)| n.kind == Kind::Region && n.container == slot)
+            .map(|(s, n)| (n.rank, s))
+            .collect();
+        regions.sort_unstable();
+        regions.into_iter().map(|(_, s)| s).collect()
+    }
+
+    /// Records the node the graph put in `slot`, taking the next rank.
+    fn record(&mut self, slot: u32, item: Item) {
+        if self.items.len() <= slot as usize {
+            self.items.resize(slot as usize + 1, None);
+        }
+        self.items[slot as usize] = Some(Item {
+            rank: self.next_rank,
+            ..item
+        });
+        self.next_rank += 1;
+        self.keep_relative(slot);
+    }
+
+    fn plain(kind: Kind, container: u32, at: [f32; 2], shape: NodeShape) -> Item {
+        Item {
+            kind,
+            container,
+            on: CANVAS,
+            at,
+            relative: [0.0; 2],
+            rank: 0,
+            shape,
+            band: false,
+            divide: None,
+            top: 0.0,
+        }
+    }
+
+    /// A point inside the node that takes nodes in `container`, or anywhere for the canvas.
+    fn point_in(&self, rng: &mut Lcg, container: u32) -> [f32; 2] {
+        if container == CANVAS {
+            return [
+                rng.range(-2500.0, 2500.0) as f32,
+                rng.range(-2500.0, 2500.0) as f32,
+            ];
+        }
+        let b = self.graph.node_bounds(container);
+        [
+            rng.range(b.min_x, b.min_x + (b.max_x - b.min_x) * 0.8) as f32,
+            rng.range(b.min_y, b.min_y + (b.max_y - b.min_y) * 0.8) as f32,
+        ]
+    }
+
+    /// Adds a node into `container`, of `kind`, a container or a node of a random node shape.
+    fn add_node(&mut self, rng: &mut Lcg, container: u32, kind: Kind) -> u32 {
+        let at = self.point_in(rng, container);
+        let (size, shape) = if kind == Kind::Container {
+            let size = [rng.range(300.0, 900.0), rng.range(200.0, 700.0)];
+            (size.map(|v| v as f32), NodeShape::Rectangle)
+        } else {
+            let shape = NodeShape::ALL[rng.below(NodeShape::ALL.len()) as usize];
+            let width = rng.range(10.0, 120.0) as f32;
+            let height = match shape {
+                NodeShape::Circle | NodeShape::RingedCircle => width,
+                NodeShape::Bar => 8.0,
+                _ => rng.range(10.0, 90.0) as f32,
+            };
+            ([width, height], shape)
+        };
+        let slot = self
+            .graph
+            .add_node_in(
+                container,
+                kind == Kind::Container,
+                [at[0], at[1], size[0], size[1]],
+            )
+            .unwrap();
+        if shape != NodeShape::Rectangle {
+            self.graph.set_shape(slot, shape).unwrap();
+        }
+        self.record(slot, Self::plain(kind, container, at, shape));
+        slot
+    }
+
+    /// Adds a node into `container` and divides it at random (`divide_node`).
+    fn add_divided(&mut self, rng: &mut Lcg, container: u32) -> u32 {
+        let at = self.point_in(rng, container);
+        let slot = self
+            .graph
+            .add_node_in(container, false, [at[0], at[1], 50.0, 20.0])
+            .unwrap();
+        self.record(
+            slot,
+            Self::plain(Kind::Divided, container, at, NodeShape::Rectangle),
+        );
+        self.divide_node(rng, slot);
+        slot
+    }
+
+    /// Divides the node in `slot`, a node just added or a container, at random into up to three
+    /// regions, each divided again now and then, one level deep, below a content of 0 or 30. What
+    /// it held directly lies where it lay in the region whose box holds its position, else in its
+    /// first region, or that region's first region, each taking the next rank in the order it was
+    /// held (the maintainer's decisions of 2026-11-25, ARCH-regions-are-container-slots). Returns
+    /// how many nodes it held, and how many of them a region other than the first took.
+    fn divide_node(&mut self, rng: &mut Lcg, slot: u32) -> (usize, usize) {
+        let axis = [Axis::Across, Axis::Down][rng.below(2) as usize];
+        let top = [0.0, 30.0][rng.below(2) as usize];
+        let mut parts = Vec::new();
+        for _ in 0..1 + rng.below(3) {
+            let index = parts.len();
+            let inner = rng.next() < 0.4;
+            parts.push(Part {
+                size: rng.range(20.0, 160.0) as f32,
+                named: rng.next() < 0.4,
+                divide: inner.then(|| [Axis::Across, Axis::Down][rng.below(2) as usize]),
+                of: None,
+                keeps: None,
+            });
+            if inner {
+                for _ in 0..1 + rng.below(2) {
+                    parts.push(Part {
+                        size: rng.range(20.0, 120.0) as f32,
+                        named: rng.next() < 0.4,
+                        divide: None,
+                        of: Some(index),
+                        keeps: None,
+                    });
+                }
+            }
+        }
+        let mut held: Vec<(u32, u32)> = self
+            .in_use()
+            .filter(|(_, i)| i.container == slot)
+            .map(|(s, i)| (i.rank, s))
+            .collect();
+        held.sort_unstable();
+        let divided = self
+            .graph
+            .divide(slot, Some(axis), top, &parts, RegionSlots::Added);
+        let regions = divided.unwrap().regions;
+        self.graph.set_sizing(slot, None, true).unwrap();
+        let item = self.items[slot as usize].as_mut().unwrap();
+        (item.kind, item.divide, item.top) = (Kind::Divided, Some(axis), top);
+        for (&region, part) in regions.iter().zip(&parts) {
+            let within = part.of.map_or(slot, |of| regions[of]);
+            let mut item = Self::plain(Kind::Region, within, [0.0; 2], NodeShape::Rectangle);
+            (item.band, item.divide) = (part.named, part.divide);
+            self.record(region, item);
+        }
+        // Depth first, a part's first part comes right after it.
+        let mut leaf = 0;
+        while parts.get(leaf + 1).is_some_and(|p| p.of == Some(leaf)) {
+            leaf += 1;
+        }
+        let drawn = self.drawn_containers();
+        let mut landed = 0;
+        for &(_, node) in &held {
+            // The last region not divided again in the order of containers whose box holds the
+            // node's position, as a drop there lands, else the first region.
+            let at = self.item(node).at.map(f64::from);
+            let into = drawn
+                .iter()
+                .rev()
+                .copied()
+                .filter(|r| regions.contains(r) && self.item(*r).takes())
+                .find(|&r| self.graph.node_bounds(r).contains(Point::new(at[0], at[1])))
+                .unwrap_or(regions[leaf]);
+            landed += usize::from(into != regions[leaf]);
+            let item = self.items[node as usize].as_mut().unwrap();
+            (item.container, item.rank) = (into, self.next_rank);
+            self.next_rank += 1;
+            self.keep_relative(node);
+        }
+        (held.len(), landed)
+    }
+
+    /// Attaches a border node of 6 to 16 square to the node in `on` at a random side and offset.
+    fn add_border(&mut self, rng: &mut Lcg, on: u32) {
+        let edge = rng.range(6.0, 16.0) as f32;
+        let slot = self.graph.add_node(0.0, 0.0, edge, edge).unwrap();
+        let mut item = Self::plain(Kind::Border, CANVAS, [0.0; 2], NodeShape::Rectangle);
+        item.on = on;
+        self.record(slot, item);
+        let side = SIDES[rng.below(4) as usize];
+        let b = self.graph.node_bounds(on);
+        let length = match side {
+            Side::Top | Side::Bottom => b.max_x - b.min_x,
+            Side::Right | Side::Left => b.max_y - b.min_y,
+        };
+        let offset = rng.range(-0.2 * length, 1.2 * length);
+        let held = self.graph.attach(slot, on, side, offset).unwrap();
+        self.riders.push(Rider {
+            slot,
+            on,
+            side,
+            offset: held,
+        });
+    }
+
+    /// Adds a random edge: between a container and a node it holds, both on the outline, now and
+    /// then; on an edge between two nodes now and then; else between two nodes at random sides.
+    fn add_edge(&mut self, rng: &mut Lcg) {
+        let ends = self.of(&[Kind::Plain, Kind::Container, Kind::Divided, Kind::Border]);
+        if ends.is_empty() {
+            return;
+        }
+        let roll = rng.next();
+        let held: Vec<u32> = ends
+            .iter()
+            .copied()
+            .filter(|&s| self.item(s).container != CANVAS)
+            .collect();
+        let on_nodes: Vec<u32> = (0..self.edges.len() as u32)
+            .filter(|&e| {
+                self.edges[e as usize]
+                    .as_ref()
+                    .is_some_and(|s| s.source.node().is_some() && s.target.node().is_some())
+            })
+            .collect();
+        let (sides, source, target) = if roll < 0.3 && !held.is_empty() {
+            let inner = Self::pick(rng, &held).unwrap();
+            let mut outer = self.item(inner).container;
+            let mut outers = Vec::new();
+            while outer != CANVAS {
+                if self.item(outer).kind != Kind::Region {
+                    outers.push(outer);
+                }
+                outer = self.item(outer).container;
+            }
+            let outer = Self::pick(rng, &outers).unwrap();
+            let outline = Sides {
+                source: Dock::Outline,
+                target: Dock::Outline,
+            };
+            let (a, b) = (End::Node(outer), End::Node(inner));
+            if rng.next() < 0.5 {
+                (outline, a, b)
+            } else {
+                (outline, b, a)
+            }
+        } else if roll < 0.55 && !on_nodes.is_empty() {
+            let slot = Self::pick(rng, &on_nodes).unwrap();
+            let on = End::Edge {
+                slot,
+                t: rng.next(),
+            };
+            let other = if rng.next() < 0.15 {
+                End::Edge {
+                    slot,
+                    t: rng.next(),
+                }
+            } else {
+                End::Node(Self::pick(rng, &ends).unwrap())
+            };
+            if rng.next() < 0.5 {
+                (random_sides(rng), on, other)
+            } else {
+                (random_sides(rng), other, on)
+            }
+        } else {
+            let a = Self::pick(rng, &ends).unwrap();
+            let b = Self::pick(rng, &ends).unwrap();
+            if a == b {
+                return;
+            }
+            (random_sides(rng), End::Node(a), End::Node(b))
+        };
+        let spec = EdgeSpec {
+            sides,
+            source,
+            target,
+            labels: Vec::new(),
+            style: EdgeStyle::unstyled(),
+        };
+        let slot = self.graph.add_edge(spec.clone()).unwrap();
+        if self.edges.len() <= slot as usize {
+            self.edges.resize(slot as usize + 1, None);
+        }
+        self.edges[slot as usize] = Some(spec);
+    }
+
+    /// A random addition: a node into the canvas, a container, or a region, a container, a divided
+    /// node, a division of a container, a border node, or an edge.
+    fn add(&mut self, rng: &mut Lcg, counts: &mut Mixed) {
+        let takers: Vec<u32> = self
+            .in_use()
+            .filter(|(_, i)| i.takes())
+            .map(|(s, _)| s)
+            .collect();
+        let container = if rng.next() < 0.7 {
+            Self::pick(rng, &takers).unwrap_or(CANVAS)
+        } else {
+            CANVAS
+        };
+        let roll = rng.next();
+        if roll < 0.3 {
+            self.add_node(rng, container, Kind::Plain);
+        } else if roll < 0.4 {
+            self.add_node(rng, container, Kind::Container);
+        } else if roll < 0.45 {
+            self.add_divided(rng, container);
+        } else if roll < 0.52 {
+            // A container divided, which moves each node it holds into the region at its position,
+            // else into its first region.
+            if let Some(slot) = Self::pick(rng, &self.of(&[Kind::Container])) {
+                let (held, landed) = self.divide_node(rng, slot);
+                counts.divided_holding += u32::from(held > 0);
+                counts.landed_at += u32::try_from(landed).unwrap();
+            }
+        } else if roll < 0.7 {
+            let carriers = self.of(&[Kind::Plain, Kind::Container, Kind::Divided]);
+            if let Some(on) = Self::pick(rng, &carriers) {
+                self.add_border(rng, on);
+            }
+        } else {
+            self.add_edge(rng);
+        }
+    }
+
+    /// A graph of three containers, one in another, two divided nodes, one in a container, nodes
+    /// in the canvas, the containers, and the regions, border nodes on nodes of each kind, and
+    /// edges, all added from an empty graph.
+    fn new(rng: &mut Lcg) -> Self {
+        let mut combined = Self {
+            graph: Graph::new(Vec::new(), Vec::new(), Vec::new()).unwrap(),
+            items: Vec::new(),
+            edges: Vec::new(),
+            riders: Vec::new(),
+            next_rank: 0,
+        };
+        let outer = combined.add_node(rng, CANVAS, Kind::Container);
+        combined.add_node(rng, outer, Kind::Container);
+        combined.add_node(rng, CANVAS, Kind::Container);
+        combined.add_divided(rng, CANVAS);
+        combined.add_divided(rng, outer);
+        for _ in 0..10 {
+            let takers: Vec<u32> = combined
+                .in_use()
+                .filter(|(_, i)| i.takes())
+                .map(|(s, _)| s)
+                .collect();
+            let container = Self::pick(rng, &takers).filter(|_| rng.next() < 0.8);
+            combined.add_node(rng, container.unwrap_or(CANVAS), Kind::Plain);
+        }
+        for _ in 0..8 {
+            let carriers = combined.of(&[Kind::Plain, Kind::Container, Kind::Divided]);
+            let on = Self::pick(rng, &carriers).unwrap();
+            combined.add_border(rng, on);
+        }
+        for _ in 0..14 {
+            combined.add_edge(rng);
+        }
+        combined
+    }
+}
+
+impl Combined {
+    /// The nodes a step may move, resize, or put into a container: neither regions nor border
+    /// nodes, which follow the node they divide or ride.
+    fn movable(&self) -> Vec<u32> {
+        self.of(&[Kind::Plain, Kind::Container, Kind::Divided])
+    }
+
+    /// Moves a random node by a random delta in the graph and here, with what it holds: the node
+    /// by the delta, what it holds at the sum of its container's new world position and its own
+    /// relative to it, each container before what it holds.
+    fn translated(&mut self, rng: &mut Lcg, counts: &mut Mixed) {
+        let Some(slot) = Self::pick(rng, &self.movable()) else {
+            return;
+        };
+        let d = [
+            rng.range(-300.0, 300.0) as f32,
+            rng.range(-300.0, 300.0) as f32,
+        ];
+        self.graph.translate(&[slot], d[0], d[1]).unwrap();
+        let item = self.items[slot as usize].as_mut().unwrap();
+        item.at = [item.at[0] + d[0], item.at[1] + d[1]];
+        self.keep_relative(slot);
+        let moved = self.subtree(slot);
+        for &s in &moved[1..] {
+            let item = self.item(s);
+            if item.kind == Kind::Region {
+                continue;
+            }
+            let origin = self.origin(item.container);
+            let at = [0, 1].map(|axis| (origin[axis] + item.relative[axis]) as f32);
+            self.items[s as usize].as_mut().unwrap().at = at;
+            counts.carried += u32::from(self.item(item.container).kind == Kind::Region);
+        }
+    }
+
+    /// Moves a random node into a random target in the graph and here: the canvas now and then,
+    /// the node or one it holds now and then, else any node, and asserts the engine's answer
+    /// against the model's.
+    fn moved_into(&mut self, rng: &mut Lcg, counts: &mut Mixed) {
+        let Some(slot) = Self::pick(rng, &self.movable()) else {
+            return;
+        };
+        let roll = rng.next();
+        let own = self.subtree(slot);
+        let others: Vec<u32> = self.in_use().map(|(s, _)| s).collect();
+        let target = if roll < 0.15 {
+            CANVAS
+        } else if roll < 0.3 {
+            own[rng.below(own.len()) as usize]
+        } else {
+            Self::pick(rng, &others).unwrap()
+        };
+        let answer = self.graph.move_into(slot, target);
+        // A node or a region divided into regions takes no node, as no node that is no
+        // container does (ARCH-regions-are-container-slots).
+        if target != CANVAS && !self.item(target).takes() {
+            assert_eq!(answer, Err(MoveIntoError::NoContainer { slot: target }));
+            counts.refused_divided += u32::from(self.item(target).holds());
+            return;
+        }
+        if own.contains(&target) {
+            assert_eq!(answer, Err(MoveIntoError::InItself { slot: target }));
+            return;
+        }
+        assert_eq!(answer, Ok(()), "{slot} into {target}");
+        let item = self.item(slot);
+        if item.container == target {
+            return;
+        }
+        let carries = item.kind == Kind::Divided || self.riders.iter().any(|r| r.on == slot);
+        let into_region = target != CANVAS && self.item(target).kind == Kind::Region;
+        counts.moved_into += u32::from(carries || into_region);
+        let item = self.items[slot as usize].as_mut().unwrap();
+        (item.container, item.rank) = (target, self.next_rank);
+        self.next_rank += 1;
+        self.keep_relative(slot);
+    }
+
+    /// Keeps anew the positions relative to their containers of the nodes that lie directly in the
+    /// node in `slot` or in one of its regions, whose world positions a resize or a drag of a line
+    /// keeps.
+    fn keep_held_relative(&mut self, slot: u32) {
+        let held: Vec<u32> = self
+            .in_use()
+            .filter(|(_, i)| i.kind != Kind::Region && i.container != CANVAS)
+            .filter(|(_, i)| {
+                let c = self.item(i.container);
+                i.container == slot
+                    || (c.kind == Kind::Region && self.divided_node(i.container) == slot)
+            })
+            .map(|(s, _)| s)
+            .collect();
+        for s in held {
+            self.keep_relative(s);
+        }
+    }
+
+    /// Resizes a random node by a random handle in the graph and here: the node to the box the
+    /// call returns, what it holds where it lay.
+    fn resized(&mut self, rng: &mut Lcg, counts: &mut Mixed) {
+        let Some(slot) = Self::pick(rng, &self.movable()) else {
+            return;
+        };
+        let item = self.item(slot);
+        let from = self.graph.node_bounds(slot);
+        let handle = Handle::ALL[rng.below(8) as usize];
+        let by = [rng.range(-200.0, 200.0), rng.range(-200.0, 200.0)];
+        let to = self
+            .graph
+            .resize(slot, handle, &from, by, f64::from(item.top))
+            .unwrap();
+        #[expect(clippy::cast_possible_truncation, reason = "the f32 the graph keeps")]
+        let at = [to.min_x as f32, to.min_y as f32];
+        self.items[slot as usize].as_mut().unwrap().at = at;
+        self.keep_relative(slot);
+        self.keep_held_relative(slot);
+        let ridden = self.riders.iter().any(|r| r.on == slot);
+        counts.resized += u32::from(item.kind == Kind::Divided && ridden);
+    }
+
+    /// Drags a random line between two regions to a random point along their division.
+    fn dragged_line(&mut self, rng: &mut Lcg, counts: &mut Mixed) {
+        let lines: Vec<u32> = self
+            .of(&[Kind::Divided, Kind::Region])
+            .into_iter()
+            .flat_map(|s| {
+                let regions = self.regions_in(s);
+                let n = regions.len().saturating_sub(1);
+                regions.into_iter().take(n)
+            })
+            .collect();
+        let Some(region) = Self::pick(rng, &lines) else {
+            return;
+        };
+        let axis = self.item(self.item(region).container).divide.unwrap();
+        let b = self.graph.node_bounds(region);
+        let at = if axis == Axis::Across {
+            b.max_x
+        } else {
+            b.max_y
+        };
+        let moved = self
+            .graph
+            .move_line(region, at + rng.range(-200.0, 200.0))
+            .unwrap();
+        self.keep_held_relative(self.divided_node(region));
+        counts.lines += u32::from(moved != at);
+    }
+
+    /// Drags a random border node to a point around its node.
+    fn slid(&mut self, rng: &mut Lcg, counts: &mut Mixed) {
+        if self.riders.is_empty() {
+            return;
+        }
+        let k = rng.below(self.riders.len()) as usize;
+        let on = self.riders[k].on;
+        let b = self.graph.node_bounds(on);
+        let (w, h) = (b.max_x - b.min_x, b.max_y - b.min_y);
+        let point = Point::new(
+            b.min_x + w * rng.range(-0.5, 1.5),
+            b.min_y + h * rng.range(-0.5, 1.5),
+        );
+        let place = self.graph.slide(self.riders[k].slot, point).unwrap();
+        assert_eq!(place.on, on);
+        (self.riders[k].side, self.riders[k].offset) = (place.side, place.offset);
+        counts.slid += 1;
+    }
+
+    /// The edges in use that end on any of `edges`.
+    fn anchored_on(&self, edges: &[u32]) -> Vec<u32> {
+        let on = |end: End| end.edge().is_some_and(|e| edges.contains(&e));
+        (0..self.edges.len() as u32)
+            .filter(|&e| {
+                self.edges[e as usize]
+                    .as_ref()
+                    .is_some_and(|s| on(s.source) || on(s.target))
+            })
+            .collect()
+    }
+
+    /// The edges in use with an end on any of the nodes in `nodes`.
+    fn edges_at(&self, nodes: &[u32]) -> Vec<u32> {
+        let at = |end: End| end.node().is_some_and(|n| nodes.contains(&n));
+        (0..self.edges.len() as u32)
+            .filter(|&e| {
+                self.edges[e as usize]
+                    .as_ref()
+                    .is_some_and(|s| at(s.source) || at(s.target))
+            })
+            .collect()
+    }
+
+    /// Removes a random node, a border node among them, or now and then a random edge, from the
+    /// graph and here, and asserts that the engine names exactly what goes with it: what the node
+    /// holds, the border nodes of any of it, the edges at any of those, and the edges that end on
+    /// one of them.
+    fn removed(&mut self, rng: &mut Lcg, counts: &mut Mixed) {
+        let edges_in_use: Vec<u32> = (0..self.edges.len() as u32)
+            .filter(|&e| self.edges[e as usize].is_some())
+            .collect();
+        let sorted = |mut v: Vec<u32>| {
+            v.sort_unstable();
+            v
+        };
+        if rng.next() < 0.2 && !edges_in_use.is_empty() {
+            let edge = Self::pick(rng, &edges_in_use).unwrap();
+            let mut gone = self.anchored_on(&[edge]);
+            gone.push(edge);
+            let freed = self.graph.remove_edges(&[edge]).unwrap();
+            assert_eq!(sorted(freed), sorted(gone.clone()), "edge {edge} removed");
+            for e in gone {
+                self.edges[e as usize] = None;
+            }
+            return;
+        }
+        let Some(slot) = Self::pick(
+            rng,
+            &self.of(&[Kind::Plain, Kind::Container, Kind::Divided, Kind::Border]),
+        ) else {
+            return;
+        };
+        let mut nodes = self.subtree(slot);
+        let borders: Vec<u32> = self
+            .riders
+            .iter()
+            .filter(|r| nodes.contains(&r.on))
+            .map(|r| r.slot)
+            .collect();
+        nodes.extend(&borders);
+        let mut edges = self.edges_at(&nodes);
+        let anchored: Vec<u32> = self
+            .anchored_on(&edges)
+            .into_iter()
+            .filter(|e| !edges.contains(e))
+            .collect();
+        let took_anchored = !anchored.is_empty();
+        edges.extend(anchored);
+        let (removed, freed) = self.graph.remove_nodes(&[slot]).unwrap();
+        assert_eq!(
+            sorted(removed),
+            sorted(nodes.clone()),
+            "node {slot} removed"
+        );
+        assert_eq!(sorted(freed), sorted(edges.clone()), "edges with {slot}");
+        counts.removed_borders += u32::from(!borders.is_empty());
+        counts.removed_anchored += u32::from(took_anchored);
+        for s in nodes {
+            self.items[s as usize] = None;
+        }
+        self.riders
+            .retain(|r| self.items[r.slot as usize].is_some());
+        for e in edges {
+            self.edges[e as usize] = None;
+        }
+    }
+
+    /// One random step, checked after it.
+    fn step(&mut self, rng: &mut Lcg, counts: &mut Mixed) {
+        let before: Vec<Option<EdgePath>> = (0..self.edges.len())
+            .map(|e| self.edges[e].as_ref().map(|_| self.graph.paths[e]))
+            .collect();
+        match rng.below(10) {
+            0 | 1 => self.translated(rng, counts),
+            2 => self.moved_into(rng, counts),
+            3 | 4 => self.resized(rng, counts),
+            5 => self.dragged_line(rng, counts),
+            6 => self.slid(rng, counts),
+            7 => self.removed(rng, counts),
+            _ => self.add(rng, counts),
+        }
+        self.assert_matches(rng, counts, &before);
+    }
+}
+
+impl Combined {
+    /// The ends on the outline of an edge between the container in `container` and the node in
+    /// `held` it holds, from their boxes and node shapes (API-edges-dock-nodes-or-edges, *An end
+    /// on a container toward a node it holds*).
+    fn held_ends(&self, container: u32, held: u32) -> (Point, Point) {
+        let (outer, inner) = (
+            self.graph.node_bounds(container),
+            self.graph.node_bounds(held),
+        );
+        let (c, h) = (centre(&outer), centre(&inner));
+        let (dx, dy) = if c == h {
+            (1.0, 0.0)
+        } else {
+            (h.x - c.x, h.y - c.y)
+        };
+        let towards = |from: Point| Point::new(from.x + dx, from.y + dy);
+        let shape = |s: u32| self.item(s).shape;
+        let (end, _) = end_of(Dock::Outline, &outer, shape(container), towards(c));
+        let (inner_end, _) = end_of(Dock::Outline, &inner, shape(held), towards(h));
+        (end, inner_end)
+    }
+
+    /// The path of the edge `spec` from the boxes of its nodes, their node shapes and nesting as
+    /// the model has them, and the path of the edge it ends on, by the same rule, computed with
+    /// the geometry alone (API-edges-dock-nodes-or-edges). It follows `Graph::path_of` step for
+    /// step, so it decides whether a cached path is fresh after a step, an end on an edge among
+    /// them, not whether the rule is right; the tests of `geometry` and `graph/edges.rs` decide
+    /// that.
+    fn path(&self, spec: &EdgeSpec) -> EdgePath {
+        if let (End::Node(source), End::Node(target)) = (spec.source, spec.target)
+            && spec.sides.source == Dock::Outline
+            && spec.sides.target == Dock::Outline
+        {
+            if self.lies_in(target, source) {
+                let (outer, inner) = self.held_ends(source, target);
+                return EdgePath::inward(outer, inner);
+            }
+            if self.lies_in(source, target) {
+                let (outer, inner) = self.held_ends(target, source);
+                return EdgePath::inward(inner, outer);
+            }
+        }
+        let anchor = |slot: u32| self.path(self.edges[slot as usize].as_ref().unwrap());
+        let at = |end: End| match end {
+            End::Node(node) => centre(&self.graph.node_bounds(node)),
+            End::Edge { slot, t } => anchor(slot).point_at(t),
+        };
+        let (mut towards_target, mut towards_source) = (at(spec.target), at(spec.source));
+        if let (End::Node(source), End::Node(target)) = (spec.source, spec.target)
+            && towards_target == towards_source
+            && (self.lies_in(source, target) || self.lies_in(target, source))
+        {
+            towards_target.x += 1.0;
+            towards_source.x += 1.0;
+        }
+        let on_node = |end: End, dock, towards| {
+            end.node().map(|node| {
+                end_of(
+                    dock,
+                    &self.graph.node_bounds(node),
+                    self.item(node).shape,
+                    towards,
+                )
+            })
+        };
+        let from = on_node(spec.source, spec.sides.source, towards_target);
+        let to = on_node(spec.target, spec.sides.target, towards_source);
+        let on_path = |end: End, towards| {
+            let End::Edge { slot, t } = end else {
+                unreachable!("an end on a node docked above")
+            };
+            on_edge(&anchor(slot), t, towards)
+        };
+        let from = from.unwrap_or_else(|| on_path(spec.source, to.map_or(towards_target, |e| e.0)));
+        let to = to.unwrap_or_else(|| on_path(spec.target, from.0));
+        EdgePath::joining(from, to)
+    }
+
+    /// Asserts that the regions of the node or region in `slot` tile what they divide, below the
+    /// content of a divided node or beside a region's band, each at least the least region along
+    /// its division, within `f32`'s rounding, at every depth.
+    fn assert_tiled(&self, slot: u32) {
+        let item = self.item(slot);
+        let Some(axis) = item.divide else {
+            return;
+        };
+        let (a, b) = (axis.index(), 1 - axis.index());
+        let outer = self.graph.node_bounds(slot);
+        let mut inner = [outer.min_x, outer.min_y, outer.max_x, outer.max_y];
+        if item.kind == Kind::Divided {
+            inner[1] += f64::from(item.top);
+        } else if item.band {
+            let along = self.item(item.container).divide.unwrap();
+            inner[if along == Axis::Down { 0 } else { 1 }] += BAND;
+        }
+        let close = |x: f64, y: f64| (x - y).abs() <= 1e-3 * (1.0 + x.abs());
+        let mut at = inner[a];
+        for region in self.regions_in(slot) {
+            let r = self.graph.node_bounds(region);
+            let ([lo, hi], [c_lo, c_hi]) = if a == 0 {
+                ([r.min_x, r.max_x], [r.min_y, r.max_y])
+            } else {
+                ([r.min_y, r.max_y], [r.min_x, r.max_x])
+            };
+            assert!(close(lo, at), "region {region} starts at {lo}, not {at}");
+            assert!(hi - lo >= LEAST_REGION - 1e-3, "region {region} too small");
+            assert!(
+                close(c_lo, inner[b]) && close(c_hi, inner[b + 2]),
+                "region {region} across {c_lo}..{c_hi}, not {}..{}",
+                inner[b],
+                inner[b + 2]
+            );
+            assert_eq!(self.graph.container(region), slot, "region {region}");
+            at = hi;
+            self.assert_tiled(region);
+        }
+        assert!(close(at, inner[a + 2]), "{slot}'s regions end at {at}");
+    }
+
+    /// The containers in the order they are drawn: each after its own container, siblings by rank.
+    fn drawn_containers(&self) -> Vec<u32> {
+        fn visit(model: &Combined, parent: u32, out: &mut Vec<u32>) {
+            let mut children: Vec<(u32, u32)> = model
+                .in_use()
+                .filter(|(_, n)| n.holds() && n.container == parent)
+                .map(|(s, n)| (n.rank, s))
+                .collect();
+            children.sort_unstable();
+            for (_, slot) in children {
+                out.push(slot);
+                visit(model, slot, out);
+            }
+        }
+        let mut out = Vec::new();
+        visit(self, CANVAS, &mut out);
+        out
+    }
+
+    /// The nodes that are no container in the order they are drawn: by rank, each followed by its
+    /// border nodes by theirs, a border node of a container at the place of the container's rank.
+    fn drawn_nodes(&self) -> Vec<u32> {
+        let mut nodes: Vec<((u32, bool, u32), u32)> = self
+            .in_use()
+            .filter(|(_, n)| !n.holds())
+            .map(|(s, n)| {
+                let key = if n.kind == Kind::Border {
+                    (self.item(n.on).rank, true, n.rank)
+                } else {
+                    (n.rank, false, 0)
+                };
+                (key, s)
+            })
+            .collect();
+        nodes.sort_unstable();
+        nodes.into_iter().map(|(_, s)| s).collect()
+    }
+
+    /// Whether `p` lies within the outline of the node in `slot`, by its box and its node shape.
+    fn within(&self, slot: u32, p: Point) -> bool {
+        let b = self.graph.node_bounds(slot);
+        b.contains(p)
+            && self.item(slot).shape.contains(
+                b.max_x - b.min_x,
+                b.max_y - b.min_y,
+                p.x - b.min_x,
+                p.y - b.min_y,
+            )
+    }
+
+    /// Asserts that every node lies where the model has it, in its container, with the edges at
+    /// it; that border nodes ride their nodes; that regions tile what they divide; that every edge
+    /// lies where the model's path runs; and that queries and hits find what a scan finds.
+    fn assert_matches(&mut self, rng: &mut Lcg, counts: &mut Mixed, before: &[Option<EdgePath>]) {
+        let graph = &self.graph;
+        let mut synced = Vec::new();
+        for (slot, item) in self.in_use() {
+            assert_eq!(graph.container(slot), item.container, "node {slot}");
+            let mut at_edges = graph.edges_at(&[slot]).unwrap();
+            at_edges.sort_unstable();
+            assert_eq!(at_edges, self.edges_at(&[slot]), "edges at {slot}");
+            if !matches!(item.kind, Kind::Region | Kind::Border) {
+                let i = slot as usize * 2;
+                let at = [graph.positions()[i], graph.positions()[i + 1]];
+                // Within the rounding of a step to `f32`: the model keeps the sums of a node's
+                // own steps, not which positions relative to a container the graph kept and
+                // which it took anew where both give the same world position. So a drift of that
+                // rounding, a delta added to a held node in place of the sum along its chain,
+                // passes here; the bit-exact tests of nesting above decide it.
+                let off = (0..2).map(|k| (f64::from(at[k]) - f64::from(item.at[k])).abs());
+                let tolerance = 1e-3 + 1e-6 * f64::from(item.at[0].abs() + item.at[1].abs());
+                assert!(
+                    off.fold(0.0, f64::max) <= tolerance,
+                    "node {slot}, {:?}: {at:?}, not {:?}",
+                    item.kind,
+                    item.at
+                );
+                synced.push((slot, at));
+            }
+            if item.kind == Kind::Divided {
+                self.assert_tiled(slot);
+                counts.tiled += 1;
+            }
+        }
+        assert_riding(graph, &self.riders);
+        let changed =
+            |e: u32| before.get(e as usize).copied().flatten() != Some(graph.paths[e as usize]);
+        let mut paths = vec![None; self.edges.len()];
+        for (e, spec) in self.edges.iter().enumerate() {
+            let Some(spec) = spec else {
+                continue;
+            };
+            let path = self.path(spec);
+            assert_eq!(graph.paths[e], path, "edge {e}: {spec:?}");
+            paths[e] = Some(path);
+            let anchors = [spec.source.edge(), spec.target.edge()];
+            counts.anchored += u32::from(anchors.iter().flatten().any(|&a| changed(a)));
+            if let (End::Node(s), End::Node(t)) = (spec.source, spec.target)
+                && (self.lies_in(s, t) || self.lies_in(t, s))
+                && spec.sides.source == Dock::Outline
+                && spec.sides.target == Dock::Outline
+            {
+                counts.inward += u32::from(changed(e as u32));
+            }
+        }
+        // The next step is judged from where this one left each node.
+        for (slot, at) in synced {
+            self.items[slot as usize].as_mut().unwrap().at = at;
+        }
+        self.assert_found(rng, counts, &paths);
+    }
+}
+
+impl Combined {
+    /// Which edge a press at `p` at the far level, a screen pixel one world unit, hits below
+    /// the nodes that are no container (REN-node-content-and-hits): of the edges whose path, as
+    /// the model computes it in `paths`, lies within the reach of 4 of `p`, the one in the highest
+    /// slot. The path is measured by 512 chords; within a unit of the reach either way, the
+    /// flattening of the stroke decides, and the case is unsure.
+    fn edge_near(&self, p: Point, paths: &[Option<EdgePath>]) -> Near {
+        const REACH: f64 = 4.0;
+        for e in (0..paths.len() as u32).rev() {
+            // A path lies within the bounds of its control points.
+            let Some(path) =
+                paths[e as usize].filter(|path| path.bounds().grown(REACH + 1.0).contains(p))
+            else {
+                continue;
+            };
+            let points: Vec<Point> = (0..=512)
+                .map(|k| path.point_at(f64::from(k) / 512.0))
+                .collect();
+            let distance = points
+                .windows(2)
+                .map(|w| crate::stroke::distance_to_segment(p, w[0], w[1]))
+                .fold(f64::INFINITY, f64::min);
+            if distance <= REACH - 1.0 {
+                return Near::Edge(e);
+            }
+            if distance <= REACH + 1.0 {
+                return Near::Unsure;
+            }
+        }
+        Near::None
+    }
+
+    /// A point in the box of a random node in use, or anywhere where there is none.
+    fn random_point(&self, rng: &mut Lcg) -> Point {
+        let slots: Vec<u32> = self.in_use().map(|(s, _)| s).collect();
+        match Self::pick(rng, &slots) {
+            Some(slot) => {
+                let b = self.graph.node_bounds(slot);
+                Point::new(rng.range(b.min_x, b.max_x), rng.range(b.min_y, b.max_y))
+            }
+            None => Point::new(rng.range(-2500.0, 2500.0), rng.range(-2500.0, 2500.0)),
+        }
+    }
+
+    /// Asserts that a query of random rectangles finds the containers, the other nodes, and the
+    /// edges a scan of the model finds, in the order they are drawn, edges by slot, and that the
+    /// hit test at random points finds the node a scan finds on top: of the nodes whose outline
+    /// holds the point, the last that is no container, else the last container; a press on a
+    /// region names the node it divides.
+    fn assert_found(&mut self, rng: &mut Lcg, counts: &mut Mixed, paths: &[Option<EdgePath>]) {
+        let in_use: Vec<u32> = (0..paths.len() as u32)
+            .filter(|&e| paths[e as usize].is_some())
+            .collect();
+        let mut out = Visible::default();
+        for _ in 0..4 {
+            let p = self.random_point(rng);
+            let rect = Rect::new(
+                p.x - rng.range(0.0, 300.0),
+                p.y - rng.range(0.0, 300.0),
+                p.x + rng.range(0.0, 300.0),
+                p.y + rng.range(0.0, 300.0),
+            );
+            self.graph.query(&rect, Level::Near, 4.0, 0.0, &mut out);
+            let meets = |s: &u32| self.graph.node_bounds(*s).meets(&rect);
+            let containers: Vec<u32> = self.drawn_containers().into_iter().filter(meets).collect();
+            let nodes: Vec<u32> = self.drawn_nodes().into_iter().filter(meets).collect();
+            let edges: Vec<u32> = (0..paths.len() as u32)
+                .filter(|&e| {
+                    let spec = self.edges[e as usize].as_ref();
+                    let path = paths[e as usize].as_ref();
+                    spec.zip(path)
+                        .is_some_and(|(spec, path)| drawn_bounds(spec, path).meets(&rect))
+                })
+                .collect();
+            assert_eq!(
+                (&out.containers, &out.nodes, &out.edges),
+                (&containers, &nodes, &edges),
+                "{rect:?}"
+            );
+        }
+        for k in 0..12 {
+            // Every third point near a random edge's path, the others in a random node's box.
+            let p = match Self::pick(rng, &in_use).filter(|_| k % 3 == 0) {
+                Some(e) => {
+                    let at = paths[e as usize].unwrap().point_at(rng.next());
+                    Point::new(at.x + rng.range(-8.0, 8.0), at.y + rng.range(-8.0, 8.0))
+                }
+                None => self.random_point(rng),
+            };
+            let holds = |s: &u32| self.within(*s, p);
+            let top = self
+                .drawn_nodes()
+                .into_iter()
+                .rev()
+                .find(holds)
+                .or_else(|| self.drawn_containers().into_iter().rev().find(holds));
+            assert_eq!(self.graph.node_at(p), top, "node at {p:?}");
+            let Some(top) = top else {
+                continue;
+            };
+            let item = self.item(top);
+            let hit = self.graph.hit_at(p, 1.0, Level::Far, false);
+            if item.holds() {
+                // Below every node that is no container lies an edge, the one in the highest slot,
+                // then the container, a region named as the node it divides.
+                match self.edge_near(p, paths) {
+                    Near::Edge(edge) => {
+                        assert_eq!(hit, Some(Target::Edge(edge)), "at {p:?}, {top} on top");
+                        counts.hit_edges += 1;
+                    }
+                    Near::None => {
+                        let named = Target::Node(self.divided_node(top));
+                        assert_eq!(hit, Some(named), "at {p:?}, {top} on top");
+                        counts.hit_regions += u32::from(item.kind == Kind::Region);
+                    }
+                    Near::Unsure => {}
+                }
+            } else {
+                assert_eq!(hit, Some(Target::Node(top)), "hit at {p:?}");
+                counts.hit_borders += u32::from(item.kind == Kind::Border);
+                let region =
+                    item.container != CANVAS && self.item(item.container).kind == Kind::Region;
+                counts.hit_held += u32::from(region);
+            }
+        }
+    }
+}
+
+#[test]
+fn nested_graphs_with_regions_border_nodes_and_edges_on_edges_match_a_model_through_random_edits() {
+    // Verifies: ARCH-engine-edits-nested-graph, ARCH-regions-are-container-slots,
+    // ARCH-border-nodes-ride-sides, API-edges-dock-nodes-or-edges, REN-node-content-and-hits
+    // Per clause, the cases it rests on: see `Mixed`.
+    let mut rng = Lcg(0x00C0_FFEE);
+    let mut counts = Mixed::default();
+    for _ in 0..30 {
+        let mut combined = Combined::new(&mut rng);
+        combined.assert_matches(&mut rng, &mut counts, &[]);
+        for _ in 0..60 {
+            combined.step(&mut rng, &mut counts);
+        }
+    }
+    let Mixed {
+        carried,
+        moved_into,
+        refused_divided,
+        resized,
+        divided_holding,
+        landed_at,
+        lines,
+        slid,
+        removed_borders,
+        removed_anchored,
+        anchored,
+        inward,
+        tiled,
+        hit_borders,
+        hit_regions,
+        hit_held,
+        hit_edges,
+    } = counts;
+    for (clause, count, floor) in [
+        (
+            "nodes in a region carried by a move around it",
+            carried,
+            100,
+        ),
+        (
+            "moves into a region or carrying border nodes or regions",
+            moved_into,
+            14,
+        ),
+        ("moves into a divided node refused", refused_divided, 8),
+        ("resizes of a divided node with border nodes", resized, 7),
+        (
+            "containers divided while they held nodes",
+            divided_holding,
+            7,
+        ),
+        (
+            "nodes a division moved into the region at their position",
+            landed_at,
+            4,
+        ),
+        ("lines dragged", lines, 50),
+        ("border nodes dragged", slid, 90),
+        ("removals taking border nodes", removed_borders, 20),
+        ("removals taking an edge on an edge", removed_anchored, 10),
+        ("ends on an edge after their edge moved", anchored, 200),
+        (
+            "edges between a container and a node it holds after a move",
+            inward,
+            250,
+        ),
+        ("divided nodes tiled", tiled, 2000),
+        ("hits on a border node", hit_borders, 1500),
+        ("hits on a region", hit_regions, 1500),
+        ("hits on a node in a region", hit_held, 1200),
+        ("hits on an edge above a container", hit_edges, 800),
+    ] {
+        assert!(count >= floor, "{clause}: {count}");
+    }
 }

@@ -336,6 +336,9 @@ impl Graph {
     /// - what each part `keeps` held directly, nodes and no regions, leaves that region: into the
     ///   part where it holds no parts, at its position relative to it, else into the first part
     ///   it holds, to any depth, at its world position (the human's decision of 2026-11-18);
+    /// - what the node held directly, nodes and no regions, goes at its world position into the
+    ///   region that holds that position, as a drop there lands, else into the first part, or that
+    ///   part's first part to any depth (the maintainer's decisions of 2026-11-25);
     /// - the regions the node had go, with all they still hold and every edge at it
     ///   (*Removing a region*);
     /// - the node keeps the width its data gives, from which `arrange` grows it, is a container
@@ -385,7 +388,16 @@ impl Graph {
         for ((&region, part), &holds) in regions.iter().zip(parts).zip(&holds) {
             self.mark_region(region, part.named, part.divide.filter(|_| holds));
         }
+        let direct = self.held_directly(slot, parts);
         self.arrange(slot);
+        let mut moved = moved;
+        for (held, at) in direct {
+            let point = Point::new(at[0], at[1]);
+            let into = self
+                .region_at(&regions, point)
+                .unwrap_or_else(|| first_leaf(parts, &holds, 0));
+            moved.push((into, held, Landing::World(at)));
+        }
         for (index, held, landing) in moved {
             let region = regions[index];
             let at = &self.positions[region as usize * 2..];
@@ -393,8 +405,9 @@ impl Graph {
                 Landing::Relative([x, y]) => [f64::from(at[0]) + x, f64::from(at[1]) + y],
                 Landing::World(world) => world,
             };
-            // A node that lay in a region of the node, on the canvas since `take_out_kept`, which
-            // the part's region, a container just marked, now holds at a finite world position.
+            // A node that lay in a region of the node, on the canvas since `take_out_kept`, or
+            // directly in the node, which the part's region, a container just marked, now holds
+            // at a finite world position.
             self.move_into(held, region)
                 .unwrap_or_else(|_| unreachable!("a held node moves into a region just marked"));
             self.place(held, world[0], world[1])
@@ -477,6 +490,39 @@ impl Graph {
                 .unwrap_or_else(|_| unreachable!("the canvas takes a node a region holds"));
         }
         moved
+    }
+
+    /// The nodes the node in `slot` holds directly, no regions, each with its world position,
+    /// which a division moves into a region (`region_at`); none where `parts` is empty, a
+    /// division into none.
+    fn held_directly(&self, slot: u32, parts: &[Part]) -> Vec<(u32, [f64; 2])> {
+        if parts.is_empty() {
+            return Vec::new();
+        }
+        self.held(slot)
+            .iter()
+            .copied()
+            .filter(|&held| !self.is_region(held))
+            .map(|held| {
+                let at = [0, 1].map(|axis| f64::from(self.positions[held as usize * 2 + axis]));
+                (held, at)
+            })
+            .collect()
+    }
+
+    /// The index in `regions`, the regions a division just laid out, of the region a node held
+    /// directly at `point`, its world position, moves into: of the regions not divided again
+    /// whose box holds the point, the last in the order of containers, as a drop there lands
+    /// (`container_at`); none where no region holds it, which then takes the first region, or
+    /// that region's first region (the maintainer's decisions of 2026-11-25, after the human's of
+    /// 2026-11-18).
+    fn region_at(&self, regions: &[u32], point: Point) -> Option<usize> {
+        (0..regions.len())
+            .filter(|&k| {
+                let region = regions[k];
+                !self.holds_regions(region) && self.node_bounds(region).contains(point)
+            })
+            .max_by_key(|&k| self.container_order[regions[k] as usize])
     }
 
     /// Adds a container for each of `parts` into what it divides, the node in `slot`, divided by
@@ -913,7 +959,7 @@ impl Graph {
 #[cfg(test)]
 mod tests {
     use super::super::tests::Lcg;
-    use super::super::{Handle, Level, Target, Visible};
+    use super::super::{Handle, Level, MoveIntoError, Target, Visible};
     use super::*;
 
     /// A part of `size`, unnamed and undivided, in the part at `of`, or in the node for none.
@@ -1246,6 +1292,101 @@ mod tests {
         assert_eq!(graph.divided(0), None);
         assert!(!graph.is_container(0));
         assert_eq!(graph.sizes()[0], 300.0);
+    }
+
+    #[test]
+    fn a_move_into_a_node_or_a_region_divided_into_regions_is_refused_and_changes_nothing() {
+        // Verifies: ARCH-regions-are-container-slots
+        // A divided node holds its regions alone, as a load and a drop (`container_at`) hold it.
+        let (mut graph, r, node) = activity();
+        let before = (graph.positions().to_vec(), graph.ranks.clone());
+        for divided in [0, r[1]] {
+            assert_eq!(
+                graph.move_into(node, divided),
+                Err(MoveIntoError::NoContainer { slot: divided })
+            );
+            assert_eq!(graph.container(node), r[0]);
+        }
+        assert_eq!((graph.positions().to_vec(), graph.ranks.clone()), before);
+        // Its regions not divided again take the node.
+        assert_eq!(graph.move_into(node, r[2]), Ok(()));
+        assert_eq!(graph.container(node), r[2]);
+    }
+
+    #[test]
+    fn a_container_divided_moves_each_node_it_held_into_the_region_at_its_position_where_it_lay() {
+        // Verifies: ARCH-regions-are-container-slots
+        // The maintainer's decisions of 2026-11-25: what the node held directly goes, at its world
+        // position, into the innermost region whose box holds its position, as a drop there would
+        // land, and into the first region, or that region's first region, where none does, as a
+        // kept region's content goes (the human's decision of 2026-11-18).
+        let mut graph = Graph::default();
+        let c = graph
+            .add_node_in(CANVAS, true, [0.0, 0.0, 400.0, 200.0])
+            .unwrap();
+        let node = |graph: &mut Graph, within, x, y| {
+            graph
+                .add_node_in(within, false, [x, y, 10.0, 10.0])
+                .unwrap()
+        };
+        // `a`, a container, and `z` in the first partition's part, `y` and `v` in the second's two
+        // regions, `b` in `a`, and `w` beside every region.
+        let a = graph
+            .add_node_in(c, true, [20.0, 30.0, 80.0, 60.0])
+            .unwrap();
+        let b = node(&mut graph, a, 30.0, 40.0);
+        let z = node(&mut graph, c, 10.0, 150.0);
+        let y = node(&mut graph, c, 250.0, 20.0);
+        let v = node(&mut graph, c, 250.0, 150.0);
+        let w = node(&mut graph, c, 500.0, 20.0);
+        let all = [a, b, z, y, v, w];
+        let before = all.map(|s| rect(&graph, s));
+        // Across into `r0` from 0 to 200 and `r1` from 200, `r1` down into two of 100 each.
+        let parts = [
+            Part {
+                size: 200.0,
+                ..Part::default()
+            },
+            Part {
+                size: 200.0,
+                divide: Some(Axis::Down),
+                ..Part::default()
+            },
+            Part {
+                size: 100.0,
+                of: Some(1),
+                ..Part::default()
+            },
+            Part {
+                size: 100.0,
+                of: Some(1),
+                ..Part::default()
+            },
+        ];
+        let divided = graph
+            .divide(c, Some(Axis::Across), 0.0, &parts, RegionSlots::Added)
+            .unwrap();
+        assert!(divided.nodes.is_empty() && divided.edges.is_empty());
+        let r = &divided.regions;
+        assert_eq!(rect(&graph, r[0]), [0.0, 0.0, 200.0, 200.0]);
+        assert_eq!(graph.held(c), &[r[0], r[1]]);
+        let containers = all.map(|s| graph.container(s));
+        assert_eq!(containers, [r[0], a, r[0], r[2], r[3], r[0]]);
+        assert_eq!(all.map(|s| rect(&graph, s)), before);
+        // A first part divided: a node beside every region goes into its first region.
+        let mut graph = Graph::default();
+        let c = graph
+            .add_node_in(CANVAS, true, [0.0, 0.0, 400.0, 200.0])
+            .unwrap();
+        let w = node(&mut graph, c, 500.0, 20.0);
+        let parts = [parts[1], parts[2], parts[3], parts[0]].map(|part| Part {
+            of: part.of.map(|_| 0),
+            ..part
+        });
+        let divided = graph
+            .divide(c, Some(Axis::Across), 0.0, &parts, RegionSlots::Added)
+            .unwrap();
+        assert_eq!(graph.container(w), divided.regions[1]);
     }
 
     #[test]

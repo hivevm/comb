@@ -660,6 +660,54 @@ mod tests {
     }
 
     #[test]
+    fn an_update_that_divides_a_container_moves_each_node_it_held_into_the_region_at_its_position()
+    {
+        // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes
+        // A load and `addNode` refuse a node in a divided node (`AN_UNDIVIDED`), and a node added
+        // holds nothing, so `updateNode` alone divides a node that holds nodes. The maintainer's
+        // decisions of 2026-11-25: each goes, where it lay, into the region whose box holds its
+        // position, here `x` into `p1` and `y`, at (300, 100), into `p3`, from 250 to 350 across
+        // and from the content's 64 down; one beside every region, `z`, into the first, `p1`.
+        let mut engine = crate::Engine::new();
+        let c = added(0.0, 0.0, |n| {
+            n.id = "c".to_owned().into();
+            n.is_container = Some(true).into();
+        });
+        let c = engine.add(&c, (None, None)).unwrap();
+        let held =
+            [("x", 10.0, 100.0), ("y", 300.0, 100.0), ("z", 900.0, 100.0)].map(|(id, x, y)| {
+                let node = added(x, y, |n| n.id = id.to_owned().into());
+                engine.add(&node, (Some(c), None)).unwrap()
+            });
+        let before = held.map(|s| rect(&engine.graph, s));
+        let (divide, regions) = partitions();
+        let patch = super::super::NodePatch(vec![
+            (
+                "divide".to_owned(),
+                super::super::PatchValue::Divide(Field(Some(divide))),
+            ),
+            (
+                "regions".to_owned(),
+                super::super::PatchValue::Regions(Some(regions).into()),
+            ),
+        ]);
+        let kept = [u32::MAX; 5];
+        let removed = engine.update_with(c, "c", &patch, &kept).unwrap();
+        assert_eq!(removed[0], 0, "nothing goes");
+        let regions = engine.graph.regions_of(c);
+        assert_eq!(regions.len(), 5);
+        let p3 = rect(&engine.graph, regions[4]);
+        assert_eq!([p3[0], p3[2]], [250.0, 350.0]);
+        // `c` holds its regions alone: what lies directly in it is what is no region.
+        let direct = (0..engine.graph.nodes_in_use())
+            .filter(|&s| engine.graph.container(s) == c && !engine.graph.is_region(s));
+        assert_eq!(direct.count(), 0);
+        let containers = held.map(|s| engine.graph.container(s));
+        assert_eq!(containers, [regions[0], regions[4], regions[0]]);
+        assert_eq!(held.map(|s| rect(&engine.graph, s)), before);
+    }
+
+    #[test]
     fn a_chain_of_regions_ten_thousand_deep_loads_lays_out_resizes_and_drops_without_a_walk_that_recurses()
      {
         // Verifies: ARCH-regions-are-container-slots

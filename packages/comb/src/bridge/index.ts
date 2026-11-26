@@ -322,6 +322,10 @@ export interface Bridge {
   /** The regions of the node or region in `slot`, at every depth, each followed by its own, in
    *  the order of each division (ARCH-regions-are-container-slots). */
   regionsOf(slot: number): Uint32Array;
+  /** The slot of the container or region the node in `slot` lies in, none on the canvas or for a
+   *  slot that holds no node: where the engine chose it, as a division moves what a node held
+   *  into its regions (ARCH-regions-are-container-slots). */
+  containerOf(slot: number): number | undefined;
   /** Moves the line after the region in `slot` to the world coordinate `to` along its division,
    *  as far as the regions beside it allow, and returns where it now stands
    *  (ARCH-regions-are-container-slots, *Lines*): only toward `to`, never back past where it
@@ -863,6 +867,7 @@ function regionCalls(engine: Engine) {
     updateNode: (slot: number, id: string, patch: PlainPatch, regions: Uint32Array) =>
       removedOf(engine.updateNode(slot, id, patch, regions)),
     regionsOf: (slot: number) => engine.regionsOf(slot),
+    containerOf: (slot: number) => engine.containerOf(slot),
     moveLine: (slot: number, to: number) => engine.moveLine(slot, to),
     bandName: (name: string, length: number) => engine.bandName(name, length),
     bandThickness,

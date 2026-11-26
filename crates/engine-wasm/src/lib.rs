@@ -145,7 +145,8 @@ impl From<GraphSlotError> for SlotError {
 #[derive(Tsify, Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ContainerError {
-    /// A slot that holds no node, or a node that is no container.
+    /// A slot that holds no node, a node that is no container, or a node or a region divided into
+    /// regions, which holds its regions alone.
     #[serde(rename_all = "camelCase")]
     NoContainer { slot: u32 },
     /// The node itself, or a node it holds at any depth.
@@ -1179,6 +1180,17 @@ impl Engine {
         }
     }
 
+    /// The slot of the container or region the node in `slot` lies in, none for one on the canvas
+    /// or a slot that holds no node (ARCH-engine-edits-nested-graph): where the engine chose a
+    /// node's container, as a division moves what a node or a kept region held into its regions
+    /// (ARCH-regions-are-container-slots), `api` reads it here.
+    #[wasm_bindgen(js_name = containerOf)]
+    pub fn container_of(&self, slot: u32) -> Option<u32> {
+        trap::spring();
+        let container = self.graph.container(slot);
+        (self.graph.holds_node(slot) && container != CANVAS).then_some(container)
+    }
+
     /// Moves the line after the region in `slot` to the world coordinate `to` along the direction
     /// of its division, as far as the regions beside it allow, and returns where it now stands
     /// (ARCH-regions-are-container-slots, *Lines*). A slot that holds no node, or no region with a
@@ -1266,8 +1278,8 @@ impl Engine {
     /// none, at the world position it has, and gives it the next rank, so that it is drawn and hit
     /// above every other node of its kind (ARCH-engine-edits-nested-graph, *Moving into a
     /// container*). A slot that holds no node throws a `SlotError`, and a container that holds no
-    /// container, or that is the node or one it holds, a `ContainerError`; either way the graph
-    /// stays as it was.
+    /// container, is divided into regions, or is the node or one it holds, a `ContainerError`;
+    /// either way the graph stays as it was.
     #[wasm_bindgen(js_name = moveInto)]
     pub fn move_into(&mut self, slot: u32, container: Option<u32>) -> Result<(), MoveIntoRefusal> {
         trap::spring();
@@ -2274,6 +2286,37 @@ pub(crate) mod tests {
             assert_eq!(meshed, Err(GraphSlotError::NoEdge { slot }));
         }
         assert_eq!(engine.graph.positions()[..4], [0.0, 0.0, 300.0, 0.0]);
+    }
+
+    #[test]
+    fn a_move_into_a_divided_container_is_refused_and_one_into_its_region_taken() {
+        // Verifies: ARCH-regions-are-container-slots, API-shell-mistake-refused-as-shells
+        // Nodes a and b on the canvas, and container c over a, in slot 2.
+        let mut engine = Engine::new();
+        engine.graph = graph_of(&batch(&[("a", 0.0, 0.0), ("b", 900.0, 0.0)], &[])).unwrap();
+        let shape = [-100.0, -100.0, 600.0, 400.0];
+        assert_eq!(engine.graph.add_node_in(CANVAS, true, shape), Ok(2));
+        assert_eq!(engine.move_into(0, Some(2)), Ok(()));
+        let refused = |error| Err(MoveIntoRefusal::Container(error));
+        // Divided into a region, c holds its region alone, which takes the node.
+        let part = comb_engine::graph::Part {
+            size: 50.0,
+            ..comb_engine::graph::Part::default()
+        };
+        let divided = engine.graph.divide(
+            2,
+            Some(comb_engine::graph::Axis::Across),
+            0.0,
+            &[part],
+            comb_engine::graph::RegionSlots::Added,
+        );
+        let region = divided.unwrap().regions[0];
+        assert_eq!(engine.graph.container(0), region);
+        assert_eq!(
+            engine.move_into(1, Some(2)),
+            refused(ContainerError::NoContainer { slot: 2 })
+        );
+        assert_eq!(engine.move_into(1, Some(region)), Ok(()));
     }
 
     #[test]

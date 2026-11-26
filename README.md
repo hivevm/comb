@@ -241,9 +241,12 @@ divides; a drop into a region places the node there. `updateNode(id, { regions }
 regions: one kept by its identifier keeps what it holds, or, divided now into regions of its own,
 moves it at its place on the canvas into its first region, told after `nodeUpdated` as a `nodeMoved`
 by the host, and one left out goes with what it holds, told first as `nodesRemoved`, the node laid
-out from its own `width` as a load of it would be; `regions: []`, or a `divide` without regions,
-leaves it undivided. A region's name counts against the budget of content. `load` and `addNode`
-refuse a `container` that names a divided node, or a region divided again, as `invalidContainer`.
+out from its own `width` as a load of it would be. A node divided while it holds nodes moves each,
+where it lies, into the region its position falls in, as a drop there would, else into its first
+region, told the same way, since a divided node holds its regions alone; `regions: []`,
+or a `divide` without regions, leaves it undivided. A region's name counts against the budget of
+content. `load` and `addNode` refuse a `container` that names a divided node, or a region divided
+again, as `invalidContainer`.
 
 A node with `attachedTo`, `side`, and `offset`, and no `x`, `y`, or `container`, is a border node,
 such as a pin of an action: it sits centred on the outline of the node `attachedTo` names, on `side`
