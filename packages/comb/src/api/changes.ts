@@ -325,7 +325,9 @@ function nodeAddedOf(
   bridge: Bridge,
 ): GraphChange {
   const slot = state.slots.get(change.id)!;
-  const { id, shape, outline, isContainer, heightGiven, resizable, divide } = state.nodes[slot]!;
+  const { id, shape, isContainer, heightGiven, resizable, divide } = state.nodes[slot]!;
+  // A copy of the store's outline, as nodeUpdated delivers it, which no listener reaches into.
+  const outline = NODE_PATCH_READS.outline({ state, bridge, slot });
   // As wide as the engine keeps it, of a divided node as its regions made it.
   const width = bridge.nodeBuffers().sizes[slot * 2]!;
   const place = bridge.borderOf(slot);
