@@ -888,7 +888,7 @@ describe("the drag signal of the moving layer is one module's", () => {
     const gestures = new Set(
       modules
         .filter(({ name, source }) => {
-          const built = /import [^;]*\bGesture\b[^;]* from "\.\/gesture";/.test(source);
+          const built = /import [^;]*\bGesture\b[^;]* from "\.\/gesture(?:\.[jt]s)?";/.test(source);
           return name !== "index.ts" && built;
         })
         .map(({ name }) => name),
@@ -897,7 +897,7 @@ describe("the drag signal of the moving layer is one module's", () => {
     const crossing = modules
       .filter(({ name }) => gestures.has(name))
       .flatMap(({ name, source }) =>
-        [...source.matchAll(/ from "\.\/([\w-]+)";/g)]
+        [...source.matchAll(/ from "\.\/([\w-]+)(?:\.[jt]s)?";/g)]
           .map((found) => `${found[1]}.ts`)
           .filter((imported) => gestures.has(imported))
           .map((imported) => `${name} imports ${imported}`),
