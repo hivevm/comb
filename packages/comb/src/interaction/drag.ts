@@ -1,14 +1,14 @@
 // The drag signal of the moving layer
 // (REN-moving-layer-moves-content, ARCH-graph-in-zustand-store): a gesture that moves nodes in the
 // engine, a node's drag, a border node's, a resize, and the drag of a line between regions, hands
-// each move's engine call and its release's record to a drag of this module. Its first move names
-// the slots it drags in the store's `dragged`, each later move increments `movesVersion`, and a
-// release after a first move clears `dragged` and increments `positionsVersion` before the record.
+// each move's engine call and its release's record to a drag of this module. Each move increments
+// the store's `movesVersion`, the first also naming the slots it drags in `dragged`, and a release
+// after a first move clears `dragged` and increments `positionsVersion` before the record.
 // It also holds what takes a drag's subject from under it.
 import type { GraphState } from "../store";
 import type { Context } from "./gesture";
 
-/** The signal of a drag of the nodes one node's drag moves. */
+/** One drag of the moving layer: the signals of its moves and of its end. */
 export interface Drag {
   /** Makes the engine call `move` of one pointer move, then signals the move: the first names
    *  the slots the drag moves as dragged. */

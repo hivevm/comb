@@ -126,6 +126,45 @@ test("onChange receives one nodeAdded before addNode returns, and one loaded for
   });
 });
 
+test("a listener that changes the outline nodeAdded told it changes nothing Comb keeps, of a placed node or a border node", async ({
+  page,
+}) => {
+  // Verifies: API-edits-report-division-moves
+  await open(page);
+  await loaded(page, { nodes: [node("a")], edges: [] });
+  const told = await page.evaluate(async () => {
+    const { comb } = window;
+    let changed = 0;
+    comb.onChange((change) => {
+      if (change.kind === "nodeAdded" && Array.isArray(change.node.outline)) {
+        change.node.outline[0] = 99;
+        changed += 1;
+      }
+    });
+    comb.addNode({ ...window.node("placed", 300), outline: [6, 4] });
+    comb.addNode({
+      id: "pin",
+      width: 24,
+      height: 24,
+      content: [],
+      attachedTo: "a",
+      side: "left",
+      offset: 0,
+      outline: [6, 4],
+    });
+    await comb.whenRendered();
+    const views = window.inspect().nodes;
+    const outlined = ["placed", "pin"].map((id) => views.find((view) => view.id === id)?.outlined);
+    return { changed, outlined };
+  });
+  // Each delivery told the dash, and the listener changed it.
+  expect(told.changed).toBe(2);
+  expect(told.outlined).toEqual([
+    [6, 4],
+    [6, 4],
+  ]);
+});
+
 test("a load that clears the selection tells its change before the selection", async ({ page }) => {
   // Verifies: API-edits-report-division-moves
   await open(page);
