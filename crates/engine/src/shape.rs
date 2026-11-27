@@ -206,7 +206,7 @@ impl NodeShape {
     /// drawing and its content for an actor and an hourglass. The inner rectangle of a pentagon, a
     /// notched rectangle, a note, and a frame is as high as the node, a frame's tab as high as its
     /// content.
-    pub fn height(self, width: f64, content: f64) -> f64 {
+    fn grown(self, width: f64, content: f64) -> f64 {
         match self {
             Self::Circle | Self::RingedCircle | Self::CrossedCircle | Self::Cross => width,
             Self::Bar => BAR_HEIGHT,
@@ -220,30 +220,39 @@ impl NodeShape {
     /// and nil for none (REN-node-shapes-cover-uml, *Height*; REN-node-content-and-hits,
     /// *Layout*): with content, an actor and an hourglass their drawing and their content, at least
     /// `MIN_HEIGHT` as a whole node, its drawing counted in, and every other node shape
-    /// its content raised to `MIN_HEIGHT` and grown as `height` grows it; without content, an actor
+    /// its content raised to `MIN_HEIGHT` and grown as `grown` grows it; without content, an actor
     /// and an hourglass their drawing, a bar `BAR_HEIGHT`, a circle, a crossed circle, and a cross
     /// their width, and every other node shape nil.
-    pub fn needed(self, width: f64, content: f64) -> f64 {
+    fn needed(self, width: f64, content: f64) -> f64 {
         let least = crate::content::MIN_HEIGHT;
         match self {
             Self::Circle | Self::RingedCircle | Self::CrossedCircle | Self::Cross | Self::Bar => {
-                self.height(width, content)
+                self.grown(width, content)
             }
             _ if content <= 0.0 => self.drawing_height(width),
-            Self::Actor | Self::Hourglass => self.height(width, content).max(least),
-            _ => self.height(width, content.max(least)),
+            Self::Actor | Self::Hourglass => self.grown(width, content).max(least),
+            _ => self.grown(width, content.max(least)),
         }
     }
 
-    /// The height of a node of this shape and `width` whose rows and padding are `content` high as
-    /// `needed` takes it, none for a node without content, and whose data gives the height
-    /// `given`, or none (REN-node-shapes-cover-uml, *Height*; REN-node-content-and-hits,
-    /// *Layout*): a circle, a crossed circle, and a cross as high as wide; a bar `BAR_HEIGHT` high,
-    /// or as its data gives; a node with content as high as `needed` says, or as its data gives
-    /// where that is more; an actor and an hourglass without content as high as their drawing, or
-    /// as their data gives where that is more; and another node without content as high as its
-    /// data gives, or as wide, however small.
-    pub fn sized(self, width: f64, content: Option<f64>, given: Option<f64>) -> f64 {
+    /// The height of a node of this shape and `width` whose rows and padding are `content` high
+    /// as in a rectangle, before the least height of a node, none for a node without rows, and
+    /// whose data gives the height `given`, or none: the one function of a node's height, which
+    /// a load, an edit, a change of the fonts, a resize, and `heightOf` reach
+    /// (REN-node-shapes-cover-uml, *Height*; REN-node-content-and-hits, *Layout*):
+    ///
+    /// - a circle, a crossed circle, and a cross as high as wide;
+    /// - a bar `BAR_HEIGHT` high, or as its data gives;
+    /// - a node with content as high as its content needs, its inner rectangle and the least
+    ///   height counted in, or as its data gives where that is more;
+    /// - an actor and an hourglass without content as high as their drawing, or as their data
+    ///   gives where that is more;
+    /// - another node without content as high as its data gives, or as wide, however small.
+    ///
+    /// A `given` of 0, which every other height raises, gives the least height a resize may leave
+    /// of a node that is no circle: for a node without content of a content node shape 0, not its
+    /// width, as `None` would give.
+    pub fn height(self, width: f64, content: Option<f64>, given: Option<f64>) -> f64 {
         match (self, content) {
             (Self::Circle | Self::RingedCircle | Self::CrossedCircle | Self::Cross, _) => width,
             (Self::Bar, _) => given.unwrap_or(BAR_HEIGHT),
@@ -257,6 +266,21 @@ impl NodeShape {
             }
             (_, None) => given.unwrap_or(width),
         }
+    }
+
+    /// How far below the top of a node of this shape and `width` its regions lie, its rows and
+    /// padding `content` high as `height` takes them (ARCH-regions-are-container-slots,
+    /// *Division*): below an actor's or an hourglass's drawing and its content, as high as
+    /// `height` makes them without a height of its data; below any other node's content laid out
+    /// as in a rectangle, at least the least height of a node; at 0 for another node without
+    /// content.
+    pub(crate) fn top(self, width: f64, content: Option<f64>) -> f64 {
+        let laid = if self.proportion().is_some() {
+            self
+        } else {
+            Self::Rectangle
+        };
+        laid.height(width, content, Some(0.0))
     }
 
     /// The rectangle of a node of this shape of `width` × `height` that its content is laid out
@@ -1016,7 +1040,7 @@ pub(crate) mod tests {
     #[test]
     fn a_rectangle_lays_out_and_is_as_high_as_a_node_before_node_shapes() {
         for (width, height) in SIZES {
-            assert_eq!(NodeShape::Rectangle.height(width, height), height);
+            assert_eq!(NodeShape::Rectangle.grown(width, height), height);
             assert_eq!(
                 NodeShape::Rectangle.inner(width, height, [0.0; 2]),
                 Inner {
@@ -1026,7 +1050,7 @@ pub(crate) mod tests {
                     height
                 }
             );
-            assert_eq!(NodeShape::RoundedRectangle.height(width, height), height);
+            assert_eq!(NodeShape::RoundedRectangle.grown(width, height), height);
             assert_eq!(
                 NodeShape::RoundedRectangle
                     .inner(width, height, [0.0; 2])
@@ -1040,7 +1064,7 @@ pub(crate) mod tests {
     fn a_content_node_shape_is_as_high_as_its_inner_rectangle_needs_for_its_content() {
         for shape in [NodeShape::Ellipse, NodeShape::Diamond] {
             for (width, content) in SIZES {
-                let height = shape.height(width, content);
+                let height = shape.grown(width, content);
                 let inner = shape.inner(width, height, [0.0; 2]);
                 assert!(
                     (inner.height - content).abs() < 1e-9,
@@ -1088,9 +1112,9 @@ pub(crate) mod tests {
                 )
             );
         }
-        assert_eq!(NodeShape::Circle.height(30.0, 64.0), 30.0);
-        assert_eq!(NodeShape::RingedCircle.height(30.0, 64.0), 30.0);
-        assert_eq!(NodeShape::Bar.height(200.0, 64.0), BAR_HEIGHT);
+        assert_eq!(NodeShape::Circle.height(30.0, Some(64.0), None), 30.0);
+        assert_eq!(NodeShape::RingedCircle.height(30.0, Some(64.0), None), 30.0);
+        assert_eq!(NodeShape::Bar.height(200.0, Some(64.0), None), BAR_HEIGHT);
         assert_eq!(NodeShape::Bar.inner(200.0, 8.0, [0.0; 2]).width, 0.0);
     }
 
@@ -1101,22 +1125,28 @@ pub(crate) mod tests {
         let content = Some(64.0);
         for shape in [NodeShape::Rectangle, NodeShape::RoundedRectangle] {
             // A height below the content's is raised to it, a greater one kept.
-            assert_eq!(shape.sized(220.0, content, Some(20.0)), 64.0);
-            assert_eq!(shape.sized(220.0, content, Some(300.0)), 300.0);
-            assert_eq!(shape.sized(220.0, content, None), 64.0);
+            assert_eq!(shape.height(220.0, content, Some(20.0)), 64.0);
+            assert_eq!(shape.height(220.0, content, Some(300.0)), 300.0);
+            assert_eq!(shape.height(220.0, content, None), 64.0);
             // Without content, as its data gives however small, or as wide.
-            assert_eq!(shape.sized(220.0, None, Some(10.0)), 10.0);
-            assert_eq!(shape.sized(16.0, None, None), 16.0);
+            assert_eq!(shape.height(220.0, None, Some(10.0)), 10.0);
+            assert_eq!(shape.height(16.0, None, None), 16.0);
         }
         // An ellipse's content needs its inner rectangle, a height below that raised to it.
-        let needed = NodeShape::Ellipse.height(220.0, 64.0);
-        assert_eq!(NodeShape::Ellipse.sized(220.0, content, Some(70.0)), needed);
-        assert_eq!(NodeShape::Ellipse.sized(220.0, content, Some(200.0)), 200.0);
+        let needed = NodeShape::Ellipse.height(220.0, Some(64.0), None);
+        assert_eq!(
+            NodeShape::Ellipse.height(220.0, content, Some(70.0)),
+            needed
+        );
+        assert_eq!(
+            NodeShape::Ellipse.height(220.0, content, Some(200.0)),
+            200.0
+        );
         // A circle as high as wide whatever its data gives; a bar 8 high or as its data gives.
-        assert_eq!(NodeShape::Circle.sized(30.0, None, Some(10.0)), 30.0);
-        assert_eq!(NodeShape::RingedCircle.sized(30.0, None, None), 30.0);
-        assert_eq!(NodeShape::Bar.sized(220.0, None, None), BAR_HEIGHT);
-        assert_eq!(NodeShape::Bar.sized(8.0, None, Some(120.0)), 120.0);
+        assert_eq!(NodeShape::Circle.height(30.0, None, Some(10.0)), 30.0);
+        assert_eq!(NodeShape::RingedCircle.height(30.0, None, None), 30.0);
+        assert_eq!(NodeShape::Bar.height(220.0, None, None), BAR_HEIGHT);
+        assert_eq!(NodeShape::Bar.height(8.0, None, Some(120.0)), 120.0);
     }
 
     #[test]
@@ -1547,18 +1577,18 @@ pub(crate) mod tests {
             NodeShape::Note,
             NodeShape::Frame,
         ] {
-            assert_eq!(shape.height(220.0, 64.0), 64.0, "{shape:?}");
+            assert_eq!(shape.height(220.0, Some(64.0), None), 64.0, "{shape:?}");
             assert_eq!(
-                shape.sized(220.0, Some(64.0), Some(20.0)),
+                shape.height(220.0, Some(64.0), Some(20.0)),
                 64.0,
                 "{shape:?}"
             );
             assert_eq!(
-                shape.sized(220.0, Some(64.0), Some(300.0)),
+                shape.height(220.0, Some(64.0), Some(300.0)),
                 300.0,
                 "{shape:?}"
             );
-            assert_eq!(shape.sized(220.0, None, Some(10.0)), 10.0, "{shape:?}");
+            assert_eq!(shape.height(220.0, None, Some(10.0)), 10.0, "{shape:?}");
         }
     }
 
@@ -1830,10 +1860,10 @@ pub(crate) mod tests {
         for shape in [NodeShape::CrossedCircle, NodeShape::Cross] {
             assert!(!shape.holds_content(), "{shape:?}");
             // 12 wide without a height: 12 by 12; a height its data gives does not count.
-            assert_eq!(shape.sized(12.0, None, None), 12.0, "{shape:?}");
-            assert_eq!(shape.sized(12.0, None, Some(40.0)), 12.0, "{shape:?}");
-            assert_eq!(shape.sized(30.0, None, Some(4.0)), 30.0, "{shape:?}");
-            assert_eq!(shape.height(30.0, 64.0), 30.0, "{shape:?}");
+            assert_eq!(shape.height(12.0, None, None), 12.0, "{shape:?}");
+            assert_eq!(shape.height(12.0, None, Some(40.0)), 12.0, "{shape:?}");
+            assert_eq!(shape.height(30.0, None, Some(4.0)), 30.0, "{shape:?}");
+            assert_eq!(shape.height(30.0, Some(64.0), None), 30.0, "{shape:?}");
             assert_eq!(shape.inner(30.0, 30.0, [0.0; 2]).width, 0.0, "{shape:?}");
             assert_eq!(shape.drawing(30.0), None, "{shape:?}");
         }
@@ -1894,24 +1924,24 @@ pub(crate) mod tests {
                 "{shape:?}"
             );
             // As high as its drawing and its content, a height below that raised to it.
-            assert_eq!(shape.height(100.0, 38.0), 86.0, "{shape:?}");
+            assert_eq!(shape.height(100.0, Some(38.0), None), 86.0, "{shape:?}");
             assert_eq!(
-                shape.sized(100.0, Some(38.0), Some(20.0)),
+                shape.height(100.0, Some(38.0), Some(20.0)),
                 86.0,
                 "{shape:?}"
             );
             assert_eq!(
-                shape.sized(100.0, Some(38.0), Some(200.0)),
+                shape.height(100.0, Some(38.0), Some(200.0)),
                 200.0,
                 "{shape:?}"
             );
             // Without content as high as its drawing, a height below it raised to it.
-            assert_eq!(shape.sized(100.0, None, None), 48.0, "{shape:?}");
-            assert_eq!(shape.sized(100.0, None, Some(20.0)), 48.0, "{shape:?}");
-            assert_eq!(shape.sized(100.0, None, Some(90.0)), 90.0, "{shape:?}");
+            assert_eq!(shape.height(100.0, None, None), 48.0, "{shape:?}");
+            assert_eq!(shape.height(100.0, None, Some(20.0)), 48.0, "{shape:?}");
+            assert_eq!(shape.height(100.0, None, Some(90.0)), 90.0, "{shape:?}");
         }
-        assert_eq!(NodeShape::Actor.sized(12.0, None, Some(10.0)), 24.0);
-        assert_eq!(NodeShape::Hourglass.sized(12.0, None, None), 18.0);
+        assert_eq!(NodeShape::Actor.height(12.0, None, Some(10.0)), 24.0);
+        assert_eq!(NodeShape::Hourglass.height(12.0, None, None), 18.0);
         // Hit as its bounding rectangle, beside the drawing too.
         assert!(NodeShape::Actor.contains(100.0, 86.0, 1.0, 1.0));
         assert!(!NodeShape::Actor.contains(100.0, 86.0, -0.5, 1.0));
@@ -1924,22 +1954,22 @@ pub(crate) mod tests {
         // before the least height of 64. REN-node-shapes-cover-uml (*Height*): a captioned node
         // shape with content is at least the least height as a whole, its drawing counted in.
         let one_title = Some(38.0);
-        assert_eq!(NodeShape::Actor.sized(100.0, one_title, None), 86.0);
-        assert_eq!(NodeShape::Hourglass.sized(100.0, one_title, None), 86.0);
-        assert_eq!(NodeShape::Actor.sized(100.0, one_title, Some(20.0)), 86.0);
+        assert_eq!(NodeShape::Actor.height(100.0, one_title, None), 86.0);
+        assert_eq!(NodeShape::Hourglass.height(100.0, one_title, None), 86.0);
+        assert_eq!(NodeShape::Actor.height(100.0, one_title, Some(20.0)), 86.0);
         // A small actor's drawing and its title below 64 together are raised to it.
-        assert_eq!(NodeShape::Actor.sized(12.0, one_title, None), 64.0);
+        assert_eq!(NodeShape::Actor.height(12.0, one_title, None), 64.0);
         // Every other node shape raises its content to 64 first, as before.
-        assert_eq!(NodeShape::Rectangle.sized(220.0, one_title, None), 64.0);
-        assert_eq!(NodeShape::Frame.sized(220.0, one_title, None), 64.0);
+        assert_eq!(NodeShape::Rectangle.height(220.0, one_title, None), 64.0);
+        assert_eq!(NodeShape::Frame.height(220.0, one_title, None), 64.0);
         assert_eq!(
-            NodeShape::Ellipse.sized(220.0, one_title, None),
+            NodeShape::Ellipse.height(220.0, one_title, None),
             64.0 / core::f64::consts::FRAC_1_SQRT_2
         );
-        assert_eq!(NodeShape::Diamond.sized(220.0, one_title, None), 128.0);
+        assert_eq!(NodeShape::Diamond.height(220.0, one_title, None), 128.0);
         // More content grows with its rows.
-        assert_eq!(NodeShape::Actor.sized(100.0, Some(74.0), None), 122.0);
-        assert_eq!(NodeShape::Rectangle.sized(220.0, Some(74.0), None), 74.0);
+        assert_eq!(NodeShape::Actor.height(100.0, Some(74.0), None), 122.0);
+        assert_eq!(NodeShape::Rectangle.height(220.0, Some(74.0), None), 74.0);
     }
 
     #[test]
@@ -1952,5 +1982,31 @@ pub(crate) mod tests {
             NodeShape::Diamond.crossing(0.0, 40.0, 1.0, 0.0),
             (0.0, 20.0)
         );
+    }
+
+    #[test]
+    fn a_node_shape_has_one_public_function_of_a_node_s_height() {
+        // Verifies: REN-node-shapes-cover-uml
+        // The public functions of `NodeShape` that give a height, read from this source: those
+        // named for a height and those of the least height a node needs or is sized to.
+        let source = include_str!("shape.rs");
+        let blocks: Vec<&str> = source
+            .split("\nimpl NodeShape {")
+            .skip(1)
+            .map(|block| block.split("\n}\n").next().unwrap())
+            .collect();
+        assert!(!blocks.is_empty());
+        let heights: Vec<&str> = blocks
+            .iter()
+            .flat_map(|block| block.lines())
+            .filter_map(|line| {
+                let line = line.trim_start();
+                line.strip_prefix("pub fn ")
+                    .or_else(|| line.strip_prefix("pub const fn "))
+            })
+            .filter_map(|rest| rest.split('(').next())
+            .filter(|name| name.contains("height") || ["needed", "sized"].contains(name))
+            .collect();
+        assert_eq!(heights, ["height"]);
     }
 }

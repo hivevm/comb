@@ -1830,7 +1830,7 @@ impl Bordered {
                 let from = Rect::new(x, y, x + w, y + h);
                 let handle = Handle::ALL[rng.below(8) as usize];
                 let by = [rng.range(-300.0, 300.0), rng.range(-300.0, 300.0)];
-                self.graph.resize(slot, handle, &from, by, 8.0).unwrap();
+                self.graph.resize(slot, handle, &from, by).unwrap();
                 assert_riding(&self.graph, &self.riders);
                 counts.resized[shape_code(&self.graph, slot)] += 1;
             }
@@ -2239,14 +2239,15 @@ impl Combined {
     }
 
     /// Divides the node in `slot`, a node just added or a container, at random into up to three
-    /// regions, each divided again now and then, one level deep, below a content of 0 or 30. What
+    /// regions, each divided again now and then, one level deep, below no content or rows and
+    /// padding 30 high, which the least height raises to a top of 64. What
     /// it held directly lies where it lay in the region whose box holds its position, else in its
     /// first region, or that region's first region, each taking the next rank in the order it was
     /// held (the maintainer's decisions of 2026-11-25, ARCH-regions-are-container-slots). Returns
     /// how many nodes it held, and how many of them a region other than the first took.
     fn divide_node(&mut self, rng: &mut Lcg, slot: u32) -> (usize, usize) {
         let axis = [Axis::Across, Axis::Down][rng.below(2) as usize];
-        let top = [0.0, 30.0][rng.below(2) as usize];
+        let content = [None, Some(30.0)][rng.below(2) as usize];
         let mut parts = Vec::new();
         for _ in 0..1 + rng.below(3) {
             let index = parts.len();
@@ -2276,11 +2277,15 @@ impl Combined {
             .map(|(s, i)| (i.rank, s))
             .collect();
         held.sort_unstable();
+        if content.is_some() {
+            self.graph.set_content(slot, content).unwrap();
+        }
         let divided = self
             .graph
-            .divide(slot, Some(axis), top, &parts, RegionSlots::Added);
+            .divide(slot, Some(axis), &parts, RegionSlots::Added);
         let regions = divided.unwrap().regions;
         self.graph.set_sizing(slot, None, true).unwrap();
+        let top = self.graph.top(slot);
         let item = self.items[slot as usize].as_mut().unwrap();
         (item.kind, item.divide, item.top) = (Kind::Divided, Some(axis), top);
         for (&region, part) in regions.iter().zip(&parts) {
@@ -2603,10 +2608,7 @@ impl Combined {
         let from = self.graph.node_bounds(slot);
         let handle = Handle::ALL[rng.below(8) as usize];
         let by = [rng.range(-200.0, 200.0), rng.range(-200.0, 200.0)];
-        let to = self
-            .graph
-            .resize(slot, handle, &from, by, f64::from(item.top))
-            .unwrap();
+        let to = self.graph.resize(slot, handle, &from, by).unwrap();
         #[expect(clippy::cast_possible_truncation, reason = "the f32 the graph keeps")]
         let at = [to.min_x as f32, to.min_y as f32];
         self.items[slot as usize].as_mut().unwrap().at = at;
@@ -3204,4 +3206,84 @@ fn nested_graphs_with_regions_border_nodes_and_edges_on_edges_match_a_model_thro
     ] {
         assert!(count >= floor, "{clause}: {count}");
     }
+}
+
+/// An actor at (100, 100), 40 wide, whose title is 38 high with its padding, divided down into two
+/// regions of 40: its drawing 48 high, its regions below both at 86; and the slots of its regions.
+fn divided_actor() -> (Graph, Vec<u32>) {
+    let mut graph = Graph::new(vec![100.0, 100.0], vec![40.0, 86.0], Vec::new()).unwrap();
+    graph.set_shape(0, NodeShape::Actor).unwrap();
+    graph.set_sizing(0, None, true).unwrap();
+    graph.set_content(0, Some(38.0)).unwrap();
+    let part = Part {
+        size: 40.0,
+        ..Part::default()
+    };
+    let regions = graph
+        .divide(0, Some(Axis::Down), &[part, part], RegionSlots::Added)
+        .unwrap()
+        .regions;
+    (graph, regions)
+}
+
+/// Resizes the node in slot 0 by a drag of its right handle by `by` across.
+fn widened(graph: &mut Graph, by: f64) {
+    let from = graph.node_bounds(0);
+    graph.resize(0, Handle::Right, &from, [by, 0.0]).unwrap();
+}
+
+#[test]
+fn a_divided_actor_resized_narrower_lays_its_regions_out_below_its_drawing_and_content_there() {
+    // Verifies: ARCH-regions-are-container-slots, REN-node-shapes-cover-uml
+    // Resized to 16 wide, the actor's drawing is 32 high, and its regions begin at 70.
+    let (mut graph, regions) = divided_actor();
+    assert_eq!(graph.top(0), 86.0);
+    assert_eq!(graph.node_bounds(regions[0]).min_y, 186.0);
+    widened(&mut graph, -24.0);
+    let node = graph.node_bounds(0);
+    assert_eq!(node.max_x - node.min_x, 16.0);
+    let drawing = NodeShape::Actor.drawing(16.0).unwrap();
+    assert_eq!(drawing.height, 32.0);
+    assert_eq!(graph.top(0), 70.0);
+    assert_eq!(
+        graph.node_bounds(regions[0]).min_y,
+        100.0 + drawing.height + 38.0
+    );
+    // The first region takes the room the drawing freed, the node as high as before, and the
+    // other region keeps its box.
+    assert_eq!(node.max_y - node.min_y, 166.0);
+    assert_eq!(graph.node_bounds(regions[1]).min_y, 226.0);
+    // Widened to 40 again, the node keeps the box the drag left, 166 high, and the first region
+    // gives the drawing its 16 back, the other region keeping its box (the maintainer's decision
+    // of 2026-11-27).
+    widened(&mut graph, 24.0);
+    let node = graph.node_bounds(0);
+    assert_eq!(
+        [node.max_x - node.min_x, node.max_y - node.min_y],
+        [40.0, 166.0]
+    );
+    assert_eq!(graph.given_height(0), Some(166.0));
+    let first = graph.node_bounds(regions[0]);
+    assert_eq!([first.min_y, first.max_y], [186.0, 226.0]);
+    assert_eq!(graph.node_bounds(regions[1]).min_y, 226.0);
+}
+
+#[test]
+fn a_divided_actor_widened_grows_by_only_what_its_first_region_lacks_of_its_least() {
+    // Verifies: ARCH-regions-are-container-slots, REN-node-shapes-cover-uml
+    // Narrowed to 16, the line between the regions dragged up until the first is the least
+    // region, 8 high, and the actor widened to 40 again: the first region cannot give way, so the
+    // node grows by just the 16 it lacks, the other region keeping its box (the maintainer's
+    // decision of 2026-11-27).
+    let (mut graph, regions) = divided_actor();
+    widened(&mut graph, -24.0);
+    assert_eq!(graph.move_line(regions[0], 0.0), Ok(178.0));
+    widened(&mut graph, 24.0);
+    assert_eq!(graph.top(0), 86.0);
+    let first = graph.node_bounds(regions[0]);
+    let second = graph.node_bounds(regions[1]);
+    assert_eq!([first.min_y, first.max_y], [186.0, 194.0]);
+    assert_eq!([second.min_y, second.max_y], [194.0, 282.0]);
+    assert_eq!(graph.node_bounds(0).max_y, 282.0);
+    assert_eq!(graph.given_height(0), Some(182.0));
 }

@@ -1446,19 +1446,11 @@ impl Engine {
         if !self.graph.holds_node(slot) {
             return Err(CallRefusal::Slot(SlotError::NoNode { slot }));
         }
-        let shape = self.graph.shape(slot);
-        let (content, node) = self.content.of(slot);
-        let (laid, rows) = content.laid(node, &self.fonts);
-        // The height of its rows and their padding, before the least height of a node, which the
-        // node shape raises and grows at the width the drag leaves (`NodeShape::needed`).
-        let content = if rows > 0 && shape.holds_content() {
-            laid
-        } else {
-            0.0
-        };
+        // Never lower than its content needs at the width the drag leaves, from the content the
+        // engine holds (`Graph::resize`).
         let from = Rect::new(x, y, x + width, y + height);
         self.graph
-            .resize(slot, handle, &from, by, content)
+            .resize(slot, handle, &from, by)
             .map_err(|error| match error {
                 MoveError::Slot(error) => CallRefusal::from(error),
                 MoveError::Position(PositionError::NonFinite) => NumberError::NonFinitePoint.into(),
@@ -1585,8 +1577,9 @@ impl Engine {
         Ok(self.visible.mesh.detail.into())
     }
 
-    /// Gives every node the height its content lays out to in the fonts as they are now, its edges
-    /// and its place in the index moved along where it changed (REN-node-content-and-hits).
+    /// Hands the engine every node's content as it lays out in the fonts as they are now, from
+    /// which it gives the node its height, its edges and its place in the index moved along where
+    /// it changed, and lays its regions out below its content (REN-node-content-and-hits).
     fn lay_out_heights(&mut self) {
         let slots = graph_data::numbered(self.graph.sizes().len() / 2);
         for slot in 0..slots {
@@ -1595,23 +1588,10 @@ impl Engine {
                 continue;
             }
             let (content, node) = self.content.of(slot);
-            // At the width its data gives, as a load lays it out, not the one its regions grew it
-            // to (ARCH-regions-are-container-slots).
-            let width = self.graph.own_width(slot);
-            let laid = content.laid(node, &self.fonts);
-            let given = self.graph.given_height(slot);
-            let shape = self.graph.shape(slot);
-            let height = graph_data::node_height(shape, width, laid, given);
-            if self.graph.sizes()[slot as usize * 2 + 1] != height {
-                self.graph.resize_node(slot, height).unwrap_or_else(|_| {
-                    unreachable!("a slot that holds a node, as checked above, refuses no resize")
-                });
-            }
-            self.graph
-                .set_top(slot, graph_data::content_top(shape, width, laid))
-                .unwrap_or_else(|_| {
-                    unreachable!("a node, as checked above no region, takes a top")
-                });
+            let laid = graph_data::content_of(content.laid(node, &self.fonts));
+            self.graph.set_content(slot, laid).unwrap_or_else(|_| {
+                unreachable!("a node, as checked above no region, takes content")
+            });
         }
     }
 
@@ -2187,7 +2167,6 @@ pub(crate) mod tests {
         let divided = graph.divide(
             4,
             Some(Axis::Across),
-            0.0,
             &parts,
             comb_engine::graph::RegionSlots::Added,
         );
@@ -2318,7 +2297,6 @@ pub(crate) mod tests {
         let divided = engine.graph.divide(
             2,
             Some(comb_engine::graph::Axis::Across),
-            0.0,
             &[part],
             comb_engine::graph::RegionSlots::Added,
         );

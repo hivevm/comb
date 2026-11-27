@@ -1123,7 +1123,7 @@ mod tests {
             part(0.0, None, Some(1)),
             part(0.0, None, None),
         ];
-        let added = graph.divide(node, Some(Axis::Across), 0.0, &parts, RegionSlots::Added);
+        let added = graph.divide(node, Some(Axis::Across), &parts, RegionSlots::Added);
         let [first_slot, middle_slot, upper_slot, lower_slot, last] = added.unwrap().regions[..]
         else {
             unreachable!("a region per part")

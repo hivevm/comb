@@ -6,13 +6,13 @@
 use std::collections::HashSet;
 use std::fmt;
 
-use comb_engine::geometry::WORLD_LIMIT;
-use comb_engine::graph::{Axis, DivideError, Part, division_needs};
+use comb_engine::graph::{Axis, DivideError, Part, WithinError, division_within};
+use comb_engine::shape::NodeShape;
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use tsify::Tsify;
 
-use super::checks::{dash_of, divided, id_length};
+use super::checks::{beyond_world, dash_of, divided, id_length};
 use super::problem::{A_DIVIDE, A_REGION_LIST};
 use super::{Field, GraphDataProblem, GraphList, MAX_TEXT, Pair, utf16_length};
 
@@ -274,46 +274,25 @@ pub(crate) fn parts_of(regions: &[Region], kept: &[u32]) -> Vec<Part> {
 }
 
 /// Refuses as `beyondWorld` the division of the node `id` by `divide` into `regions` that would
-/// grow the node, at the world position `at` and `size` wide and high, past the world's limit,
-/// naming `width` or `height`, the first axis whose far side would pass it
-/// (ARCH-one-workspace-per-example, *World*). The node grows to what its regions need, which the
-/// engine's `division_needs` computes (ARCH-regions-are-container-slots, *Division*), as the
-/// engine keeps it, in `f32`. Without the check, sizes `f32` holds one by one sum past it.
+/// grow the node, at the world position `at` and `size` wide and high, of node shape `shape` and
+/// content `content`, past the world's limit, naming `width` or `height`, the first side whose far
+/// side would pass it, as the engine finds it (`division_within`, ARCH-one-workspace-per-example,
+/// *World*; ARCH-regions-are-container-slots, *Division*), before anything changes.
 pub(crate) fn within_world_divided(
     id: &str,
     divide: Option<Axis>,
-    at: [f32; 2],
-    size: [f32; 2],
-    top: f32,
+    at_size: [[f32; 2]; 2],
+    (shape, content): (NodeShape, Option<f64>),
     regions: &[Region],
 ) -> Result<(), GraphDataProblem> {
     let Some(divide) = divided(divide, regions) else {
         return Ok(());
     };
-    let (_, need) =
-        division_needs(divide, top, &parts_of(regions, &[])).map_err(division_problem)?;
-    // The need as the engine keeps it, the nearest `f32`, which may lie past the `f64` it rounds;
-    // one past `f32` is infinite, and refused.
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "rounded to f32 as the engine keeps it, so that what rounds past the limit is refused"
-    )]
-    let kept = need.map(|need| f64::from(need as f32));
-    // Compared as `within_by_height` compares: `size > limit - at`.
-    let beyond = [(0, "width"), (1, "height")]
-        .into_iter()
-        .find(|&(axis, _)| {
-            f64::from(size[axis]).max(kept[axis]) > WORLD_LIMIT - f64::from(at[axis])
-        });
-    if let Some((_, field)) = beyond {
-        return Err(GraphDataProblem::BeyondWorld {
-            list: GraphList::Nodes,
-            id: id.to_owned(),
-            field: field.to_owned(),
-            limit: WORLD_LIMIT,
-        });
-    }
-    Ok(())
+    let parts = parts_of(regions, &[]);
+    division_within(shape, content, (divide, &parts), at_size).map_err(|error| match error {
+        WithinError::Divide(error) => division_problem(error),
+        WithinError::Beyond(side) => beyond_world(id, side),
+    })
 }
 
 /// The problem of a division `addNode` or `updateNode` hands the engine: past the limit of node
@@ -708,6 +687,54 @@ mod tests {
     }
 
     #[test]
+    fn an_update_that_divides_a_container_and_sets_its_content_moves_what_it_held_below_that_content()
+     {
+        // Verifies: ARCH-regions-are-container-slots, API-edits-report-division-moves
+        // As above, the patch giving `c` four rows of content too: its regions lie below that
+        // content, and what it held lands where it lay, the engine handed the content before it
+        // divides `c`, so that no later layout moves what landed.
+        use super::super::tests::{content, text};
+        use crate::RoleCode;
+        let mut engine = crate::Engine::new();
+        let c = added(0.0, 0.0, |n| {
+            n.id = "c".to_owned().into();
+            n.is_container = Some(true).into();
+        });
+        let c = engine.add(&c, (None, None)).unwrap();
+        let held = [("x", 10.0, 100.0), ("y", 300.0, 100.0)].map(|(id, x, y)| {
+            let node = added(x, y, |n| n.id = id.to_owned().into());
+            engine.add(&node, (Some(c), None)).unwrap()
+        });
+        let before = held.map(|s| rect(&engine.graph, s));
+        let top = engine.graph.top(c);
+        let (divide, regions) = partitions();
+        let title = text(RoleCode::Title, "c");
+        let patch = super::super::NodePatch(vec![
+            (
+                "divide".to_owned(),
+                super::super::PatchValue::Divide(Field(Some(divide))),
+            ),
+            (
+                "regions".to_owned(),
+                super::super::PatchValue::Regions(Some(regions).into()),
+            ),
+            (
+                "content".to_owned(),
+                content(&[&[title], &[title], &[title], &[title]]).into(),
+            ),
+        ]);
+        engine.update_with(c, "c", &patch, &[u32::MAX; 5]).unwrap();
+        let regions = engine.graph.regions_of(c);
+        assert!(engine.graph.top(c) > top);
+        assert_eq!(rect(&engine.graph, regions[0])[1], engine.graph.top(c));
+        assert_eq!(
+            held.map(|s| engine.graph.container(s)),
+            [regions[0], regions[4]]
+        );
+        assert_eq!(held.map(|s| rect(&engine.graph, s)), before);
+    }
+
+    #[test]
     fn a_chain_of_regions_ten_thousand_deep_loads_lays_out_resizes_and_drops_without_a_walk_that_recurses()
      {
         // Verifies: ARCH-regions-are-container-slots
@@ -743,7 +770,6 @@ mod tests {
                 comb_engine::graph::Handle::BottomRight,
                 &at,
                 [50.0, 50.0],
-                0.0,
             )
             .unwrap();
         drop(graph);

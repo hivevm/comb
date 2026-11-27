@@ -204,8 +204,8 @@ impl ContentData {
     }
 
     /// The height of the rows of the node at `node` and their padding in `fonts`, before the least
-    /// height of a node and its node shape (`node_height`); that of no rows for a node without
-    /// content, as only the tests build one.
+    /// height of a node and its node shape (`NodeShape::height`); that of no rows for a node
+    /// without content, as only the tests build one.
     pub(crate) fn height(&self, node: usize, fonts: &Fonts) -> f64 {
         let view = self.view();
         let rows = if node + 1 < self.row_bounds.len() {

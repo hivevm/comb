@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 use comb_engine::content::Fonts;
 use comb_engine::geometry::WORLD_LIMIT;
-use comb_engine::graph::{Axis, EdgeSpec, End, LabelPlacement, Which};
+use comb_engine::graph::{Axis, Beyond, EdgeSpec, End, LabelPlacement, Which, height_within};
 use comb_engine::shape::{NodeShape, Outline};
 use comb_engine::stroke::{Arrowhead, EdgeStyle};
 
@@ -35,9 +35,10 @@ pub(super) struct Nodes<'a> {
     /// may resize it (API-edits-report-division-moves).
     pub(super) given: Vec<Option<f32>>,
     pub(super) resizable: Vec<bool>,
-    /// The height of each node's content, below which its regions lie; 0 without content
+    /// The rows and padding of each node's content, as the engine takes them (`content_of`): it
+    /// computes from them the node's height and its regions' top
     /// (ARCH-regions-are-container-slots).
-    pub(super) tops: Vec<f32>,
+    pub(super) contents: Vec<Option<f64>>,
     pub(super) slots: HashMap<&'a str, u32>,
     /// The code units of the strings of all their content, as the budget counted them.
     pub(super) units: u64,
@@ -96,79 +97,41 @@ pub(crate) fn given_height(id: &str, height: Option<f64>) -> Result<Option<f32>,
     Ok(Some(height))
 }
 
-/// The height of the node of node shape `shape`, `width` wide, whose content of `rows` rows is
-/// `content` high with its padding, before the least height of a node, and whose data gives the
-/// height `given`, or none, as the engine keeps it: `NodeShape::sized`
-/// (REN-node-shapes-cover-uml, *Height*).
-pub(crate) fn node_height(
-    shape: NodeShape,
-    width: f32,
-    (content, rows): (f64, usize),
-    given: Option<f32>,
-) -> f32 {
-    let content = (rows > 0).then_some(content);
-    kept_height(shape.sized(f64::from(width), content, given.map(f64::from)))
+/// The rows and padding of content of `rows` rows, `laid` high as its layout gives them before the
+/// least height of a node, as the engine takes them: none for content without rows
+/// (`Graph::set_content`).
+pub(crate) fn content_of((laid, rows): (f64, usize)) -> Option<f64> {
+    (rows > 0).then_some(laid)
 }
 
 /// The height of the node `id` at `y`, of node shape `shape` and `width` wide, whose content lays
-/// out to `laid` and whose data gives the height `given`, or none, as `node_height` computes it;
-/// refused as `beyondWorld` where its far side lies past the world's limit, by `within_by_height`.
-/// The one rule of a node's height that a load, `addNode`, and `updateNode` reach.
+/// out to `laid` and whose data gives the height `given`, or none, as the engine gives it from the
+/// same content; refused as `beyondWorld`, naming the field `height`, where the engine finds its
+/// far side past the world's limit (`height_within`, REN-node-shapes-cover-uml, *Height*;
+/// ARCH-one-workspace-per-example), before the engine is handed the content, as the world's limit
+/// refuses a far side `x + width`. A load, `addNode`, `updateNode`, and `heightOf` check by it.
 pub(crate) fn checked_height(
     id: &str,
     shape: NodeShape,
-    [y, width]: [f32; 2],
+    at: [f32; 2],
     laid: (f64, usize),
     given: Option<f32>,
 ) -> Result<f32, GraphDataProblem> {
-    let height = node_height(shape, width, laid, given);
-    within_by_height(id, y, height)?;
-    Ok(height)
+    height_within(shape, at, content_of(laid), given).map_err(|side| beyond_world(id, side))
 }
 
-/// Refuses the node `id` at `y` whose far side, `y + height`, its height the one its content lays
-/// out to, lies past the world's limit (ARCH-one-workspace-per-example), naming the field `height`,
-/// as the world's limit refuses a far side `x + width`.
-fn within_by_height(id: &str, y: f32, height: f32) -> Result<(), GraphDataProblem> {
-    // `y` lies within the limit and the height is not negative, so only the far side past the
-    // positive limit is beyond. Compared as `height > limit - y`, which `f64` holds exactly where
-    // it matters: a height of hundreds of units past a `y` on the limit, which `y + height` would
-    // round back onto it.
-    if f64::from(height) > WORLD_LIMIT - f64::from(y) {
-        return Err(GraphDataProblem::BeyondWorld {
-            list: GraphList::Nodes,
-            id: id.to_owned(),
-            field: "height".to_owned(),
-            limit: WORLD_LIMIT,
-        });
-    }
-    Ok(())
-}
-
-/// `height`, the height of a node's content as the layout computes it, as the `f32` the engine
-/// keeps.
-#[expect(
-    clippy::cast_possible_truncation,
-    reason = "the padding and at most MAX_ROWS rows of a line height of at most MAX_METRIC, \
-              grown by a node shape's inner rectangle, or a width f32 holds"
-)]
-pub(crate) const fn kept_height(height: f64) -> f32 {
-    height as f32
-}
-
-/// How far below the top of a node of node shape `shape`, `width` wide, its regions lie, its
-/// content `(content, rows)` as its layout gives it, its rows and their padding
-/// (ARCH-regions-are-container-slots, *Division*): below an actor's or an hourglass's drawing and
-/// its content, as high as `NodeShape::needed` makes them; below any other node's content, at
-/// least the least height of a node; at 0 for another node without rows.
-pub(crate) fn content_top(shape: NodeShape, width: f32, (content, rows): (f64, usize)) -> f32 {
-    let content = if rows > 0 { content } else { 0.0 };
-    if shape.drawing(f64::from(width)).is_some() {
-        kept_height(shape.needed(f64::from(width), content))
-    } else if rows > 0 {
-        kept_height(content.max(comb_engine::content::MIN_HEIGHT))
-    } else {
-        0.0
+/// The refusal as `beyondWorld` of the node `id` whose far side `side` lies past the world's
+/// limit, naming the field `width` or `height`.
+pub(crate) fn beyond_world(id: &str, side: Beyond) -> GraphDataProblem {
+    GraphDataProblem::BeyondWorld {
+        list: GraphList::Nodes,
+        id: id.to_owned(),
+        field: match side {
+            Beyond::Width => "width",
+            Beyond::Height => "height",
+        }
+        .to_owned(),
+        limit: WORLD_LIMIT,
     }
 }
 
@@ -363,7 +326,7 @@ pub(super) fn nodes_of<'a>(
     let mut shapes = Vec::with_capacity(batch.nodes.len());
     let mut outlines = Vec::with_capacity(batch.nodes.len());
     let mut given = Vec::with_capacity(batch.nodes.len());
-    let mut tops = Vec::with_capacity(batch.nodes.len());
+    let mut contents = Vec::with_capacity(batch.nodes.len());
     let mut cursor = Cursor::default();
     for (index, node) in batch.nodes.iter().enumerate() {
         let (position, width) = checked_node(node)?;
@@ -379,7 +342,7 @@ pub(super) fn nodes_of<'a>(
             (laid, rows),
             height_given,
         )?;
-        tops.push(content_top(node.shape, width, (laid, rows)));
+        contents.push(content_of((laid, rows)));
         if slots.insert(node.id, slot(index)?).is_some() {
             return Err(GraphDataProblem::DuplicateNode {
                 node: node.id.to_owned(),
@@ -397,7 +360,7 @@ pub(super) fn nodes_of<'a>(
         outlines,
         resizable: batch.nodes.iter().map(|node| node.resizable).collect(),
         given,
-        tops,
+        contents,
         slots,
         units: cursor.units(),
     })
@@ -1424,5 +1387,45 @@ mod node_rules {
             load_columns(&columns).map(drop),
             invalid("n", A_MARKED_CONTAINER)
         );
+    }
+
+    #[test]
+    fn the_bridge_crate_puts_neither_a_node_s_height_nor_its_regions_top_together() {
+        // Verifies: ARCH-regions-are-container-slots, REN-node-content-and-hits
+        // The engine computes both from the content it holds, and checks the world's limit by
+        // them itself; the bridge crate hands it the content and asks it (the maintainer's
+        // decision of 2026-11-27). A node shape's value is `shape` wherever the bridge holds one.
+        // The code is read, its comments left out; the names are put together here, so that this
+        // test does not find itself.
+        let names = [
+            concat!("set_", "top"),
+            concat!("content_", "top"),
+            concat!("node_", "height"),
+            concat!("shape.", "height("),
+            concat!("shape.", "top("),
+            concat!("NodeShape::", "height"),
+            concat!("NodeShape::", "top"),
+        ];
+        let mut found = Vec::new();
+        let mut dirs = vec![std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")];
+        while let Some(dir) = dirs.pop() {
+            for entry in std::fs::read_dir(&dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    dirs.push(path);
+                    continue;
+                }
+                let text = std::fs::read_to_string(&path).unwrap();
+                for (line, row) in text.lines().enumerate() {
+                    if row.trim_start().starts_with("//") {
+                        continue;
+                    }
+                    for name in names.iter().filter(|&&name| row.contains(name)) {
+                        found.push(format!("{}:{}: {name}", path.display(), line + 1));
+                    }
+                }
+            }
+        }
+        assert!(found.is_empty(), "{found:#?}");
     }
 }

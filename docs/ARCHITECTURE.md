@@ -143,11 +143,12 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   bounds, the point and normal at a path parameter, edge-label placement, and the parts of a
   lightning bolt's path either side of its zigzag and the zigzag's two turns. `shape` holds the
   closed set of node shapes ([REN-node-shapes-cover-uml](adr/REN-node-shapes-cover-uml.md)):
-  each one's height for content of a given height, the inner rectangle its content is laid out in,
-  a frame's its tab, as large as its content uncut (`natural` of `content`), an actor's and an
-  hourglass's below their drawing (`drawing`), as wide as the node and at most 48 high, the height
-  a node needs for its rows and padding (`needed`, the least height of 64 applied to the content,
-  or to an actor's or an hourglass's whole node, its drawing counted in),
+  the inner rectangle each one's content is laid out in, a frame's its tab, as large as its
+  content uncut (`natural` of `content`), an actor's and an hourglass's below their drawing
+  (`drawing`), as wide as the node and at most 48 high, the one function of a node's height
+  (`height`) for its rows and padding and the height its data gives, the least height of 64
+  applied to the content, or to an actor's or an hourglass's whole node, its drawing counted in,
+  how far below a node's top its regions lie (`top`, from `height`),
   its hit test, the point where a line from its centre crosses its outline, how far inward from
   a side its outline lies at an offset along it, and for border nodes the point of the outline on a
   side at an offset along it (`on_side`), the point of the outline nearest a point (`nearest`, the
@@ -173,12 +174,16 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   load places every edge once, and each edit places the edges it changes; `hit`, `labels`, and
   `query`; `resize`, the eight resize handles, whether each node is resizable and the height its
   data gives, which `hit`'s `handle_at` reads to find a handle of the selected node within 6
-  screen pixels at the near and middle level, and the resize of a node from the box it had at the
+  screen pixels at the near and middle level, each node's content, its rows and padding, which
+  `set_content` puts and from which the engine gives the node its height (`NodeShape::height`) and
+  lays its regions out below its top (`top`), and the resize of a node from the box it had at the
   press by a drag of a handle, never smaller than 8 a side, than the height the node shape needs at
-  the new width for the content's height the caller hands in, an actor's and an hourglass's drawing
-  among it, or than the boxes of the nodes that lie directly in it, a circle, a crossed circle, and
-  a cross as high as wide, the nodes it
-  holds kept at their world positions and their positions relative to it kept anew
+  the new width for the content the engine holds, an actor's and an hourglass's drawing among it,
+  or than the boxes of the nodes that lie directly in it, a circle, a crossed circle, and a cross
+  as high as wide, the nodes it holds kept at their world positions and their positions relative
+  to it kept anew, and its regions laid out below the top its new width gives: the node keeps the
+  box the drag left, the first region gives way where that top moves down, and the node grows by
+  only what the first region lacks of its least
   ([API-edits-report-division-moves](adr/API-edits-report-division-moves.md)); `containers`,
   which node each node lies in: a load's `Nesting` checked so that a node lies only in a container
   and never in itself or a node it holds, the world positions as the sums along each chain of
@@ -197,10 +202,12 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   alone; each region holds its size apart from its extent, as a division gave it or as a drag of a
   line or a resize last changed its extent (`region_size`), so that a layout anew reads no rest
   back as a size; `arrange` lays them out from those sizes below the divided node's content, a
-  named region's band of 24 at its start, the node grown to what they need and the last region
-  taking the rest, what each holds moved along. `division_needs` computes what a division needs
-  from its parts alone; `arrange` calls it, and so does the bridge, which checks a division
-  against the world's limit before it divides.
+  named region's band of 24 at its start, the node grown from the width its data gives and the
+  height its content and its data give to what they need, undivided back to both, and the last
+  region taking the rest, what each holds moved along. `division_needs` computes what a division
+  needs from its parts alone; `arrange` calls it, and so does `division_within`, which the bridge
+  asks before it divides whether the division keeps the node within the world's limit, as it asks
+  `height_within` of a node's height, neither changing the graph.
   `move_line` moves the line after a region toward the pointer as far as `reach` lets the regions
   beside it shrink, never below 8, their bands, or the boxes of the nodes they hold, and never back
   past where it stands where a node overhangs its region, and `refit` fits the regions inside them,
@@ -284,11 +291,12 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   rule of which elements a level draws, every element near, the texts of role title middle, none
   far, by which the bridge's query places a found node's elements and `element_at` finds the element
   whose rectangle holds a point of the node, which the bridge's `hit` names beside the node it hits;
-  `graph`'s `resize_node` gives a node a new height and re-places its edges and its place in the
-  index. It depends on no crate that reaches the browser. `graph` keeps each edge's path and its
-  bounds as of its last move, so that a query computes no bounds; `graph::slot` is the one
-  conversion of a count to slots, which the bridge uses too. Only what the bridge uses is public;
-  the rest is private to the crate, so that the `dead_code` lint finds what only tests reach.
+  `graph`'s `set_content` gives a node the height its content and its data give and re-places its
+  edges and its place in the index. It depends on no crate that reaches the browser. `graph` keeps
+  each edge's path and its bounds as of its last move, so that a query computes no bounds;
+  `graph::slot` is the one conversion of a count to slots, which the bridge uses too. Only what the
+  bridge uses is public; the rest is private to the crate, so that the `dead_code` lint finds what
+  only tests reach.
 - **Bridge** — `crates/engine-wasm` holds every WebAssembly export: `loadGraph` checks graph data
   and resolves edge ends to slots, takes each node's container as the slot `api` resolved and its
   mark as a container, refuses a node out of place (`invalidContainer`) once every node is checked
@@ -300,7 +308,9 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   content laid out in its inner rectangle in the fonts `setFont` handed over
   ([REN-node-shapes-cover-uml](adr/REN-node-shapes-cover-uml.md)), or as the height its
   data gives where that is more, and a node without content as high as that height or as wide
-  (`NodeShape::sized` of `shape`, [REN-node-shapes-cover-uml](adr/REN-node-shapes-cover-uml.md)),
+  (`NodeShape::height` of `shape`, [REN-node-shapes-cover-uml](adr/REN-node-shapes-cover-uml.md)),
+  which the engine computes from the content the bridge hands it (`set_content`) and checks
+  against the world's limit (`height_within`) before the bridge hands anything over,
   refusing a height that is not finite or not above 0 as `f32` holds it, and keeps whether each node
   is resizable, which the sizes buffer
   holds beside the positions buffer, and a font handed over later lays every node out anew; a node
@@ -358,8 +368,9 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   press at a point hits, a resize handle of the selected node it is handed, a line between regions,
   a connector where the shell asks for connectors, a label, a node, or an edge by its slot, or
   nothing, as one generated value, refusing a pixel as `query` does and a point that is not finite,
-  `resizeNode` resizes a node by a handle from the box it had at the press, its content's height the
-  least, `regionsOf` names the regions of a divided node depth first, `containerOf` names the
+  `resizeNode` resizes a node by a handle from the box it had at the press, the height of the
+  content the engine holds the least, `regionsOf` names the regions of a divided node depth first,
+  `containerOf` names the
   container a node lies in, where a division chose it, `regionSize` the size a region holds apart
   from its extent, `moveLine` moves the line
   after a region, `bandName` cuts a region's name to its band in the font of `title`,
