@@ -9,9 +9,9 @@
 // where the resize left the node, unless it changed no box.
 import type { Hit } from "../bridge";
 import type { GraphState } from "../store";
+import { drag, takenOf } from "./drag";
 import type { Context, Gesture } from "./gesture";
-import { draggedOf } from "./node-drag";
-import { regionChanges, regionPlaces } from "./region-line";
+import { regionChanges, regionPlaces } from "./regions";
 
 /** The box of the node in `slot`, `x, y, width, height`, as the engine keeps it now. */
 function boxOf({ bridge }: Pick<Context, "bridge">, slot: number): Float64Array {
@@ -41,40 +41,35 @@ export function resize(
   const from = boxOf(context, slot);
   // The places of its regions, which a resize of a divided node changes at the side it pulls.
   const regions = regionPlaces(bridge, slot);
-  let started = false;
-  // A load, or a removal of the node, which a node that took its slot does not make good.
-  const taken = (state: GraphState) =>
-    state.change?.kind === "loaded" || state.nodes[slot]?.id !== id;
+  const dragging = drag(context, slot);
   return {
     grabs: false,
     move(x, y) {
       const { scale } = store.getState().viewport;
       // A finite drag (API-shell-mistake-refused-as-shells): every writer of `viewport.scale`
       // goes through `clampScale`.
-      bridge.resizeNode(slot, handle, from, (x - pressX) / scale, (y - pressY) / scale);
-      if (started) store.getState().dragMoved();
-      else {
-        started = true;
-        store.getState().dragStarted(draggedOf(context, slot));
-      }
+      const [dx, dy] = [(x - pressX) / scale, (y - pressY) / scale];
+      dragging.move(() => bridge.resizeNode(slot, handle, from, dx, dy));
     },
     end() {
-      if (!started) return;
-      store.getState().dragEnded();
-      const state = store.getState();
-      if (state.nodes[slot]?.id !== id) return;
-      const changed = regionChanges(state, bridge, regions);
-      const box = boxOf(context, slot);
-      // A resize back to the box it began at may still have changed a region's size: the region at
-      // the side it pulled holds the extent it took on the way (ARCH-regions-are-container-slots).
-      if (box.every((value, i) => value === from[i]) && changed.regions.length === 0) return;
-      // A side moved at the left or the top moves every node it holds relative to it, and in a
-      // divided node every node in a region whose top left corner moved.
-      const shifted = box[0] !== from[0] || box[1] !== from[1];
-      const moved = [...(shifted ? heldBy(state, id) : []), ...changed.moved];
-      state.nodeResized(id, moved, changed.regions);
+      dragging.end(() => {
+        const state = store.getState();
+        if (state.nodes[slot]?.id !== id) return;
+        const changed = regionChanges(state, bridge, regions);
+        const box = boxOf(context, slot);
+        // A resize back to the box it began at may still have changed a region's size: the region
+        // at the side it pulled holds the extent it took on the way
+        // (ARCH-regions-are-container-slots).
+        if (box.every((value, i) => value === from[i]) && changed.regions.length === 0) return;
+        // A side moved at the left or the top moves every node it holds relative to it, and in a
+        // divided node every node in a region whose top left corner moved.
+        const shifted = box[0] !== from[0] || box[1] !== from[1];
+        const moved = [...(shifted ? heldBy(state, id) : []), ...changed.moved];
+        state.nodeResized(id, moved, changed.regions);
+      });
     },
-    taken,
+    // A load, or a removal of the node, which a node that took its slot does not make good.
+    taken: takenOf(slot, id),
     drop() {},
   };
 }

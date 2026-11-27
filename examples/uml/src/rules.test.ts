@@ -39,44 +39,100 @@ const STATE_KINDS = [
   "frame",
 ] as const;
 
-/** The conventions' table, each refused pair as "kind source target": between a class, an
- *  interface, an abstract class, and a package, in either direction, none; between the state
- *  diagram's kinds, a transition at a comment or the frame, into an initial pseudostate, out of a
- *  final state or a terminate pseudostate, out of a fork into anything but a state or a signal
- *  symbol, into a join out of anything but a state or a signal symbol, and, since a receive signal
- *  symbol is its transition's trigger, out of a pseudostate into a receive signal symbol and out
- *  of one into a join (UML 2.5.1, Transition: outgoing_pseudostates, fork_segment_guards,
- *  join_segment_guards; Pseudostate: outgoing_from_initial). */
-const REFUSED_TRANSITIONS: ReadonlySet<string> = new Set(
-  STATE_KINDS.flatMap((other) => [
-    ...["comment", "frame"].flatMap((no) => [
-      `transition ${no} ${other}`,
-      `transition ${other} ${no}`,
-    ]),
-    `transition ${other} initial`,
-    `transition final ${other}`,
-    `transition terminate ${other}`,
-  ]).concat(
-    PSEUDOSTATES.flatMap((pseudostate) => [
-      `transition fork ${pseudostate}`,
-      `transition ${pseudostate} join`,
-      `transition ${pseudostate} receive-signal`,
-    ]),
-    ["transition receive-signal join"],
-  ),
-);
+/** Why the state diagram refuses a transition, an anchor, or a loop, as docs/CONVENTIONS.md words
+ *  each reason. */
+const STATE_WHY = {
+  comment: "A comment is attached by its anchor; no transition starts or ends on it.",
+  frame: "The frame of the state machine is no vertex; no transition starts or ends on it.",
+  initial: "An initial pseudostate starts its region; no transition enters it.",
+  final: "UML 2.5.1 lets no transition leave a final state (no_outgoing_transitions).",
+  terminate: "A terminate pseudostate ends the state machine; no transition leaves it.",
+  forkState: "UML 2.5.1 lets a fork's transitions enter states only (fork_segment_state).",
+  joinState: "UML 2.5.1 lets only transitions from states enter a join (join_segment_state).",
+  forkTrigger:
+    "UML 2.5.1 gives a fork's transition no trigger, and a receive signal is one (fork_segment_guards).",
+  joinTrigger:
+    "UML 2.5.1 gives a transition into a join no trigger, and a receive signal is one (join_segment_guards).",
+  initialTrigger:
+    "UML 2.5.1 gives an initial pseudostate's transition no trigger, and a receive signal is one (outgoing_from_initial).",
+  pseudostateTrigger:
+    "UML 2.5.1 gives a transition out of a pseudostate no trigger, and a receive signal is one (outgoing_pseudostates).",
+  anchorFrom: "An anchor starts at a comment.",
+  anchorOn: "A comment is anchored on a state or a pseudostate.",
+  loop: "Only a state's transition leads back to it; no other relationship of a node with itself is drawn.",
+} as const;
 
-/** The anchors the conventions refuse: every anchor but one from a comment to a state or a
- *  pseudostate. */
+const isPseudostate = (kind: string) => (PSEUDOSTATES as readonly string[]).includes(kind);
+/** The states and the pseudostates, which an anchor may end on. */
 const VERTICES: readonly string[] = [...STATES, ...PSEUDOSTATES];
-const REFUSED: ReadonlySet<string> = new Set([
-  ...REFUSED_TRANSITIONS,
-  ...STATE_KINDS.flatMap((source) =>
-    STATE_KINDS.filter((target) => source !== "comment" || !VERTICES.includes(target)).map(
-      (target) => `anchor ${source} ${target}`,
+
+/** A rule of a table: whether it refuses a relationship from `source` to `target`, and why. */
+type Rule = readonly [(source: string, target: string) => boolean, string];
+
+/** The reason of the first of `rules` that holds from `source` to `target`, none where none
+ *  does. */
+const firstHolding = (rules: readonly Rule[], source: string, target: string) =>
+  rules.find(([holds]) => holds(source, target))?.[1];
+
+const STATE_TRANSITION: readonly Rule[] = [
+  [(source, target) => source === "comment" || target === "comment", STATE_WHY.comment],
+  [(source, target) => source === "frame" || target === "frame", STATE_WHY.frame],
+  [(_, target) => target === "initial", STATE_WHY.initial],
+  [(source) => source === "final", STATE_WHY.final],
+  [(source) => source === "terminate", STATE_WHY.terminate],
+  [(source, target) => source === "fork" && isPseudostate(target), STATE_WHY.forkState],
+  [(source, target) => target === "join" && isPseudostate(source), STATE_WHY.joinState],
+  [(source, target) => source === "fork" && target === "receive-signal", STATE_WHY.forkTrigger],
+  [(source, target) => source === "receive-signal" && target === "join", STATE_WHY.joinTrigger],
+  [
+    (source, target) => source === "initial" && target === "receive-signal",
+    STATE_WHY.initialTrigger,
+  ],
+  [
+    (source, target) => isPseudostate(source) && target === "receive-signal",
+    STATE_WHY.pseudostateTrigger,
+  ],
+];
+const STATE_ANCHOR: readonly Rule[] = [
+  [(source) => source !== "comment", STATE_WHY.anchorFrom],
+  [(_, target) => !VERTICES.includes(target), STATE_WHY.anchorOn],
+];
+
+/** Why the conventions' table refuses a transition or an anchor from `source` to `target`, the
+ *  first reason that holds, none where it allows it: a transition at a comment or the frame, into
+ *  an initial pseudostate, out of a final state or a terminate pseudostate, out of a fork into a
+ *  pseudostate, into a join out of a pseudostate, and, since a receive signal symbol is its
+ *  transition's trigger, out of a fork into one, out of one into a join, and out of a pseudostate
+ *  into one (UML 2.5.1, Transition: fork_segment_state, join_segment_state, outgoing_pseudostates,
+ *  fork_segment_guards, join_segment_guards; Pseudostate: outgoing_from_initial); an anchor but
+ *  from a comment to a state or a pseudostate. */
+function stateRefusal(kind: string, source: string, target: string): string | undefined {
+  return firstHolding(kind === "anchor" ? STATE_ANCHOR : STATE_TRANSITION, source, target);
+}
+
+/** The refusals of `why` between every two of `kinds` for each of `relationships`, as
+ *  "kind source target" with why. */
+function tableOf(
+  kinds: readonly string[],
+  relationships: readonly string[],
+  why: (kind: string, source: string, target: string) => string | undefined,
+): ReadonlyMap<string, string> {
+  return new Map(
+    relationships.flatMap((kind) =>
+      kinds.flatMap((source) =>
+        kinds.flatMap((target) => {
+          const reason = why(kind, source, target);
+          return reason === undefined ? [] : [[`${kind} ${source} ${target}`, reason] as const];
+        }),
+      ),
     ),
-  ),
-]);
+  );
+}
+
+/** The conventions' table of the state diagram, each refused pair as "kind source target" with
+ *  why; between a class, an interface, an abstract class, and a package, in either direction, it
+ *  refuses none. */
+const REFUSED = tableOf(STATE_KINDS, ["transition", "anchor"], stateRefusal);
 
 /** The activity diagram's executable nodes, the actions, the expansion region, and the
  *  structured, conditional, and loop nodes; its object nodes; its control nodes and the connector;
@@ -100,47 +156,37 @@ const NO_NODES = [
 ] as const;
 const ACTIVITY_KINDS = [...ACTIONS, ...OBJECT_NODES, ...CONTROL_NODES, ...NO_NODES] as const;
 
-/** The conventions' table of the activity diagram, each refused pair as "kind source target": a
- *  control or an object flow at a comment, the frame, an interruptible region, or a parameter set,
- *  into an output pin, an input parameter node, an initial node, or a value pin, out of an input
- *  pin, a value pin, an output parameter node, an activity final, or a flow final; a control flow
- *  at an object node (UML 2.5.1, ControlFlow: object_nodes), an object flow at an action or an
- *  expansion region (ObjectFlow: no_executable_nodes) or out of an initial node (InitialNode:
- *  control_edges); an anchor from anything but a comment, or onto a comment. */
-const REFUSED_ACTIVITY: ReadonlySet<string> = new Set(
-  ["control-flow", "object-flow"]
-    .flatMap((kind) =>
-      ACTIVITY_KINDS.flatMap((other) => [
-        ...NO_NODES.flatMap((no) => [`${kind} ${no} ${other}`, `${kind} ${other} ${no}`]),
-        ...["output-pin", "input-parameter", "initial-node", "value-pin"].map(
-          (into) => `${kind} ${other} ${into}`,
-        ),
-        ...["input-pin", "value-pin", "output-parameter", "activity-final", "flow-final"].map(
-          (out) => `${kind} ${out} ${other}`,
-        ),
-        ...(kind === "control-flow"
-          ? OBJECT_NODES.flatMap((object) => [
-              `${kind} ${object} ${other}`,
-              `${kind} ${other} ${object}`,
-            ])
-          : [
-              ...ACTIONS.flatMap((action) => [
-                `${kind} ${action} ${other}`,
-                `${kind} ${other} ${action}`,
-              ]),
-              `${kind} initial-node ${other}`,
-            ]),
-      ]),
-    )
-    .concat(
-      ACTIVITY_KINDS.flatMap((other) => [
-        ...ACTIVITY_KINDS.filter((source) => source !== "activity-comment").map(
-          (source) => `anchor ${source} ${other}`,
-        ),
-        `anchor ${other} activity-comment`,
-      ]),
-    ),
-);
+/** Why the activity diagram refuses a flow, an exception handler, or an anchor, as
+ *  docs/CONVENTIONS.md words each reason. */
+const ACTIVITY_WHY = {
+  comment: "A comment is attached by its anchor; no flow starts or ends on it.",
+  frame: "The frame of the activity is no node; no flow starts or ends on it.",
+  region: "An interruptible region groups nodes and is none; no flow starts or ends on it.",
+  parameterSet:
+    "A parameter set groups the parameters of its pins and is no node; no flow starts or ends on it.",
+  initialIn: "UML 2.5.1 lets no flow enter an initial node (no_incoming_edges).",
+  finalOut:
+    "UML 2.5.1 lets no flow leave an activity final or a flow final node (no_outgoing_edges).",
+  valuePinIn: "UML 2.5.1 lets no flow enter a value pin (no_incoming_edges).",
+  outputPinIn:
+    "UML 2.5.1 lets no flow enter an output pin of an action (incoming_edges_structured_only).",
+  inputPinOut:
+    "UML 2.5.1 lets no flow leave an input pin of an action (outgoing_edges_structured_only).",
+  inputParameterIn:
+    "UML 2.5.1 lets no flow enter an input activity parameter node (no_edges, no_outgoing_edges).",
+  outputParameterOut:
+    "UML 2.5.1 lets no flow leave an output activity parameter node (no_edges, no_incoming_edges).",
+  objectNodes:
+    "UML 2.5.1 lets a control flow touch an object node only of a control type (object_nodes).",
+  executableNodes:
+    "UML 2.5.1 lets no object flow touch an action or an expansion region; objects pass through their pins or expansion nodes (no_executable_nodes).",
+  controlEdges: "UML 2.5.1 lets only control flows leave an initial node (control_edges).",
+  handlerFrom: "An exception handler starts at the action it protects; it protects no other node.",
+  handlerOn:
+    "An exception handler ends on the input pin that takes the exception into its handler's body.",
+  anchorFrom: "An anchor starts at a comment.",
+  anchorOn: "A comment is anchored on an element of the activity, not on another comment.",
+} as const;
 
 /** The object flow or the control flow a connection between `source` and `target` adds, as the
  *  conventions say: an object flow where an end is an object node. */
@@ -149,18 +195,70 @@ const flowOf = (source: string, target: string) =>
     ? "object-flow"
     : "control-flow";
 
-/** The conventions' table of the kinds the flow's kind select adds besides: an interrupting edge
- *  refused where the flow between its ends is, being that flow interrupting its region; an
- *  exception handler refused but from an action, which it protects, to an input pin, which takes
- *  the exception into its handler's body. */
-for (const source of ACTIVITY_KINDS)
-  for (const target of ACTIVITY_KINDS) {
-    const all = REFUSED_ACTIVITY as Set<string>;
-    if (all.has(`${flowOf(source, target)} ${source} ${target}`))
-      all.add(`interrupting-edge ${source} ${target}`);
-    if (!(ACTIONS as readonly string[]).includes(source) || target !== "input-pin")
-      all.add(`exception-handler ${source} ${target}`);
-  }
+/** Whether `source` or `target` is one of `kinds`. */
+const touches = (kinds: readonly string[], source: string, target: string) =>
+  kinds.includes(source) || kinds.includes(target);
+
+/** What the conventions refuse of a control and of an object flow alike. */
+const FLOW: readonly Rule[] = [
+  [(source, target) => touches(["activity-comment"], source, target), ACTIVITY_WHY.comment],
+  [(source, target) => touches(["activity-frame"], source, target), ACTIVITY_WHY.frame],
+  [(source, target) => touches(["interruptible-region"], source, target), ACTIVITY_WHY.region],
+  [(source, target) => touches(["parameter-set"], source, target), ACTIVITY_WHY.parameterSet],
+  [(_, target) => target === "initial-node", ACTIVITY_WHY.initialIn],
+  [(source) => source === "activity-final" || source === "flow-final", ACTIVITY_WHY.finalOut],
+  [(_, target) => target === "value-pin", ACTIVITY_WHY.valuePinIn],
+  [(_, target) => target === "output-pin", ACTIVITY_WHY.outputPinIn],
+  [(source) => source === "input-pin" || source === "value-pin", ACTIVITY_WHY.inputPinOut],
+  [(_, target) => target === "input-parameter", ACTIVITY_WHY.inputParameterIn],
+  [(source) => source === "output-parameter", ACTIVITY_WHY.outputParameterOut],
+];
+
+/** The rules of the activity diagram by the kind of relationship, an interrupting edge's being
+ *  those of the flow between its ends. */
+const ACTIVITY_RULES: Record<string, readonly Rule[]> = {
+  "control-flow": [
+    ...FLOW,
+    [(source, target) => touches(OBJECT_NODES, source, target), ACTIVITY_WHY.objectNodes],
+  ],
+  "object-flow": [
+    ...FLOW,
+    [(source, target) => touches(ACTIONS, source, target), ACTIVITY_WHY.executableNodes],
+    [(source) => source === "initial-node", ACTIVITY_WHY.controlEdges],
+  ],
+  "exception-handler": [
+    [(source) => !(ACTIONS as readonly string[]).includes(source), ACTIVITY_WHY.handlerFrom],
+    [(_, target) => target !== "input-pin", ACTIVITY_WHY.handlerOn],
+  ],
+  anchor: [
+    [(source) => source !== "activity-comment", ACTIVITY_WHY.anchorFrom],
+    [(_, target) => target === "activity-comment", ACTIVITY_WHY.anchorOn],
+  ],
+};
+
+/** Why the conventions' table of the activity diagram refuses a relationship of `kind` from
+ *  `source` to `target`, the first reason that holds, none where it allows it: a control or an
+ *  object flow at a comment, the frame, an interruptible region, or a parameter set, into an
+ *  initial node, out of an activity final or a flow final, into a value pin, into an output pin,
+ *  out of an input pin or a value pin, into an input parameter node, or out of an output one; a
+ *  control flow at an object node (UML 2.5.1, ControlFlow: object_nodes), an object flow at an
+ *  action or an expansion region (ObjectFlow: no_executable_nodes) or out of an initial node
+ *  (InitialNode: control_edges); an interrupting edge where the flow between its ends is refused,
+ *  for the same reason, being that flow interrupting its region; an exception handler but from an
+ *  action, which it protects, to an input pin, which takes the exception into its handler's body;
+ *  an anchor from anything but a comment, or onto a comment. */
+function activityRefusal(kind: string, source: string, target: string): string | undefined {
+  if (kind === "interrupting-edge") return activityRefusal(flowOf(source, target), source, target);
+  return firstHolding(ACTIVITY_RULES[kind]!, source, target);
+}
+
+/** The conventions' table of the activity diagram, each refused pair as "kind source target" with
+ *  why. */
+const REFUSED_ACTIVITY = tableOf(
+  ACTIVITY_KINDS,
+  ["control-flow", "object-flow", "interrupting-edge", "exception-handler", "anchor"],
+  activityRefusal,
+);
 
 test("the flow's kind select offers, of the control flow, the object flow, the interrupting edge, and the exception handler, those the table allows between its ends", () => {
   const FLOW_KINDS = ["control-flow", "object-flow", "interrupting-edge", "exception-handler"];
@@ -282,16 +380,7 @@ function useCaseRefusal(kind: string, source: string, target: string): string | 
  *  actor and a use case, in either direction; an include or an extend but between two use cases; a
  *  generalization but from an actor to an actor or from a use case to a use case; an anchor from
  *  anything but a comment, or onto a comment. */
-const REFUSED_USE_CASE: ReadonlyMap<string, string> = new Map(
-  USE_CASE_RELATIONSHIPS.flatMap((kind) =>
-    USE_CASE_KINDS.flatMap((source) =>
-      USE_CASE_KINDS.flatMap((target) => {
-        const why = useCaseRefusal(kind, source, target);
-        return why === undefined ? [] : [[`${kind} ${source} ${target}`, why] as const];
-      }),
-    ),
-  ),
-);
+const REFUSED_USE_CASE = tableOf(USE_CASE_KINDS, USE_CASE_RELATIONSHIPS, useCaseRefusal);
 
 /** The loops of the use case diagram and why each is refused, where UML 2.5.1 states it: a use
  *  case that includes itself (UseCase: cannot_include_self) and an actor or a use case that
@@ -321,56 +410,72 @@ const DIAGRAMS = [
   [USE_CASE_KINDS, USE_CASE_RELATIONSHIPS],
 ] as const;
 
+/** Why the tables refuse the relationship of `kind` from `source` to `target`, none where they
+ *  allow it. */
+const tableRefusal = (kind: string, source: string, target: string) => {
+  const key = `${kind} ${source} ${target}`;
+  return REFUSED.get(key) ?? REFUSED_ACTIVITY.get(key) ?? REFUSED_USE_CASE.get(key);
+};
+
+/** Why the conventions refuse a loop of `kind` on `source`, none where they allow it: the table's
+ *  reason where it refuses the pair, what UML 2.5.1 states of it where it does, and else the
+ *  example's rule that only a state's transition leads back to it. */
+const loopRefusal = (kind: string, source: string) =>
+  LOOPS.includes(`${kind} ${source}`)
+    ? undefined
+    : (tableRefusal(kind, source, source) ?? USE_CASE_LOOPS[`${kind} ${source}`] ?? STATE_WHY.loop);
+
 for (const [nodeKinds, kinds] of DIAGRAMS)
   for (const source of nodeKinds)
     for (const kind of kinds) {
       for (const target of nodeKinds) {
-        const key = `${kind} ${source} ${target}`;
-        const refused = REFUSED.has(key) || REFUSED_ACTIVITY.has(key) || REFUSED_USE_CASE.has(key);
-        test(`${kind} from ${source} to ${target}: ${refused ? "refused, saying why" : "allowed"}`, () => {
-          expect(allows({ source, target, kind })).toBe(!refused);
-          const why = refusal({ source, target, kind });
-          expect(why === undefined ? undefined : typeof why).toBe(refused ? "string" : undefined);
+        const why = tableRefusal(kind, source, target);
+        test(`${kind} from ${source} to ${target}: ${why ? "refused, saying why" : "allowed"}`, () => {
+          expect(allows({ source, target, kind })).toBe(why === undefined);
+          expect(refusal({ source, target, kind })).toBe(why);
         });
       }
-      const loop = LOOPS.includes(`${kind} ${source}`);
-      test(`${kind} looping on ${source}: ${loop ? "allowed" : "refused, saying why"}`, () => {
-        expect(allows({ source, target: source, kind, loop: true })).toBe(loop);
-        expect(refusal({ source, target: source, kind, loop: true }) === undefined).toBe(loop);
-        // A loop the table allows between two ends of its kind says what UML 2.5.1 states of it.
-        const stated = USE_CASE_LOOPS[`${kind} ${source}`];
-        if (stated) expect(refusal({ source, target: source, kind, loop: true })).toBe(stated);
+      const why = loopRefusal(kind, source);
+      test(`${kind} looping on ${source}: ${why ? "refused, saying why" : "allowed"}`, () => {
+        expect(allows({ source, target: source, kind, loop: true })).toBe(why === undefined);
+        expect(refusal({ source, target: source, kind, loop: true })).toBe(why);
       });
     }
 
-test("each refusal of the activity diagram says why in a sentence of its own, a reason naming UML 2.5.1 naming its constraints", () => {
-  const reasons = new Set<string>();
-  for (const key of REFUSED_ACTIVITY) {
+test("each refusal of the activity diagram says the reason of the first rule that holds, each reason of its table said for some pair, a reason naming UML 2.5.1 naming its constraints", () => {
+  for (const [key, why] of REFUSED_ACTIVITY) {
     const [kind, source, target] = key.split(" ") as ["anchor", never, never];
-    reasons.add(refusal({ source, target, kind })!);
+    expect({ key, why: refusal({ source, target, kind }) }).toEqual({ key, why });
   }
+  const reasons = Object.values(ACTIVITY_WHY);
+  expect(new Set(REFUSED_ACTIVITY.values())).toEqual(new Set(reasons));
   // A comment, the frame, an interruptible region, a parameter set, an output pin, an input pin, an
   // input and an output parameter node, into an initial node or a value pin, out of a final node,
   // a control flow at an object node, an object flow at an action or out of an initial node, an
   // anchor from no comment, one onto a comment, and an exception handler from no action or onto no
   // input pin.
-  expect(reasons.size).toBe(18);
+  expect(new Set(reasons).size).toBe(18);
   for (const reason of reasons) expect(reason).toMatch(/^[A-Z].*\.$/);
   for (const reason of reasons)
     if (reason.includes("UML 2.5.1")) expect(reason).toMatch(/\((\w+_\w+)(, \w+_\w+)*\)\.$/);
 });
 
-test("each refusal says why in a sentence of its own, naming UML 2.5.1 or the example", () => {
-  const reasons = new Set<string>();
-  for (const key of REFUSED) {
+test("each refusal of the state diagram says the reason of the first rule that holds, each reason of its table said for some pair or loop, naming UML 2.5.1 or the example", () => {
+  for (const [key, why] of REFUSED) {
     const [kind, source, target] = key.split(" ") as ["transition" | "anchor", never, never];
-    reasons.add(refusal({ source, target, kind })!);
+    expect({ key, why: refusal({ source, target, kind }) }).toEqual({ key, why });
   }
-  reasons.add(refusal({ source: "class", target: "class", kind: "association", loop: true })!);
+  const loops = STATE_KINDS.flatMap((source) =>
+    ["transition", "anchor"].map((kind) => loopRefusal(kind, source)),
+  );
+  const reasons = Object.values(STATE_WHY);
+  expect(new Set([...REFUSED.values(), ...loops.filter((why) => why !== undefined)])).toEqual(
+    new Set(reasons),
+  );
   // A comment, the frame, an initial, a final, a terminate, a fork, a join, a trigger out of an
   // initial pseudostate, out of another pseudostate, on a fork's segment, and on a join's, an
   // anchor from no comment, one to no state or pseudostate, and a loop.
-  expect(reasons.size).toBe(14);
+  expect(new Set(reasons).size).toBe(14);
   for (const reason of reasons) expect(reason).toMatch(/^[A-Z].*\.$/);
   // A reason that names UML 2.5.1 names the constraint it reads there.
   for (const reason of reasons)
@@ -385,5 +490,6 @@ test("each refusal of the use case diagram says the reason of the first rule tha
   // A comment, the subject, an association between two actors, one between two use cases, an
   // include and an extend at no use case, a generalization between an actor and a use case, an
   // anchor from no comment, and one onto a comment.
+  expect(new Set(REFUSED_USE_CASE.values())).toEqual(new Set(Object.values(WHY)));
   expect(new Set(REFUSED_USE_CASE.values()).size).toBe(9);
 });
