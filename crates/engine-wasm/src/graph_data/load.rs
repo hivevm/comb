@@ -11,8 +11,8 @@ use comb_engine::shape::{NodeShape, Outline};
 use super::borders::{attached, check_border, check_target, target_of};
 use super::checks::{
     Given, Holder, Nodes, check_attachment, check_container, checked_height, checked_node,
-    content_fits_shape, content_top, divided, edges_of, given_height, id_length, ids_of,
-    names_within, node_height, nodes_of,
+    content_fits_shape, content_of, divided, edges_of, given_height, id_length, ids_of,
+    names_within, nodes_of,
 };
 use super::item::{Batch, Border, given_of, node_of};
 #[cfg(test)]
@@ -95,13 +95,13 @@ pub(crate) fn load_of(
     for (i, (node, (divide, list))) in batch.nodes.iter().zip(&trees).enumerate() {
         let at = [nodes.positions[i * 2], nodes.positions[i * 2 + 1]];
         let size = [nodes.sizes[i * 2], nodes.sizes[i * 2 + 1]];
-        within_world_divided(node.id, *divide, at, size, nodes.tops[i], list)?;
+        let content = (nodes.shapes[i], nodes.contents[i]);
+        within_world_divided(node.id, *divide, [at, size], content, list)?;
     }
     let spans = text_spans(content.texts, content.text_bounds)?;
     let name_spans = text_spans(content.names, content.name_bounds)?;
     let edges = edges_of(&batch, &nodes.slots)?;
     let mut graph = Graph::nested(nodes.positions, nodes.sizes, edges, nesting)?;
-    divide_loaded(&mut graph, columns, &trees, &nodes.tops);
     for (slot, (&given, &resizable)) in (0..).zip(nodes.given.iter().zip(&nodes.resizable)) {
         if given.is_some() || resizable {
             graph
@@ -123,6 +123,7 @@ pub(crate) fn load_of(
                 .unwrap_or_else(|_| unreachable!("a slot of a node just built refuses no outline"));
         }
     }
+    divide_loaded(&mut graph, columns, &trees, &nodes.contents);
     // Last, once the boxes of the nodes they ride are what the load gives them.
     for (slot, on, border) in borders {
         attached(&mut graph, slot, on, &border)?;
@@ -281,16 +282,25 @@ fn check_containers(
     Ok(())
 }
 
-/// Divides each node of a load `trees` divides into its regions, in the slots the load built for
-/// them after the nodes, each region `k` of `columns` in slot `count + k`, the regions below the
-/// node's content, `tops` high, a node its data does not mark a container one by its division
-/// alone (ARCH-regions-are-container-slots).
+/// Hands the engine the content of each node of a load, `contents` in slot order, once it has its
+/// node shape and the height its data gives: from it the engine computes the height the load
+/// checked and the node's regions' top. Then divides each node `trees` divides into its regions,
+/// in the slots the load built for them after the nodes, each region `k` of `columns` in slot
+/// `count + k`, the regions below that top, a node its data does not mark a container one by its
+/// division alone (ARCH-regions-are-container-slots).
 fn divide_loaded(
     graph: &mut Graph,
     columns: &NodeColumns,
     trees: &[(Option<Axis>, Vec<Region>)],
-    tops: &[f32],
+    contents: &[Option<f64>],
 ) {
+    for (slot, &content) in (0..).zip(contents) {
+        if content.is_some() {
+            graph.set_content(slot, content).unwrap_or_else(|_| {
+                unreachable!("a slot of a node just built, no region yet, refuses no content")
+            });
+        }
+    }
     let count = trees.len();
     // The slots of each node's regions, in the order of its tree, as `region_names` reads them.
     let mut slots: Vec<Vec<u32>> = vec![Vec::new(); count];
@@ -312,13 +322,7 @@ fn divide_loaded(
         // Slots of nodes and regions just built, each region in what it divides, within the
         // world as `load_of` checked, which no division refuses.
         graph
-            .divide(
-                numbered(i),
-                *divide,
-                tops[i],
-                &parts_of(regions, &[]),
-                built,
-            )
+            .divide(numbered(i), *divide, &parts_of(regions, &[]), built)
             .unwrap_or_else(|_| unreachable!("a load's checked regions in slots just built"));
     }
 }
@@ -404,9 +408,8 @@ pub(super) fn checked_content(
 }
 
 /// A node one crossing hands over, checked: its place, its width, its node shape, its content
-/// with its texts mapped, the height a node of its content, width, and node shape has without a
-/// height of its own, as `heightOf` answers it, the height the node has, never less, the height
-/// its data gives, and whether it is resizable.
+/// with its texts mapped and the height it lays out to with its number of rows, the height the
+/// node has, never less, the height its data gives, and whether it is resizable.
 struct Single {
     x: f32,
     y: f32,
@@ -414,7 +417,7 @@ struct Single {
     shape: NodeShape,
     outline: Outline,
     content: Checked,
-    content_height: f32,
+    laid: (f64, usize),
     height: f32,
     given: Option<f32>,
     resizable: bool,
@@ -423,8 +426,6 @@ struct Single {
     /// (ARCH-regions-are-container-slots).
     divide: Option<Axis>,
     regions: Vec<Region>,
-    /// The height of its content, below which its regions lie; 0 without content.
-    top: f32,
     /// Its place where it is a border node (ARCH-border-nodes-ride-sides).
     border: Option<Border>,
 }
@@ -447,7 +448,6 @@ fn single_of(input: &NodeInput, fonts: &Fonts, held: u64) -> Result<Single, Grap
     check_regions(node.id, 0, divide, &regions, &mut taken)?;
     // Its regions' names count against the budget of content beside its content.
     names_within(node.id, held + content.units, &regions)?;
-    let content_height = node_height(shape, width, laid, None);
     Ok(Single {
         x,
         y,
@@ -455,12 +455,11 @@ fn single_of(input: &NodeInput, fonts: &Fonts, held: u64) -> Result<Single, Grap
         shape,
         outline,
         content,
-        content_height,
+        laid,
         height,
         given,
         resizable: node.resizable,
         is_container: node.is_container,
-        top: content_top(shape, width, laid),
         divide: divided(divide, &regions),
         regions,
         border: node.border,
@@ -497,13 +496,13 @@ pub(crate) fn add_node_to(
         shape,
         outline,
         content,
+        laid,
         height,
         given,
         resizable,
         is_container,
         divide,
         regions,
-        top,
         border,
         ..
     } = single;
@@ -524,7 +523,13 @@ pub(crate) fn add_node_to(
             (slot, within_world(id, world, [width, height])?)
         }
     };
-    within_world_divided(id, divide, [x, y], [width, height], top, &regions)?;
+    within_world_divided(
+        id,
+        divide,
+        [[x, y], [width, height]],
+        (shape, content_of(laid)),
+        &regions,
+    )?;
     let slot = graph
         .add_node_in(container, is_container, [x, y, width, height])
         .map_err(|error| match error {
@@ -540,18 +545,15 @@ pub(crate) fn add_node_to(
     graph
         .set_sizing(slot, given, resizable)
         .unwrap_or_else(added);
+    graph
+        .set_content(slot, content_of(laid))
+        .unwrap_or_else(|_| unreachable!("a slot just added, no region, refuses no content"));
     if let (Some(on), Some(border)) = (ride, &border) {
         attached(graph, slot, on, border)?;
     }
     if divide.is_some() {
         graph
-            .divide(
-                slot,
-                divide,
-                top,
-                &parts_of(&regions, &[]),
-                RegionSlots::Added,
-            )
+            .divide(slot, divide, &parts_of(&regions, &[]), RegionSlots::Added)
             .map_err(division_problem)?;
     }
     Ok(Added {
@@ -594,7 +596,16 @@ fn ridden(
 /// checks a node, its strings counted against the budget alone, and added to nothing: the node
 /// `heightOf` hands over, named `""` and at the origin (REN-node-content-and-hits).
 pub(crate) fn height_of(node: &NodeInput, fonts: &Fonts) -> Result<f32, GraphDataProblem> {
-    Ok(single_of(node, fonts, 0)?.content_height)
+    let single = single_of(node, fonts, 0)?;
+    // As the engine gives it without a height of its data, which `heightOf` hands over none of:
+    // so `single_of` checked this very height against the world's limit already.
+    checked_height(
+        node.id.0.as_deref().unwrap_or_default(),
+        single.shape,
+        [single.y, single.width],
+        single.laid,
+        None,
+    )
 }
 
 /// A load of `batch` as `loadGraph` checks one, its nodes and edges crossed as columns.

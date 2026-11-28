@@ -46,9 +46,10 @@ pub use nodes::PositionError;
 pub(crate) use query::origin_of;
 pub use query::{Level, MeshAt, Visible};
 pub use regions::{
-    Axis, BAND, DivideError, Divided, LEAST_REGION, LineError, Part, RegionSlots, division_needs,
+    Axis, BAND, Beyond, DivideError, Divided, LEAST_REGION, LineError, Part, RegionSlots,
+    WithinError, division_within,
 };
-pub use resize::{Handle, LEAST_SIDE, resized};
+pub use resize::{Handle, LEAST_SIDE, height_within, resized};
 use slots::Slots;
 
 /// Where an end of an edge lies: on the node in a node slot, or on the edge in an edge slot at the
@@ -259,6 +260,11 @@ pub struct Graph {
     /// Whether the user may resize each node slot by its resize handles; a slot past its end may
     /// not.
     resizable: Vec<bool>,
+    /// The rows and padding of each node slot's content, laid out as in a rectangle before the
+    /// least height of a node, or none for a node without rows; a slot past its end has none
+    /// (REN-node-content-and-hits). The node's height and its regions' top follow from it
+    /// (`NodeShape::height`, `NodeShape::top`).
+    contents: Vec<Option<f64>>,
     edges: Vec<EdgeSpec>,
     /// The node slots, free ones among them (ARCH-engine-edits-nested-graph).
     node_slots: Slots,

@@ -397,3 +397,87 @@ test("a handle is a square of 8 screen pixels at every scale, none at the far le
   }
   expect(cursors).toEqual(["ew-resize", "ns-resize", "nesw-resize", "nwse-resize"]);
 });
+
+/** A title of `act`, the content of the divided actor. */
+const ACT_TITLE = [[{ kind: "text" as const, role: "title" as const, text: "act" }]];
+
+/** An actor `act` at (100, 100), 40 wide, its drawing 48 high, divided down into two regions of
+ *  40, `r1` and `r2`. */
+const DIVIDED_ACTOR: GraphData = {
+  nodes: [
+    {
+      id: "act",
+      x: 100,
+      y: 100,
+      width: 40,
+      content: ACT_TITLE,
+      shape: "actor",
+      resizable: true,
+      divide: "down",
+      regions: [
+        { id: "r1", size: 40, line: "solid" },
+        { id: "r2", size: 40, line: "solid" },
+      ],
+    },
+  ],
+  edges: [],
+};
+
+/** The divided actor's box and drawing, the top of its first region below the actor's top, and
+ *  the first region's height. */
+async function actorDrawn(page: Page) {
+  return page.evaluate(async () => {
+    await window.comb.whenRendered();
+    const nodes = window.inspect().nodes;
+    const act = nodes.find(({ id }) => id === "act")!;
+    const first = nodes.find(({ id }) => id === "r1")!;
+    return {
+      width: act.width,
+      height: act.height,
+      drawing: act.drawing!,
+      top: first.y - act.y,
+      first: first.height,
+    };
+  });
+}
+
+/** How high an actor of the title is, its drawing and its content, at `width`. */
+async function actorNeeds(page: Page, width: number) {
+  return page.evaluate(({ content, wide }) => window.comb.heightOf(content, wide, "actor"), {
+    content: ACT_TITLE,
+    wide: width,
+  });
+}
+
+test("a divided actor resized narrower lays its first region out below its drawing and its content at the new width", async ({
+  page,
+}) => {
+  // Verifies: ARCH-regions-are-container-slots, REN-node-shapes-cover-uml, G-15
+  await open(page);
+  await loaded(page, DIVIDED_ACTOR, { x: 0, y: 0, scale: 1 });
+  const drawn = () => actorDrawn(page);
+  const needed = (width: number) => actorNeeds(page, width);
+  const wide = await drawn();
+  expect(wide.top).toBe(await needed(40));
+  // Selected by a press on its drawing, then narrowed at its right handle to 16.
+  await clickWorld(page, 120, 120);
+  const middle = 100 + (wide.top + 80) / 2;
+  await dragWorld(page, [140, middle], [116, middle]);
+  const narrow = await drawn();
+  expect(narrow.width).toBe(16);
+  // At 16 wide the drawing is 32 high; the first region begins right below it and the title.
+  expect(narrow.drawing.height).toBe(32);
+  expect(narrow.top).toBe(await needed(16));
+  // From the drawing as inspection reports it: the content below the drawing is as high at 16 as
+  // at 40, since a row's height does not follow the width.
+  const content = wide.top - (wide.drawing.y + wide.drawing.height);
+  expect(content).toBeGreaterThan(0);
+  expect(narrow.top).toBe(narrow.drawing.y + narrow.drawing.height + content);
+  expect(narrow.top).toBeLessThan(wide.top);
+  // Widened to 40 again, the actor keeps the height the drag left, and its first region gives
+  // the drawing back the room it took (the maintainer's decision of 2026-11-27).
+  await dragWorld(page, [116, middle], [140, middle]);
+  const again = await drawn();
+  expect([again.width, again.height, again.top]).toEqual([40, narrow.height, wide.top]);
+  expect(again.first).toBe(narrow.first - (wide.top - narrow.top));
+});

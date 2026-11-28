@@ -10,7 +10,7 @@ use comb_engine::shape::NodeShape;
 
 use super::{
     Checked, ContentData, GraphDataProblem, NodePatch, Region, check_attachment, check_graph_size,
-    checked_height, content_top, division_problem, malformed, names_within, parts_of, patch_of,
+    checked_height, content_of, division_problem, malformed, names_within, parts_of, patch_of,
     within_world_divided,
 };
 
@@ -102,7 +102,7 @@ pub(crate) fn update_node_in(
         return Err(SlotError::NoNode { slot }.into());
     }
     // A region holds no content of its own and takes its box from the node it divides; refused
-    // before anything changes, as the engine's division and `set_top` refuse it.
+    // before anything changes, as the engine's division and `set_content` refuse it.
     if graph.is_region(slot) {
         return Err(division_problem(DivideError::Region { slot }).into());
     }
@@ -134,17 +134,25 @@ pub(crate) fn update_node_in(
     let width = graph.own_width(slot);
     let at = [0, 1].map(|axis| graph.positions()[slot as usize * 2 + axis]);
     let height = checked_height(id, shape, [at[1], width], laid, given)?;
-    let top = content_top(shape, width, laid);
+    let content = content_of(laid);
     if let Some((divide, regions)) = &patched.regions {
-        within_world_divided(id, *divide, at, [width, height], top, regions)?;
+        within_world_divided(
+            id,
+            *divide,
+            [at, [width, height]],
+            (shape, content),
+            regions,
+        )?;
     }
-    graph.resize_node(slot, height)?;
     let resizable = patched
         .resizable
         .unwrap_or_else(|| graph.is_resizable(slot));
     graph.set_sizing(slot, given, resizable)?;
+    // The engine gives it the height checked above, from its content and its data, as a load of
+    // it would, and lays its regions out below that content, grown where they need it.
+    graph.set_content(slot, content).map_err(division_problem)?;
     graph.set_outline(slot, patched.outline.unwrap_or(graph.outline(slot)))?;
-    let divided = divide_anew(graph, slot, patched.regions, kept, top)?;
+    let divided = divide_anew(graph, slot, patched.regions, kept)?;
     if let Some(place) = place {
         place_anew(graph, slot, place, patched.side, patched.offset)?;
     }
@@ -174,27 +182,25 @@ fn place_anew(
     Ok(())
 }
 
-/// Divides the node in `slot` anew into `regions` in their direction, below its content, `top`
-/// high, in place of the regions it has, by the engine's one division, and returns what it
-/// changed, with the code units of each new region's name: what went with the regions it had is
-/// what a region `kept` does not name held, with every edge at it. `kept` names, per region of
-/// `regions` at every depth, depth first, the slot of the region of the node that has its
-/// identifier, or `u32::MAX` (ARCH-regions-are-container-slots, *Removing a region*). Without
-/// regions, the node's regions are laid out anew below its content, and none goes.
+/// Divides the node in `slot` anew into `regions` in their direction, below its content, in
+/// place of the regions it has, by the engine's one division, and returns what it changed, with
+/// the code units of each new region's name: what went with the regions it had is what a region
+/// `kept` does not name held, with every edge at it. `kept` names, per region of `regions` at
+/// every depth, depth first, the slot of the region of the node that has its identifier, or
+/// `u32::MAX` (ARCH-regions-are-container-slots, *Removing a region*). Without regions, nothing
+/// goes: `set_content` laid the node's regions out anew below its content already.
 fn divide_anew(
     graph: &mut Graph,
     slot: u32,
     regions: Option<(Option<Axis>, Vec<Region>)>,
     kept: &[u32],
-    top: f32,
 ) -> Result<Option<(Divided, Vec<u64>)>, GraphDataProblem> {
     let Some((divide, regions)) = regions else {
-        graph.set_top(slot, top).map_err(division_problem)?;
         return Ok(None);
     };
     let parts = parts_of(&regions, kept);
     let divided = graph
-        .divide(slot, divide, top, &parts, RegionSlots::Added)
+        .divide(slot, divide, &parts, RegionSlots::Added)
         .map_err(division_problem)?;
     let names = regions.iter().map(Region::name_units).collect();
     Ok(Some((divided, names)))
@@ -261,8 +267,10 @@ mod tests {
         assert_eq!(engine.graph.sizes()[2..], [100.0, 102.0]);
         // A slot that holds no node is the shell's mistake.
         assert_eq!(
-            engine.graph.resize_node(7, 64.0),
-            Err(comb_engine::graph::SlotError::NoNode { slot: 7 })
+            engine.graph.set_content(7, Some(64.0)),
+            Err(comb_engine::graph::DivideError::Slot(
+                comb_engine::graph::SlotError::NoNode { slot: 7 }
+            ))
         );
     }
 

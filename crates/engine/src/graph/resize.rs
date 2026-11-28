@@ -2,10 +2,11 @@
 //! eight handles, the box a drag of one leaves, never smaller than 8 world units a side, than the
 //! node's content, an actor's and an hourglass's drawing among it, or than the boxes of the nodes
 //! that lie directly in it, a circle, a crossed circle, and a cross kept as high as wide, and the
-//! node given that box while what it holds keeps its world position. Also what a node's data says
-//! of its size: the height it gives and whether the user may resize it.
+//! node given that box while what it holds keeps its world position, and its regions laid out below
+//! the top its new width gives. Also what a node's data says of its size: the height it gives,
+//! whether the user may resize it, and its content, from which the engine computes its height.
 
-use super::{CANVAS, Graph, MoveError, PositionError, SlotError};
+use super::{Beyond, CANVAS, DivideError, Graph, MoveError, PositionError, SlotError};
 use crate::geometry::{Rect, WORLD_LIMIT};
 use crate::shape::{BAR_HEIGHT, NodeShape};
 
@@ -69,20 +70,21 @@ impl Handle {
 }
 
 /// The box a drag of `handle` by `by` leaves of a node of node shape `shape` whose box was `from`
-/// at the press and whose rows and padding are `content` high as in a rectangle, nil for none:
-/// each side it pulls moved by the drag, never so far that the node is less than `LEAST_SIDE` wide
-/// or less high than its node shape needs for that content at its new width (`NodeShape::needed`),
-/// an actor and an hourglass their drawing too, nor that it leaves out any of `held`, the boxes of
-/// the nodes that lie directly in it together, or none. A circle, a ringed circle, a crossed
-/// circle, and a cross stay as high as wide, by the greater of the two pulls; a corner keeps the
-/// opposite corner where it stands, a side the opposite side, and the other extent grows about
-/// the node's centre line. Every side stays within the world's limit.
+/// at the press and whose rows and padding are `content` high as in a rectangle, none for a node
+/// without rows: each side it pulls moved by the drag, never so far that the node is less than
+/// `LEAST_SIDE` wide or less high than its node shape needs for that content at its new width
+/// (`NodeShape::height` given a height of 0, which it raises to the least its content and its node
+/// shape need), an actor and an hourglass their drawing too, nor that it leaves out any of
+/// `held`, the boxes of the nodes that lie directly in it together, or none. A circle, a ringed
+/// circle, a crossed circle, and a cross stay as high as wide, by the greater of the two pulls; a
+/// corner keeps the opposite corner where it stands, a side the opposite side, and the other
+/// extent grows about the node's centre line. Every side stays within the world's limit.
 pub fn resized(
     shape: NodeShape,
     handle: Handle,
     from: &Rect,
     by: [f64; 2],
-    content: f64,
+    content: Option<f64>,
     held: Option<&Rect>,
 ) -> Rect {
     let pulls = handle.pulls();
@@ -129,7 +131,7 @@ pub fn resized(
             if axis == 1 {
                 // The height its content needs at the width the drag left.
                 let width = new_hi[0] - new_lo[0];
-                least[1] = LEAST_SIDE.max(shape.needed(width, content));
+                least[1] = LEAST_SIDE.max(shape.height(width, content, Some(0.0)));
             }
             match pulls[axis] {
                 -1 => {
@@ -159,6 +161,29 @@ pub fn resized(
     )
 }
 
+/// The height of a node of node shape `shape`, `width` wide, whose content is `content` as
+/// `Graph::set_content` takes it and whose data gives the height `given`, or none: the height the
+/// engine gives it (`NodeShape::height`), as it keeps it; or `Beyond::Height` where its far side,
+/// from `y`, lies past the world's limit (ARCH-one-workspace-per-example, *World*). It changes
+/// nothing, so that a caller asks it before it hands the engine a node or its content, and a
+/// refused edit changes nothing.
+pub fn height_within(
+    shape: NodeShape,
+    [y, width]: [f32; 2],
+    content: Option<f64>,
+    given: Option<f32>,
+) -> Result<f32, Beyond> {
+    let height = kept(shape.height(f64::from(width), content, given.map(f64::from)));
+    // `y` lies within the limit and the height is not negative, so only the far side past the
+    // positive limit is beyond. Compared as `height > limit - y`, which `f64` holds exactly where
+    // it matters: a height of hundreds of units past a `y` on the limit, which `y + height` would
+    // round back onto it.
+    if f64::from(height) > WORLD_LIMIT - f64::from(y) {
+        return Err(Beyond::Height);
+    }
+    Ok(height)
+}
+
 /// `value`, a coordinate or an extent within the world's limit, as the `f32` the engine keeps.
 #[expect(
     clippy::cast_possible_truncation,
@@ -171,7 +196,7 @@ const fn kept(value: f64) -> f32 {
 impl Graph {
     /// Gives the node in `slot` what its data says of its size: the height it gives, or none, and
     /// whether the user may resize it (API-edits-report-division-moves). Its height in the sizes
-    /// buffer is the caller's, through `resize_node`. A slot that holds no node refuses the call.
+    /// buffer follows through `set_content`. A slot that holds no node refuses the call.
     pub fn set_sizing(
         &mut self,
         slot: u32,
@@ -199,20 +224,57 @@ impl Graph {
         self.resizable.get(slot as usize) == Some(&true)
     }
 
+    /// The rows and padding of the content of the node in `slot`, as `set_content` gave them,
+    /// none for a node without rows.
+    pub(crate) fn content(&self, slot: u32) -> Option<f64> {
+        self.contents.get(slot as usize).copied().flatten()
+    }
+
+    /// Gives the node in `slot` its content: its rows and padding, `content` high as in a
+    /// rectangle before the least height of a node, or none for a node without rows
+    /// (REN-node-content-and-hits). The node then takes the height `NodeShape::height` gives at the
+    /// width it lays its content out at (`own_width`) and the height its data gives, its edges and
+    /// its place in the index moved along where it changed, and its regions are laid out anew
+    /// below its top (`top`). A slot that holds no node, or a region, which holds no content,
+    /// refuses the call, which then changes nothing.
+    pub fn set_content(&mut self, slot: u32, content: Option<f64>) -> Result<(), DivideError> {
+        self.nodes_held(&[slot])?;
+        if self.is_region(slot) {
+            return Err(DivideError::Region { slot });
+        }
+        let i = slot as usize;
+        if self.contents.len() <= i {
+            self.contents.resize(i + 1, None);
+        }
+        self.contents[i] = content;
+        let width = self.own_width(slot);
+        let given = self.given_height(slot).map(f64::from);
+        let height = kept(self.shape(slot).height(f64::from(width), content, given));
+        if self.divided(slot).is_some() {
+            // The height its regions grow it from, which `arrange` gives it.
+            self.set_divided_size(slot, [width, height]);
+        } else if self.sizes[i * 2 + 1] != height {
+            self.resize_node(slot, height)?;
+        }
+        self.arrange(slot);
+        Ok(())
+    }
+
     /// Resizes the node in `slot`, whose box was `from` at the press, by a drag of `handle` by
-    /// `by`, never lower than its node shape needs for its rows and their padding, `content` high
-    /// before the least height of a node, as `resized` says, and returns the box it now has. The
-    /// nodes it holds keep their world positions, so that their positions relative to it change
-    /// with its left and top side; its height becomes the one its data gives; its edges and its
-    /// place in the index move along. A slot that holds no node, or a box or a drag that is not
-    /// finite, refuses the call, which then changes nothing.
+    /// `by`, never lower than its node shape needs for its content at its new width, as `resized`
+    /// says, and returns the box it now has. The nodes it holds keep their world positions, so
+    /// that their positions relative to it change with its left and top side; its regions are
+    /// laid out below the top its new width gives (`top`), the first region giving way where that
+    /// top moves down and the node growing by only what the first region lacks of its least; its
+    /// height becomes the one its data gives; its edges and its place in the index move along. A
+    /// slot that holds no node, or a box or a drag that is not finite, refuses the call, which
+    /// then changes nothing.
     pub fn resize(
         &mut self,
         slot: u32,
         handle: Handle,
         from: &Rect,
         by: [f64; 2],
-        content: f64,
     ) -> Result<Rect, MoveError> {
         self.nodes_held(&[slot])?;
         let numbers = [from.min_x, from.min_y, from.max_x, from.max_y, by[0], by[1]];
@@ -235,14 +297,12 @@ impl Graph {
                 .reduce(|a, b| a.union(&b))
         };
         let shape = self.shape(slot);
-        let to = resized(shape, handle, from, by, content, held.as_ref());
+        let to = resized(shape, handle, from, by, self.content(slot), held.as_ref());
         let i = slot as usize * 2;
         self.positions[i] = kept(to.min_x);
         self.positions[i + 1] = kept(to.min_y);
         self.sizes[i] = kept(to.max_x - to.min_x);
         self.sizes[i + 1] = kept(to.max_y - to.min_y);
-        let resizable = self.is_resizable(slot);
-        self.set_sizing(slot, Some(self.sizes[i + 1]), resizable)?;
         if self.container(slot) != CANVAS {
             self.keep_relative(slot);
         }
@@ -250,9 +310,19 @@ impl Graph {
             self.keep_relative(child);
         }
         self.reboxed(slot);
-        // Its width now the one a later layout of its regions grows from.
-        self.set_divided_width(slot, self.sizes[i]);
+        // Its width now the one its top and a later layout of its regions follow: an actor's or an
+        // hourglass's drawing follows it, and its regions lie below the top it gives.
+        let top = self.top(slot);
+        self.set_divided_size(slot, [self.sizes[i], self.sizes[i + 1]]);
         self.refit(slot);
+        if self.top(slot) != top {
+            // `refit` gave a top that moved down the first region's room; laid out anew from the
+            // sizes it left, the node grows by only what that region lacks of its least, and keeps
+            // the box the drag left otherwise (the maintainer's decision of 2026-11-27).
+            self.arrange(slot);
+        }
+        let resizable = self.is_resizable(slot);
+        self.set_sizing(slot, Some(self.sizes[i + 1]), resizable)?;
         Ok(self.node_bounds(slot))
     }
 }
@@ -306,9 +376,7 @@ mod tests {
         // Verifies: API-edits-report-division-moves
         let mut graph = held();
         let from = Rect::of_node(100.0, 100.0, 400.0, 200.0);
-        graph
-            .resize(0, Handle::Left, &from, [-60.0, 25.0], 64.0)
-            .unwrap();
+        graph.resize(0, Handle::Left, &from, [-60.0, 25.0]).unwrap();
         // The left side moved out, the right side and the height as they were.
         assert_eq!(box_of(&graph, 0), [40.0, 100.0, 460.0, 200.0]);
         // The node it holds stays at (150, 140) in the world, 110 from the container's left now.
@@ -327,27 +395,28 @@ mod tests {
         let from = Rect::of_node(100.0, 100.0, 400.0, 200.0);
         // The right side pulled in past the node held stops at its right side, 250.
         graph
-            .resize(0, Handle::Right, &from, [-380.0, 0.0], 64.0)
+            .resize(0, Handle::Right, &from, [-380.0, 0.0])
             .unwrap();
         assert_eq!(box_of(&graph, 0), [100.0, 100.0, 150.0, 200.0]);
         // The top pulled down past the node stops at its top, 140.
-        graph
-            .resize(0, Handle::Top, &from, [0.0, 500.0], 64.0)
-            .unwrap();
+        graph.resize(0, Handle::Top, &from, [0.0, 500.0]).unwrap();
         assert_eq!(box_of(&graph, 0), [100.0, 140.0, 400.0, 160.0]);
         // A node that holds none stops at 8 wide and at its content's height: rows and padding of
-        // 30 raised to the least height of 64, or of 80 kept.
+        // 30 raised to the least height of 64, or of 80 kept; without content, at 8.
         let lone = Rect::of_node(900.0, 100.0, 100.0, 64.0);
+        graph.set_content(2, Some(30.0)).unwrap();
         graph
-            .resize(2, Handle::BottomLeft, &lone, [500.0, -500.0], 30.0)
+            .resize(2, Handle::BottomLeft, &lone, [500.0, -500.0])
             .unwrap();
         assert_eq!(box_of(&graph, 2), [992.0, 100.0, 8.0, 64.0]);
+        graph.set_content(2, Some(80.0)).unwrap();
         graph
-            .resize(2, Handle::BottomLeft, &lone, [500.0, -500.0], 80.0)
+            .resize(2, Handle::BottomLeft, &lone, [500.0, -500.0])
             .unwrap();
         assert_eq!(box_of(&graph, 2), [992.0, 100.0, 8.0, 80.0]);
+        graph.set_content(2, None).unwrap();
         graph
-            .resize(2, Handle::BottomLeft, &lone, [500.0, -500.0], 0.0)
+            .resize(2, Handle::BottomLeft, &lone, [500.0, -500.0])
             .unwrap();
         assert_eq!(box_of(&graph, 2), [992.0, 100.0, 8.0, 8.0]);
     }
@@ -358,15 +427,15 @@ mod tests {
         let circle = NodeShape::Circle;
         let from = Rect::of_node(0.0, 0.0, 40.0, 40.0);
         // A corner keeps the opposite corner, by the greater of the two pulls.
-        let to = resized(circle, Handle::BottomRight, &from, [10.0, 30.0], 0.0, None);
+        let to = resized(circle, Handle::BottomRight, &from, [10.0, 30.0], None, None);
         assert_eq!(to, Rect::new(0.0, 0.0, 70.0, 70.0));
-        let to = resized(circle, Handle::TopLeft, &from, [-5.0, 20.0], 0.0, None);
+        let to = resized(circle, Handle::TopLeft, &from, [-5.0, 20.0], None, None);
         assert_eq!(to, Rect::new(-5.0, -5.0, 40.0, 40.0));
         // A side keeps the opposite side and grows the other extent about the centre line.
-        let to = resized(circle, Handle::Right, &from, [20.0, 99.0], 0.0, None);
+        let to = resized(circle, Handle::Right, &from, [20.0, 99.0], None, None);
         assert_eq!(to, Rect::new(0.0, -10.0, 60.0, 50.0));
         // Never below 8 a side.
-        let to = resized(circle, Handle::Left, &from, [100.0, 0.0], 0.0, None);
+        let to = resized(circle, Handle::Left, &from, [100.0, 0.0], None, None);
         assert_eq!(to, Rect::new(32.0, 16.0, 40.0, 24.0));
         // A bar sets both freely.
         let bar = resized(
@@ -374,7 +443,7 @@ mod tests {
             Handle::BottomRight,
             &from,
             [10.0, 30.0],
-            0.0,
+            None,
             None,
         );
         assert_eq!(bar, Rect::new(0.0, 0.0, 50.0, 70.0));
@@ -397,11 +466,18 @@ mod tests {
                 Handle::BottomRight,
                 &from,
                 [-100.0, 80.0],
-                64.0,
+                Some(64.0),
                 None,
             );
             assert_eq!(to, Rect::new(0.0, 0.0, 120.0, 144.0), "{shape:?}");
-            let to = resized(shape, Handle::BottomRight, &from, [30.0, -40.0], 64.0, None);
+            let to = resized(
+                shape,
+                Handle::BottomRight,
+                &from,
+                [30.0, -40.0],
+                Some(64.0),
+                None,
+            );
             assert_eq!(to, Rect::new(0.0, 0.0, 250.0, 64.0), "{shape:?}");
         }
     }
@@ -411,9 +487,9 @@ mod tests {
         // Verifies: REN-node-shapes-cover-uml
         let from = Rect::of_node(0.0, 0.0, 40.0, 40.0);
         for shape in [NodeShape::CrossedCircle, NodeShape::Cross] {
-            let to = resized(shape, Handle::BottomRight, &from, [10.0, 30.0], 0.0, None);
+            let to = resized(shape, Handle::BottomRight, &from, [10.0, 30.0], None, None);
             assert_eq!(to, Rect::new(0.0, 0.0, 70.0, 70.0), "{shape:?}");
-            let to = resized(shape, Handle::Right, &from, [20.0, 99.0], 0.0, None);
+            let to = resized(shape, Handle::Right, &from, [20.0, 99.0], None, None);
             assert_eq!(to, Rect::new(0.0, -10.0, 60.0, 50.0), "{shape:?}");
         }
     }
@@ -426,9 +502,23 @@ mod tests {
         // the content.
         let from = Rect::of_node(0.0, 0.0, 100.0, 86.0);
         let actor = NodeShape::Actor;
-        let to = resized(actor, Handle::BottomRight, &from, [20.0, 40.0], 38.0, None);
+        let to = resized(
+            actor,
+            Handle::BottomRight,
+            &from,
+            [20.0, 40.0],
+            Some(38.0),
+            None,
+        );
         assert_eq!(to, Rect::new(0.0, 0.0, 120.0, 126.0));
-        let to = resized(actor, Handle::Bottom, &from, [0.0, -500.0], 38.0, None);
+        let to = resized(
+            actor,
+            Handle::Bottom,
+            &from,
+            [0.0, -500.0],
+            Some(38.0),
+            None,
+        );
         assert_eq!(to, Rect::new(0.0, 0.0, 100.0, 86.0));
         // Narrowed to 20, its drawing is 40 high, so it may be 78 high.
         let to = resized(
@@ -436,7 +526,7 @@ mod tests {
             Handle::BottomRight,
             &from,
             [-80.0, -500.0],
-            38.0,
+            Some(38.0),
             None,
         );
         assert_eq!(to, Rect::new(0.0, 0.0, 20.0, 78.0));
@@ -448,12 +538,69 @@ mod tests {
             Handle::BottomRight,
             &from,
             [-80.0, -500.0],
-            0.0,
+            None,
             None,
         );
         assert_eq!(to, Rect::new(0.0, 0.0, 20.0, 30.0));
-        let to = resized(hourglass, Handle::TopLeft, &from, [10.0, -20.0], 0.0, None);
+        let to = resized(hourglass, Handle::TopLeft, &from, [10.0, -20.0], None, None);
         assert_eq!(to, Rect::new(10.0, -20.0, 100.0, 48.0));
+    }
+
+    #[test]
+    fn the_height_and_a_division_within_the_world_are_checked_without_a_graph() {
+        // Verifies: ARCH-regions-are-container-slots, REN-node-shapes-cover-uml
+        // A title's rows and padding of 38 under an actor 100 wide: 86 high, refused where its far
+        // side passes the limit, at the height or by its regions' growth, never at the width.
+        use super::super::{Axis, Beyond, Part, WithinError, division_within};
+        let actor = NodeShape::Actor;
+        let limit = WORLD_LIMIT as f32;
+        assert_eq!(
+            height_within(actor, [0.0, 100.0], Some(38.0), None),
+            Ok(86.0)
+        );
+        assert_eq!(
+            height_within(actor, [0.0, 100.0], Some(38.0), Some(90.0)),
+            Ok(90.0)
+        );
+        assert_eq!(
+            height_within(actor, [limit, 100.0], Some(38.0), None),
+            Err(Beyond::Height)
+        );
+        // Two regions one above the other below the top of 86, each a quarter of the limit, or
+        // each 0.6 of it, which grows the node past it; or a node whose far side across passes it.
+        let parts = |size: f32| {
+            [Part {
+                size,
+                ..Part::default()
+            }; 2]
+        };
+        let within = |size: f32, at: [f32; 2]| {
+            division_within(
+                actor,
+                Some(38.0),
+                (Axis::Down, &parts(size)),
+                [at, [100.0, 86.0]],
+            )
+        };
+        assert_eq!(within(limit / 4.0, [0.0; 2]), Ok(()));
+        assert_eq!(
+            within(limit * 0.6, [0.0; 2]),
+            Err(WithinError::Beyond(Beyond::Height))
+        );
+        assert_eq!(
+            within(40.0, [limit, 0.0]),
+            Err(WithinError::Beyond(Beyond::Width))
+        );
+        let late = [Part {
+            of: Some(1),
+            ..Part::default()
+        }];
+        assert_eq!(
+            division_within(actor, None, (Axis::Down, &late), [[0.0; 2], [100.0, 48.0]]),
+            Err(WithinError::Divide(super::super::DivideError::Part {
+                index: 0
+            }))
+        );
     }
 
     #[test]
@@ -464,14 +611,10 @@ mod tests {
         let before = box_of(&graph, 0);
         assert!(
             graph
-                .resize(0, Handle::Left, &from, [f64::NAN, 0.0], 64.0)
+                .resize(0, Handle::Left, &from, [f64::NAN, 0.0])
                 .is_err()
         );
-        assert!(
-            graph
-                .resize(7, Handle::Left, &from, [1.0, 0.0], 64.0)
-                .is_err()
-        );
+        assert!(graph.resize(7, Handle::Left, &from, [1.0, 0.0]).is_err());
         assert_eq!(box_of(&graph, 0), before);
     }
 }

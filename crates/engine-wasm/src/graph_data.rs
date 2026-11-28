@@ -33,7 +33,7 @@ mod strings;
 mod update;
 
 use checks::rgb;
-pub(crate) use checks::{check_attachment, checked_height, content_top, names_within, node_height};
+pub(crate) use checks::{check_attachment, checked_height, content_of, names_within};
 use content::Cursor;
 #[cfg(test)]
 pub(crate) use content::TEST_BUDGET;

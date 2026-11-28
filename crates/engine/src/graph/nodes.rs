@@ -98,10 +98,13 @@ impl Graph {
         if let Some(outline) = self.outlines.get_mut(i) {
             *outline = Outline::default();
         }
-        // Nor does it keep that node's height or whether it was resizable.
+        // Nor does it keep that node's height, whether it was resizable, or its content.
         if let Some(given) = self.given.get_mut(i) {
             *given = None;
             self.resizable[i] = false;
+        }
+        if let Some(content) = self.contents.get_mut(i) {
+            *content = None;
         }
         // A node added has no edges yet; a freed slot taken again forgets the nesting of the node
         // it held before it takes the new node's.
@@ -299,7 +302,7 @@ impl Graph {
     /// Gives the node in `slot` the height `height`, which its content lays out to
     /// (REN-node-content-and-hits), and re-places its edges and its place in the index. A slot that
     /// holds no node refuses the call, which then changes nothing.
-    pub fn resize_node(&mut self, slot: u32, height: f32) -> Result<(), SlotError> {
+    pub(crate) fn resize_node(&mut self, slot: u32, height: f32) -> Result<(), SlotError> {
         self.nodes_held(&[slot])?;
         self.sizes[slot as usize * 2 + 1] = height;
         self.reboxed(slot);
@@ -356,7 +359,7 @@ impl Graph {
 
     /// Gives the node in `slot` the node shape `shape`, and places its edges again, whose ends
     /// on its outline move with it (API-edges-dock-nodes-or-edges). Its bounds stay its rectangle;
-    /// its height is the caller's, through `resize_node`. A slot that holds no node refuses the
+    /// its height is the caller's, through `set_content`. A slot that holds no node refuses the
     /// call, which then changes nothing.
     pub fn set_shape(&mut self, slot: u32, shape: NodeShape) -> Result<(), SlotError> {
         self.nodes_held(&[slot])?;
