@@ -296,9 +296,8 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   each edge's path and its bounds as of its last move, so that a query computes no bounds;
   `graph::slot` is the one conversion of a count to slots, which the bridge uses too. Only what the
   bridge uses is public; the rest is private to the crate, so that the `dead_code` lint finds what
-  only tests reach. The crate does not hold to it yet: several public functions, most in `shape`,
-  are called by no code of the bridge, `NodeShape::height` among them, which a test of `shape.rs`
-  holds public by counting a node shape's public functions of its height.
+  only tests reach. The crate does not hold to it yet: several public functions are called by no
+  code of the bridge.
 - **Bridge** — `crates/engine-wasm` holds every WebAssembly export: `loadGraph` checks graph data
   and resolves edge ends to slots, takes each node's container as the slot `api` resolved and its
   mark as a container, refuses a node out of place (`invalidContainer`) once every node is checked

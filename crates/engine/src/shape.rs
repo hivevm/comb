@@ -105,14 +105,14 @@ pub struct Inner {
 /// into it: half its height, cut at a quarter of its width, so that its centre lies within its
 /// outline and a loop's two ends on its top or its bottom meet the outline where it runs along
 /// the side.
-pub fn depth(width: f64, height: f64) -> f64 {
+pub(crate) fn depth(width: f64, height: f64) -> f64 {
     (height / 2.0).min(width / 4.0).max(0.0)
 }
 
 /// How far the corner of a note `width` × `height` is folded down: `NOTE_FOLD`, at most a quarter
 /// of its width and of its height, so that a loop's two ends on its top or its right side meet the
 /// outline beside the fold.
-pub fn fold(width: f64, height: f64) -> f64 {
+pub(crate) fn fold(width: f64, height: f64) -> f64 {
     NOTE_FOLD.min(width / 4.0).min(height / 4.0).max(0.0)
 }
 
@@ -150,7 +150,7 @@ impl NodeShape {
     /// (REN-node-shapes-cover-uml, *Content and node shape*): at its top, of the drawing's
     /// proportion, as wide as the node until it is `DRAWING_LIMIT` high, and above that
     /// `DRAWING_LIMIT` high and centred; none for another node shape.
-    pub fn drawing(self, width: f64) -> Option<Inner> {
+    pub(crate) fn drawing(self, width: f64) -> Option<Inner> {
         let proportion = self.proportion()?;
         let height = (width.max(0.0) * proportion).min(DRAWING_LIMIT);
         let drawn = height / proportion;
@@ -252,7 +252,7 @@ impl NodeShape {
     /// A `given` of 0, which every other height raises, gives the least height a resize may leave
     /// of a node that is no circle: for a node without content of a content node shape 0, not its
     /// width, as `None` would give.
-    pub fn height(self, width: f64, content: Option<f64>, given: Option<f64>) -> f64 {
+    pub(crate) fn height(self, width: f64, content: Option<f64>, given: Option<f64>) -> f64 {
         match (self, content) {
             (Self::Circle | Self::RingedCircle | Self::CrossedCircle | Self::Cross, _) => width,
             (Self::Bar, _) => given.unwrap_or(BAR_HEIGHT),
@@ -373,7 +373,7 @@ impl NodeShape {
 
     /// Whether the point `(x, y)` of a node of this shape and `width` × `height` lies within its
     /// outline, the outline included; a note and a frame within their bounding rectangle.
-    pub fn contains(self, width: f64, height: f64, x: f64, y: f64) -> bool {
+    pub(crate) fn contains(self, width: f64, height: f64, x: f64, y: f64) -> bool {
         let (a, b) = (width / 2.0, height / 2.0);
         let (dx, dy) = ((x - a).abs(), (y - b).abs());
         if dx > a || dy > b {
@@ -412,7 +412,7 @@ impl NodeShape {
     /// The point of the outline of a node of this shape and `width` × `height` where the line
     /// from its centre in the direction `(dx, dy)` crosses it; the centre for no direction or an
     /// empty node. A note's outline is cut at its folded corner.
-    pub fn crossing(self, width: f64, height: f64, dx: f64, dy: f64) -> (f64, f64) {
+    pub(crate) fn crossing(self, width: f64, height: f64, dx: f64, dy: f64) -> (f64, f64) {
         let (a, b) = (width / 2.0, height / 2.0);
         let length = crate::geometry::length(dx, dy);
         if length == 0.0 || a <= 0.0 || b <= 0.0 {
@@ -443,7 +443,7 @@ impl NodeShape {
     /// × `height` lies from that side, at `at` from the side's start, its left end or its top end,
     /// within the side's length. It is nil for a rectangle, a bar, and a frame, for an empty
     /// node, and wherever the outline runs along the side.
-    pub fn inset(self, side: Side, width: f64, height: f64, at: f64) -> f64 {
+    pub(crate) fn inset(self, side: Side, width: f64, height: f64, at: f64) -> f64 {
         let along = side_length(width, height, side);
         let (a, b) = (along / 2.0, (width + height - along) / 2.0);
         if a <= 0.0 || b <= 0.0 {
@@ -499,7 +499,7 @@ impl NodeShape {
 
 /// The length of `side` of a box `width` × `height`: its width for the top and the bottom, its
 /// height for the right and the left.
-pub fn side_length(width: f64, height: f64, side: Side) -> f64 {
+pub(crate) fn side_length(width: f64, height: f64, side: Side) -> f64 {
     match side {
         Side::Top | Side::Bottom => width,
         Side::Right | Side::Left => height,
@@ -540,13 +540,13 @@ fn along(width: f64, height: f64, side: Side, (x, y): (f64, f64)) -> f64 {
 /// in the order top, right, bottom, left, and the point's offset along it, its distance from the
 /// side's start, its left end or its top end, held within the side's length
 /// (ARCH-border-nodes-ride-sides, *Drag*).
-pub fn side_of(width: f64, height: f64, x: f64, y: f64) -> (Side, f64) {
+pub(crate) fn side_of(width: f64, height: f64, x: f64, y: f64) -> (Side, f64) {
     let side = sides_by_distance(width, height, x, y)[0].0;
     (side, along(width, height, side, (x, y)))
 }
 
 /// `offset` held within a side `length` long: from 0 to the length, 0 for a side of none.
-pub fn held(offset: f64, length: f64) -> f64 {
+pub(crate) fn held(offset: f64, length: f64) -> f64 {
     offset.min(length).max(0.0)
 }
 
@@ -555,7 +555,7 @@ impl NodeShape {
     /// `offset` from the side's start, held within its length: where the line through that point
     /// at right angles to the side meets the outline, at the meeting point nearer the side
     /// (ARCH-border-nodes-ride-sides, *Place*).
-    pub fn on_side(self, width: f64, height: f64, side: Side, offset: f64) -> (f64, f64) {
+    pub(crate) fn on_side(self, width: f64, height: f64, side: Side, offset: f64) -> (f64, f64) {
         let at = held(offset, side_length(width, height, side));
         let inset = self.inset(side, width, height, at);
         match side {
@@ -572,7 +572,7 @@ impl NodeShape {
     /// order top, right, bottom, left; the nearest side of the box where none does, as for a point
     /// off the outline (ARCH-border-nodes-ride-sides, *Drag*). A point of a notch, which no
     /// perpendicular from the top or the bottom reaches, takes the left side.
-    pub fn side_of(self, width: f64, height: f64, x: f64, y: f64) -> (Side, f64) {
+    pub(crate) fn side_of(self, width: f64, height: f64, x: f64, y: f64) -> (Side, f64) {
         let sides = sides_by_distance(width, height, x, y);
         let reach = 1e-9 * width.max(height).max(1.0);
         for (side, _) in sides {
@@ -588,7 +588,7 @@ impl NodeShape {
 
     /// The point of the outline of a node of this shape and `width` × `height` nearest the point
     /// `(x, y)`, inside the node or outside it (ARCH-border-nodes-ride-sides, *Drag*).
-    pub fn nearest(self, width: f64, height: f64, x: f64, y: f64) -> (f64, f64) {
+    pub(crate) fn nearest(self, width: f64, height: f64, x: f64, y: f64) -> (f64, f64) {
         let (a, b) = (width / 2.0, height / 2.0);
         if a <= 0.0 || b <= 0.0 {
             return (x.clamp(0.0, width), y.clamp(0.0, height));
@@ -623,7 +623,7 @@ impl NodeShape {
     /// corners rounded by `RECTANGLE_RADIUS`, a rounded rectangle's by `ROUNDED_RADIUS`, and an
     /// ellipse's curve, each flattened within `OUTLINE_TOLERANCE` and at most `MAX_CURVE_STEPS`
     /// chords. A node shape that is not `outlined` has none, nor has an empty node.
-    pub fn outline(self, width: f64, height: f64, out: &mut Vec<(f64, f64)>) {
+    pub(crate) fn outline(self, width: f64, height: f64, out: &mut Vec<(f64, f64)>) {
         out.clear();
         let (a, b) = (width / 2.0, height / 2.0);
         if !self.outlined() || a <= 0.0 || b <= 0.0 {
@@ -1984,27 +1984,101 @@ pub(crate) mod tests {
         );
     }
 
-    #[test]
-    fn a_node_shape_has_one_public_function_of_a_node_s_height() {
-        // Verifies: REN-node-shapes-cover-uml
-        // The public functions of `NodeShape` that give a height, read from this source: those
-        // named for a height and those of the least height a node needs or is sized to.
+    /// The functions this source declares outside its tests, each with its visibility (`pub`,
+    /// `pub(crate)`, or empty for a private one) and its name, a method of `NodeShape` named
+    /// `NodeShape::name`: those at the top level, and those of a block `impl NodeShape`.
+    fn declared() -> Vec<(&'static str, String)> {
         let source = include_str!("shape.rs");
-        let blocks: Vec<&str> = source
-            .split("\nimpl NodeShape {")
-            .skip(1)
-            .map(|block| block.split("\n}\n").next().unwrap())
+        let code = source.split("\n#[cfg(test)]\n").next().unwrap();
+        let mut in_node_shape = false;
+        let mut found = Vec::new();
+        for line in code.lines() {
+            if line.starts_with("impl ") {
+                in_node_shape = line == "impl NodeShape {";
+                continue;
+            }
+            if line == "}" {
+                in_node_shape = false;
+                continue;
+            }
+            let (method, rest) = match line.strip_prefix("    ") {
+                Some(rest) if in_node_shape && !rest.starts_with(' ') => (true, rest),
+                _ if line.starts_with(' ') => continue,
+                _ => (false, line),
+            };
+            if rest.starts_with("//") || !rest.split_whitespace().any(|word| word == "fn") {
+                continue;
+            }
+            // A declaration whose visibility or qualifiers it does not know fails, naming the
+            // line, rather than drop out of the count.
+            let (visibility, rest) = ["pub(crate) ", "pub "]
+                .into_iter()
+                .find_map(|v| rest.strip_prefix(v).map(|rest| (v.trim_end(), rest)))
+                .unwrap_or(("", rest));
+            let rest = rest.strip_prefix("const ").unwrap_or(rest);
+            let Some(rest) = rest.strip_prefix("fn ") else {
+                panic!("shape.rs declares a function in a form this test does not read: {line:?}");
+            };
+            let name = rest.split(['(', '<']).next().unwrap();
+            let name = if method {
+                format!("NodeShape::{name}")
+            } else {
+                name.to_owned()
+            };
+            found.push((visibility, name));
+        }
+        found
+    }
+
+    #[test]
+    fn the_public_functions_of_shape_are_those_the_bridge_calls() {
+        // Decides no ADR clause and no criterion: it guards the rule of docs/ARCHITECTURE.md,
+        // *Engine*, that only what the bridge uses is public, which no ADR decides. The bridge
+        // crate calls these four; a change that makes it call another adds it here.
+        let bridge = [
+            "NodeShape::of_code",
+            "NodeShape::holds_content",
+            "NodeShape::inner",
+            "NodeShape::dashes",
+        ];
+        let public: Vec<String> = declared()
+            .into_iter()
+            .filter(|(visibility, _)| *visibility == "pub")
+            .map(|(_, name)| name)
             .collect();
-        assert!(!blocks.is_empty());
-        let heights: Vec<&str> = blocks
+        assert!(!public.is_empty());
+        let extra: Vec<&String> = public
             .iter()
-            .flat_map(|block| block.lines())
-            .filter_map(|line| {
-                let line = line.trim_start();
-                line.strip_prefix("pub fn ")
-                    .or_else(|| line.strip_prefix("pub const fn "))
-            })
-            .filter_map(|rest| rest.split('(').next())
+            .filter(|name| !bridge.contains(&name.as_str()))
+            .collect();
+        let missing: Vec<&&str> = bridge
+            .iter()
+            .filter(|name| !public.iter().any(|p| p == *name))
+            .collect();
+        assert!(
+            extra.is_empty() && missing.is_empty(),
+            "public but not called by the bridge: {extra:?}; called by the bridge but not public: {missing:?}"
+        );
+    }
+
+    #[test]
+    fn a_node_shape_has_one_function_of_a_node_s_height() {
+        // Verifies: REN-node-shapes-cover-uml
+        // The functions of `NodeShape` that give a height, of any visibility, read from this
+        // source: those named for a height and those of the least height a node needs or is sized
+        // to. `height` alone is one; `needed` and `drawing_height` are steps of it, the least
+        // height of a node's content and the height of a captioned node shape's drawing, and stay
+        // private, so that either made visible counts again.
+        let steps = ["NodeShape::needed", "NodeShape::drawing_height"];
+        let methods: Vec<(&str, String)> = declared()
+            .into_iter()
+            .filter(|(_, name)| name.starts_with("NodeShape::"))
+            .collect();
+        assert!(!methods.is_empty());
+        let heights: Vec<&str> = methods
+            .iter()
+            .filter(|(visibility, name)| !(visibility.is_empty() && steps.contains(&name.as_str())))
+            .map(|(_, name)| name.trim_start_matches("NodeShape::"))
             .filter(|name| name.contains("height") || ["needed", "sized"].contains(name))
             .collect();
         assert_eq!(heights, ["height"]);
