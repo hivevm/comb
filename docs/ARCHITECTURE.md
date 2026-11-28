@@ -6,7 +6,7 @@
 > is updated in the same change as the structure it describes
 > ([NUC-documents-are-fixed](adr/NUC-documents-are-fixed.md)).
 >
-> **Last design revision:** 2026-11-18, due after 20 changes. The revision that took the count
+> **Last design revision:** 2026-11-28, due after 20 changes. The revision that took the count
 > moves the date; the number is this project's to set; a sensor counts the changes outside
 > `docs/` since the commit that set the date and says when the next is due
 > ([NUC-design-is-revised §4](adr/NUC-design-is-revised.md)).
@@ -296,7 +296,9 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   each edge's path and its bounds as of its last move, so that a query computes no bounds;
   `graph::slot` is the one conversion of a count to slots, which the bridge uses too. Only what the
   bridge uses is public; the rest is private to the crate, so that the `dead_code` lint finds what
-  only tests reach.
+  only tests reach. The crate does not hold to it yet: several public functions, most in `shape`,
+  are called by no code of the bridge, `NodeShape::height` among them, which a test of `shape.rs`
+  holds public by counting a node shape's public functions of its height.
 - **Bridge** — `crates/engine-wasm` holds every WebAssembly export: `loadGraph` checks graph data
   and resolves edge ends to slots, takes each node's container as the slot `api` resolved and its
   mark as a container, refuses a node out of place (`invalidContainer`) once every node is checked
@@ -906,22 +908,22 @@ Container forwards, so WebGL2 runs on SwiftShader instead of PixiJS falling back
 `bridge.translate`, which moves the node with what it holds and its border nodes in the engine's
 positions buffer and recomputes their edges and their place in the spatial index, or, for a border
 node, `bridge.slide`, which moves it alone along its node's outline; its first move names in the
-store's `dragged` the slots `removalOf` names (`dragStarted`), as a resize and a drag of a line
-between regions do, each later one bumps `movesVersion` (`dragMoved`), and the release clears it and
-bumps `positionsVersion` (`dragEnded`). The store notifies the scene, which renders once per
-animation frame and keeps the query it drew at the press (REN-moving-layer-moves-content): the
-first frame leaves the dragged node's edges out of the query's mesh, uploading its indices alone,
-and at the far level its particle; every frame asks the engine for the mesh of the edges at the
-dragged nodes and of the edges that end on them (`meshAt`), uploads it whole into the moving layer
-above the edges, and moves the dragged views, a container's among them, or draws their particles in
-the moving layer, a container's in a moving layer of its own above the containers' particles, and
-their edges' labels where they are now, so edges and labels follow the nodes in the same frame. The
-release hands a drop over another container to the move into it, or takes the drag back by `place`,
-and queries once. At the far level an edit of up to 256 slots keeps the query too
-(REN-moving-layer-moves-content): the scene reads from the store's arrays which slots were added
-or removed, draws the added nodes' particles and edges in the moving layer, hides the removed ones
-in the query's mesh by the span of their indices, and queries anew past the bound, for a slot filled
-in both by another object, or for a removal that ends a drag.
+store's `dragged` the slots `removalOf` names and bumps `movesVersion` (`dragStarted`), as a resize
+and a drag of a line between regions do, each later one bumps it too (`dragMoved`), and the release
+clears `dragged` and bumps `positionsVersion` (`dragEnded`). The store notifies the scene, which
+renders once per animation frame and keeps the query it drew at the press
+(REN-moving-layer-moves-content): the first frame leaves the dragged node's edges out of the query's
+mesh, uploading its indices alone, and at the far level its particle; every frame asks the engine
+for the mesh of the edges at the dragged nodes and of the edges that end on them (`meshAt`), uploads
+it whole into the moving layer above the edges, and moves the dragged views, a container's among
+them, or draws their particles in the moving layer, a container's in a moving layer of its own above
+the containers' particles, and their edges' labels where they are now, so edges and labels follow
+the nodes in the same frame. The release hands a drop over another container to the move into it, or
+takes the drag back by `place`, and queries once. At the far level an edit of up to 256 slots keeps
+the query too (REN-moving-layer-moves-content): the scene reads from the store's arrays which slots
+were added or removed, draws the added nodes' particles and edges in the moving layer, hides the
+removed ones in the query's mesh by the span of their indices, and queries anew past the bound, for
+a slot filled in both by another object, or for a removal that ends a drag.
 
 **Editing.** A method of `Comb` that changes the graph runs through one function of
 `api/editors.ts`, which holds the order: it refuses once the engine is lost, reads the input once,

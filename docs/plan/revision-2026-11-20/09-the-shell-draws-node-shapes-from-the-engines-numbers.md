@@ -38,8 +38,7 @@ of a figure. Let `render/nodes.ts` draw what it is handed.
 
 - Touches: `crates/engine/src/shape.rs`, `crates/engine-wasm/src/lib.rs`,
   `packages/comb/src/bridge/index.ts`, `packages/comb/src/render/nodes.ts`
-- REN-node-shapes-cover-uml, REN-closed-set-of-node-shapes, REN-webgl2-or-canvas-fallback,
-  API-bridge-columns-carry-nesting.
+- REN-node-shapes-cover-uml, REN-webgl2-or-canvas-fallback, API-bridge-columns-keep-no-size.
 - The seam: the geometry tests of `crates/engine/src/shape.rs`, and the browser tests named above.
 
 ## Blocked by
