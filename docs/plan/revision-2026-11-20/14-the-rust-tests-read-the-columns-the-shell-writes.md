@@ -2,7 +2,7 @@
 
 ## What to build
 
-`crates/engine-wasm/src/graph_data/snapshot.rs` is about 1,240 lines, all under `cfg(test)`:
+`crates/engine-wasm/src/graph_data/snapshot.rs` is about 1,315 lines, all under `cfg(test)`:
 `OwnedColumns`, `OwnedEdgeColumns`, and `EdgeCells` write the columns of a load a second time, as
 `packages/comb/src/bridge/columns.ts` writes them for the shell. It grew by 762 lines on
 uml-diagrams. Where the two writers differ, the bridge crate's tests decide a load the shell never
@@ -31,7 +31,7 @@ holds that the two writers give equal bytes for each case.
 
 - Touches: `crates/engine-wasm/src/graph_data/snapshot.rs`, `packages/comb/src/bridge/columns.ts`,
   `packages/comb/src/bridge/bridge.test.ts`
-- API-bridge-columns-carry-nesting, API-bridge-takes-serde-and-columns.
+- API-bridge-columns-keep-no-size.
 - The seam: the bridge crate's tests and `bun test` in `packages/comb/`.
 
 ## Blocked by

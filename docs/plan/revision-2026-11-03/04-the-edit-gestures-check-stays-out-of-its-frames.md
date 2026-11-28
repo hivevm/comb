@@ -3,7 +3,7 @@
 ## What to build
 
 The benchmark's edit gesture checks that each edit shows, and it does so inside the frames it
-times for Q-1. `benchEdit(i)` of `bench/run.ts` (installed around line 180) first asks
+times for Q-1. `benchEdit(i)` of `bench/run.ts` (installed around lines 197-221) first asks
 `window.isDrawn` whether edit `i - 1` shows, then makes edit `i`. `editGesture` calls it inside
 `frameTimes`.
 
@@ -49,7 +49,7 @@ reports it deletes this ticket.
 
 ## Read first
 
-- REN-moving-layer-redraws-changes (*Inspection*), PERF-benchmark-drives-host-chrome, the
+- REN-moving-layer-moves-content (*Inspection*), PERF-benchmark-drives-host-chrome, the
   conventions *A number says where it was taken* and *Work that should not happen is pinned by a
   count, never by a time*.
 - `bench/run.ts` (`benchEdit`, `editGesture`, `frameTimes`), `packages/comb/src/render/scene.ts`

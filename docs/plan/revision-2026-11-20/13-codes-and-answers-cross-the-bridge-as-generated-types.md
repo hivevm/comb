@@ -2,7 +2,7 @@
 
 ## What to build
 
-API-bridge-columns-carry-nesting decides that structured data derives Serialize, Deserialize, and
+API-bridge-columns-keep-no-size decides that structured data derives Serialize, Deserialize, and
 Tsify, that its TypeScript definition is the generated one and never written by hand, and that
 `innerOf(slot)` hands back the rectangle as structured data. The code departs from it:
 
@@ -24,11 +24,10 @@ the ADR as structured data, and the code kept `Vec<f64>`. Ticket 06, the second 
 `beside` 4 and 5 were refused as `invalidAttachment`, not as malformed; the bitmask `given` has
 since replaced the byte `beside` of values 0 to 5, whose two meanings that finding named.
 
-API-bridge-columns-carry-nesting is accepted since PR #106 and changes only by supersession
-(NUC-decisions-are-proposed-then-accepted §6). Its proposed successor,
-API-bridge-columns-keep-no-size, restates these decisions, so the superseding ADR this ticket asks
-for supersedes that successor. The human chose on 2026-11-21 to settle each
-departure one of two ways:
+API-bridge-columns-keep-no-size is accepted since fcd3ff78 (PR #109), in place of
+API-bridge-columns-carry-nesting, and changes only by supersession
+(NUC-decisions-are-proposed-then-accepted §6), so the superseding ADR this ticket asks for
+supersedes it. The human chose on 2026-11-21 to settle each departure one of two ways:
 
 - The code moves where it can: generated enums for the side and the division, a generated type
   for `given`, and small generated structs for the removal, the place, the inner rectangle, and
@@ -51,10 +50,10 @@ departure one of two ways:
 
 - Touches: `crates/engine-wasm/src/lib.rs`, `crates/engine-wasm/src/graph_data/regions.rs`,
   `crates/engine-wasm/src/graph_data/node_columns.rs`,
-  `crates/engine-wasm/src/graph_data/checks.rs`, `packages/comb/src/bridge/index.ts`,
-  `packages/comb/src/bridge/columns.ts`, and a superseding ADR under `docs/adr/` if one is due
-- API-bridge-columns-keep-no-size and the ADR it supersedes, API-bridge-columns-carry-nesting,
-  API-bridge-takes-serde-and-columns, SEC-pixijs-without-eval.
+  `crates/engine-wasm/src/graph_data/checks.rs`, `crates/engine-wasm/src/graph_data/update.rs`,
+  `packages/comb/src/bridge/index.ts`, `packages/comb/src/bridge/columns.ts`, and a superseding
+  ADR under `docs/adr/` if one is due
+- API-bridge-columns-keep-no-size, SEC-pixijs-without-eval.
 - The seam: `packages/comb/src/bridge/bridge.test.ts` and the bridge crate's tests.
 
 ## Blocked by
